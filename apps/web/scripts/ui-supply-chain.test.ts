@@ -1,5 +1,15 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -16,10 +26,13 @@ import {
   type PackageManifest,
   parseBunLock,
   readWorkflow,
-  scanUiFolderFile,
   SOURCE_RULE_EXCEPTIONS,
+  scanTestLibraryImports,
+  scanUiFolderFile,
   scanUiSource,
   secretsInInstallOrBuild,
+  TEST_LIBRARY_EXCEPTIONS,
+  TEST_LIBRARY_SCAN_FOLDERS,
   testPackagesOutsideDev,
   trustedDependencyEntries,
   UI_ALLOWED_PACKAGES,
@@ -280,7 +293,7 @@ describe("trustedDependencies stays empty (condition 1)", () => {
   });
 });
 
-describe("source of apps/web/src/ui/, src/ui-gallery/ and src/lib/ (condition 3)", () => {
+describe("source of apps/web/src (condition 3)", () => {
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const path = join(dir, entry.name);
@@ -448,6 +461,304 @@ export const Box = () => <Dialog.Root />;`;
       scanUiSource("x.tsx", 'import { a } from "@base-ui/other/popover";')
     ).toEqual([{ file: "x.tsx", rule: "import of @base-ui/other/popover" }]);
   });
+  // The test libraries never reach the bundle: every file of the production folders that is not a `*.test.*` or
+  // `*.spec.*` is production code, whatever its folder.
+  it("walks exactly src, worker, pwa and legal, each with a production file", () => {
+    expect(TEST_LIBRARY_SCAN_FOLDERS).toEqual([
+      "src",
+      "worker",
+      "pwa",
+      "legal",
+    ]);
+    for (const folder of TEST_LIBRARY_SCAN_FOLDERS) {
+      expect(
+        sourceFiles(join(webDir, folder)).filter(
+          (file) => !TEST_FILE.test(file)
+        ).length,
+        folder
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  // A new folder of apps/web is either walked or listed here with the reason it holds no production code:
+  // e2e*, poc and real-devices are browser and device tests that Vite never imports; scripts/ runs in Node at
+  // build or check time; public/ (boot-retry.js, theme-init.js) is copied as it is and served without a bundle,
+  // so no import in it reaches the build. The configs at the root of apps/web (`vite*.ts`, `playwright*.ts`,
+  // `vitest*.ts`) are outside the walk too: it takes folders, and they run in Node, never in the bundle.
+  it("leaves out of the walk only these folders of apps/web", () => {
+    const NOT_WALKED = [
+      "e2e",
+      "e2e-pwa",
+      "e2e-real",
+      "poc",
+      "public",
+      "real-devices",
+      "scripts",
+    ];
+    let listing: string;
+    try {
+      listing = execFileSync("git", ["ls-files", "-z", "apps/web"], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      throw new Error(
+        "git ls-files falhou: este teste lista as pastas de apps/web pelo git e precisa rodar dentro de um checkout com .git",
+        { cause: error }
+      );
+    }
+    const tracked = listing
+      .split("\0")
+      .filter((path) => path.length > 0)
+      .map((path) => path.slice("apps/web/".length))
+      .filter((path) => path.includes("/"));
+    const folders = [
+      ...new Set(tracked.map((path) => path.split("/")[0])),
+    ].sort();
+    expect(folders).toEqual(
+      [...TEST_LIBRARY_SCAN_FOLDERS, ...NOT_WALKED].sort()
+    );
+  });
+
+  const scanTestLibraryTree = (webRoot: string, repoRoot?: string) =>
+    TEST_LIBRARY_SCAN_FOLDERS.flatMap((folder) =>
+      existsSync(join(webRoot, folder))
+        ? sourceFiles(join(webRoot, folder)).flatMap((file) =>
+            scanTestLibraryImports(
+              file,
+              readFileSync(file, "utf8").replace(COMMENT, ""),
+              repoRoot
+            ).map((finding) => `${folder}/${basename(file)}: ${finding.rule}`)
+          )
+        : []
+    );
+
+  // That the folders outside the list are not walked is proved by the `git ls-files` test above, which pins the
+  // list of folders; this one only proves the walk reaches a nested file in each listed folder.
+  it("a library planted in each folder of the list is found by the walk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "t-lib-tree-"));
+    try {
+      for (const folder of TEST_LIBRARY_SCAN_FOLDERS) {
+        const deep = join(dir, "apps/web", folder, "a");
+        mkdirSync(deep, { recursive: true });
+        writeFileSync(join(deep, "planted.ts"), 'import "happy-dom";');
+        writeFileSync(join(deep, "planted.test.ts"), 'import "happy-dom";');
+      }
+      expect(scanTestLibraryTree(join(dir, "apps/web"), dir).sort()).toEqual([
+        "legal/planted.ts: import of happy-dom",
+        "pwa/planted.ts: import of happy-dom",
+        "src/planted.ts: import of happy-dom",
+        "worker/planted.ts: import of happy-dom",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("finds a planted file in a subfolder, whatever its extension", () => {
+    const dir = mkdtempSync(join(tmpdir(), "t-lib-"));
+    try {
+      const deep = join(dir, "a/b");
+      mkdirSync(deep, { recursive: true });
+      for (const name of ["x.mts", "x.cts", "x.d.ts", "x.js"]) {
+        writeFileSync(join(deep, name), 'import "happy-dom";');
+      }
+      const found = sourceFiles(dir).map((file) => basename(file));
+      expect(found.sort()).toEqual(["x.cts", "x.d.ts", "x.js", "x.mts"]);
+      for (const file of sourceFiles(dir)) {
+        expect(
+          scanTestLibraryImports(file, readFileSync(file, "utf8"), root),
+          file
+        ).toHaveLength(1);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("no file of those folders outside the tests imports a test library", () => {
+    const files = TEST_LIBRARY_SCAN_FOLDERS.flatMap((folder) =>
+      sourceFiles(join(webDir, folder))
+    );
+    expect(sourceFiles(join(webDir, "src")).length).toBeGreaterThan(100);
+    expect(files.some((file) => TEST_FILE.test(file))).toBe(true);
+    expect(scanTestLibraryTree(webDir)).toEqual([]);
+  });
+
+  it("lists no exception, and every one it lists names an existing file and a reason", () => {
+    expect(TEST_LIBRARY_EXCEPTIONS).toEqual([]);
+    for (const { file, why } of TEST_LIBRARY_EXCEPTIONS) {
+      expect(existsSync(join(root, file)), file).toBe(true);
+      expect(why.length, file).toBeGreaterThan(0);
+    }
+  });
+
+  describe("scanTestLibraryImports", () => {
+    const catalog = join(root, "apps/web/src/catalog/planted.tsx");
+    const plantedIn = (folder: string) =>
+      join(root, `apps/web/${folder}/planted.ts`);
+    const rules = (
+      file: string,
+      source: string,
+      exceptions?: typeof TEST_LIBRARY_EXCEPTIONS
+    ) =>
+      scanTestLibraryImports(file, source, root, exceptions).map(
+        (finding) => finding.rule
+      );
+
+    it.each([
+      'import { render } from "@testing-library/react";',
+      'import userEvent from "@testing-library/user-event";',
+      'import { screen } from "@testing-library/dom";',
+      'import { Window } from "happy-dom";',
+      'import axe from "axe-core";',
+      'export { render } from "@testing-library/react";',
+      'const lib = await import("happy-dom");',
+      'const lib = require("@testing-library/react");',
+      'import "@testing-library/jest-dom";',
+      'import { Window } from "happy-dom/lib/window";',
+      'import { Window } from "../../node_modules/happy-dom/lib/index.js";',
+      'import { render } from "../../../../node_modules/@testing-library/react";',
+    ])("rejects a planted import in src/catalog: %s", (source) => {
+      const found = rules(catalog, source);
+      expect(found).toHaveLength(1);
+      expect(found[0]?.startsWith("import of ")).toBe(true);
+    });
+
+    // The scan looks at the file, never at its folder, so this case would pass on any folder: the proof that the
+    // walk reaches worker/, pwa/ and legal/ is the `toEqual` of TEST_LIBRARY_SCAN_FOLDERS, the planted tree and
+    // the `git ls-files` check above.
+    it.each([
+      'import { render } from "@testing-library/react";',
+      'import userEvent from "@testing-library/user-event";',
+      'import { screen } from "@testing-library/dom";',
+      'import { Window } from "happy-dom";',
+      'import axe from "axe-core";',
+      'export { render } from "@testing-library/react";',
+      'const lib = await import("happy-dom");',
+      'const lib = require("@testing-library/react");',
+      'import "@testing-library/jest-dom";',
+      'import { Window } from "happy-dom/lib/window";',
+      'import { Window } from "../node_modules/happy-dom/lib/index.js";',
+      'import { render } from "../../node_modules/@testing-library/react";',
+    ])(
+      "rejects a planted import in a file of worker, pwa and legal (the scan looks at the file, not the folder): %s",
+      (source) => {
+        for (const folder of ["worker", "pwa", "legal"]) {
+          const found = rules(plantedIn(folder), source);
+          expect(found, folder).toHaveLength(1);
+          expect(found[0]?.startsWith("import of "), folder).toBe(true);
+        }
+      }
+    );
+
+    it("passes a file of worker, pwa and legal without the import, and lets their tests import", () => {
+      for (const folder of ["worker", "pwa", "legal"]) {
+        expect(
+          rules(
+            plantedIn(folder),
+            'import { Hono } from "hono";\nimport { x } from "./x";'
+          ),
+          folder
+        ).toEqual([]);
+        expect(
+          rules(
+            join(root, `apps/web/${folder}/planted.test.ts`),
+            'import { render } from "@testing-library/react";'
+          ),
+          folder
+        ).toEqual([]);
+      }
+    });
+
+    it("passes the same file without the import", () => {
+      expect(
+        rules(
+          catalog,
+          'import { useState } from "react";\nimport { cn } from "@/lib/utils";'
+        )
+      ).toEqual([]);
+    });
+
+    it("lets the tests import them, in `.test.` and `.spec.` files of any folder", () => {
+      const source = 'import { render } from "@testing-library/react";';
+      for (const name of [
+        "a.test.tsx",
+        "a.test.ts",
+        "a.spec.tsx",
+        "a.spec.ts",
+      ]) {
+        expect(rules(join(root, "apps/web/src/catalog", name), source)).toEqual(
+          []
+        );
+      }
+    });
+
+    it("does not take a file that only has `test` in its name for a test", () => {
+      const source = 'import { render } from "@testing-library/react";';
+      for (const name of [
+        "test-support.ts",
+        "render-test-support.tsx",
+        "a.test-utils.tsx",
+        "latest.tsx",
+      ]) {
+        expect(rules(join(root, "apps/web/src/catalog", name), source)).toEqual(
+          ["import of @testing-library/react"]
+        );
+      }
+    });
+
+    it("does not take a package that only starts with the same letters, nor a relative path, nor types", () => {
+      expect(
+        rules(
+          catalog,
+          [
+            'import a from "happy-dom-fake";',
+            'import b from "./happy-dom";',
+            'import c from "../axe-core";',
+            'import d from "@testing-library-fake/react";',
+            'import e from "@types/d3-shape";',
+          ].join("\n")
+        )
+      ).toEqual([]);
+    });
+
+    it("lets one exact file through, by its whole path, and only the file it names", () => {
+      const source = 'import { render } from "@testing-library/react";';
+      const exceptions = [
+        { file: "apps/web/src/catalog/planted.tsx", why: "control" },
+      ];
+      expect(rules(catalog, source, exceptions)).toEqual([]);
+      expect(
+        rules(join(root, "apps/web/src/sales/planted.tsx"), source, exceptions)
+      ).toEqual(["import of @testing-library/react"]);
+      expect(
+        rules(
+          join(root, "apps/web/src/catalog/deep/planted.tsx"),
+          source,
+          exceptions
+        )
+      ).toEqual(["import of @testing-library/react"]);
+      expect(
+        rules(
+          join(root, "apps/other/apps/web/src/catalog/planted.tsx"),
+          source,
+          exceptions
+        )
+      ).toEqual(["import of @testing-library/react"]);
+    });
+
+    it("covers every test library of the list and nothing but them", () => {
+      for (const name of UI_TEST_PACKAGES.filter(
+        (item) => !item.startsWith("@types/")
+      )) {
+        expect(rules(catalog, `import x from "${name}";`)).toEqual([
+          `import of ${name}`,
+        ]);
+      }
+    });
+  });
 });
 
 describe("minimumReleaseAge (condition 4)", () => {
@@ -586,7 +897,11 @@ describe("secrets stay out of install and build steps (condition 6)", () => {
     expect(workflows).toContain("deploy-staging.yml");
   });
 
-  const withoutInstallOrBuild = ["backup-staging.yml"];
+  // The backup workflow is renamed by a patch applied apart from the code, so the list holds exactly the name that
+  // exists; the staging-only name goes away with the patch.
+  const withoutInstallOrBuild = [
+    workflows.includes("backup.yml") ? "backup.yml" : "backup-staging.yml",
+  ];
 
   it("lists exactly the workflows that run no install or build step", () => {
     const found = workflows

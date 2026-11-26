@@ -1,12 +1,13 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   datePickerButton,
-  expectWholeMonthWhileTyping,
+  expectNoTypedDates,
   FORM_VIEWPORTS,
   openDatePicker,
+  panelHeight,
   pickPeriod,
   touchDay,
 } from "./date-pickers";
@@ -16,6 +17,14 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import {
+  assertNoPageScroll,
+  assertNothingClipped,
+  expectReflowFont,
+  openReflowViewport,
+  reflowTest,
+} from "./reflow";
+import { expectAllMono, expectGeist, expectMono } from "./mono-face";
 import { expectSamePlaces, placesOf } from "./same-place";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -440,9 +449,12 @@ async function startLab(page: Page) {
 async function openGoals(page: Page, server: FakeGoalServer) {
   await openDashboard(page, server);
   await page.getByRole("tab", { name: "Metas" }).click();
+  const region = page.getByRole("region", { exact: true, name: "Metas" });
+  await expect(region).toBeVisible();
+  // the tab is the title: the panel does not repeat it as an h2 of its own (AC-13.2)
   await expect(
-    page.getByRole("region", { exact: true, name: "Metas" })
-  ).toBeVisible();
+    region.getByRole("heading", { exact: true, level: 2, name: "Metas" })
+  ).toHaveCount(0);
 }
 
 const card = (page: Page, title: string): Locator =>
@@ -468,6 +480,11 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
     .getByRole("status")
     .filter({ hasText: "Nenhuma meta ainda" });
   await expect(empty.getByText("Nenhuma meta ainda")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { exact: true, name: "Metas" })
+      .getByRole("heading", { exact: true, level: 2, name: "Metas" })
+  ).toHaveCount(0);
   await expect(empty.getByText("Crie uma para acompanhar")).toHaveCount(0);
   await expect(empty.getByText("Acompanhe as vendas líquidas")).toBeVisible();
   const [title, support] = await Promise.all([
@@ -480,6 +497,7 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Nova meta" })).toHaveCount(1);
   await expect(empty.getByRole("button")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   // no goal in progress: the tab has no count (AC-13)
   await expect(
     page.getByRole("tab", { exact: true, name: "Metas" })
@@ -784,6 +802,39 @@ test.describe("no celular, o voltar fecha a Nova meta", () => {
   });
 });
 
+for (const address of ["&aba=metas", "&meta=lista"]) {
+  test(`o endereço ${address.slice(1)} abre a aba Metas, e a aba fica no endereço sem o parâmetro antigo`, async ({
+    page,
+  }) => {
+    await openDashboard(page, new FakeGoalServer(), address);
+    await expect(page.getByRole("tab", { name: "Metas" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    await expect(
+      page.getByRole("region", { exact: true, name: "Metas" })
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("aba")).toBe("metas");
+    expect(url.searchParams.get("meta")).toBeNull();
+  });
+}
+
+test("aberto pelo endereço (?meta=nova) no desktop: o Esc devolve o foco ao Nova meta da linha do título", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openDashboard(page, new FakeGoalServer(), "&meta=nova");
+  await expect(page.getByRole("dialog", { name: "Nova meta" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const openForm = page
+    .locator("[data-title-actions]")
+    .getByRole("button", { name: "Nova meta" });
+  await expect(openForm).toBeFocused();
+});
+
 test("uma meta que chegou ao alvo vira Concluída e continua concluída", async ({
   page,
 }) => {
@@ -869,8 +920,44 @@ test("com Esconder valores ligado (v7 § 6), a aba Metas também esconde os reai
   await expect(goal).not.toContainText(AN_AMOUNT);
   await expect(goal.getByRole("progressbar")).toHaveAttribute(
     "aria-valuetext",
-    "valor escondido de valor escondido, 45,0%"
+    "valor escondido de valor escondido, 45,0%. Adiantada: o esperado até hoje era 42%."
   );
+  // the pace is not a value: the word and the mark stay with the values hidden
+  await expect(goal.locator("[data-pace]")).toHaveText("Adiantada");
+  await expect(goal.locator("[data-slot=progress-marker]")).toBeAttached();
+  await expectMono(
+    goal.locator('[data-slot="progress-value"] [data-figure]'),
+    "o percentual com os valores escondidos"
+  );
+});
+
+test("o percentual e os valores do progresso da meta são Geist Mono, e o nome segue em Geist", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.seed({
+    kind: "net_sales",
+    name: "Meta de outubro",
+    target: "1000.00",
+  });
+  await openGoals(page, server);
+  const goal = card(page, "Meta de outubro");
+  await expect(goal).toContainText("45,0%");
+  await expectMono(
+    goal.locator('[data-slot="progress-value"] [data-figure]'),
+    "o percentual do progresso"
+  );
+  await expectGeist(
+    goal.getByRole("heading", { name: "Meta de outubro" }),
+    "o nome da meta"
+  );
+  await expectAllMono(
+    goal.locator('[data-slot="progress"] > span [data-figure]'),
+    "o valor, o alvo e o percentual da meta"
+  );
+  await expect(
+    goal.locator('[data-slot="progress"] > span [data-figure]')
+  ).toHaveCount(3);
 });
 
 test("o histórico de uma meta sem mudanças diz que o alvo nunca mudou", async ({
@@ -939,7 +1026,7 @@ test("uma falha ao cancelar fecha o diálogo, diz o que houve sob o título e le
     page.getByText("Não foi possível concluir a operação. Tente novamente.")
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { exact: true, level: 2, name: "Metas" })
+    page.getByRole("region", { exact: true, name: "Metas" })
   ).toBeFocused();
   // nothing was cancelled: the goal is still active, with its buttons
   expect(server.goals[0]?.status).toBe("active");
@@ -986,7 +1073,7 @@ test("as metas finais não têm editar nem cancelar", async ({ page }) => {
   await expect(
     page
       .locator("[data-slot=card]")
-      .filter({ has: page.getByRole("heading", { level: 4 }) })
+      .filter({ has: page.getByRole("heading", { level: 3 }) })
   ).toHaveCount(3);
   await expect(page.getByRole("progressbar")).toHaveCount(0);
   await expect(goalActions(page)).toHaveCount(0);
@@ -1160,7 +1247,7 @@ test("o atalho Este mês do período da meta é o mês inteiro, do dia 1 ao últ
 });
 
 for (const viewport of FORM_VIEWPORTS) {
-  test(`o período da meta, a ${viewport.name} px: digitar as datas faz o mesmo período, a data que não existe não aplica e o calendário acompanha`, async ({
+  test(`o período da meta, a ${viewport.name} px: dois toques fazem o período, sem campo de data digitada, e a altura do painel não muda`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
@@ -1170,33 +1257,12 @@ for (const viewport of FORM_VIEWPORTS) {
     await page.locator("#goal-create-target").fill("100");
 
     const popup = await openDatePicker(page, "Período da meta");
-    await popup.getByRole("button", { name: "Digitar as datas" }).click();
-    const start = popup.getByRole("textbox", { name: "Início" });
-    const end = popup.getByRole("textbox", { name: "Fim" });
-    await expect(start).toBeFocused();
-    await expect(start).toHaveValue("01/10/2026");
-    await expect(end).toHaveValue("31/10/2026");
-    await expectWholeMonthWhileTyping(popup);
-
-    await start.fill("");
-    await start.pressSequentially("31022026");
-    await end.fill("");
-    await end.pressSequentially("20102026");
-    const apply = popup.getByRole("button", { exact: true, name: "Aplicar" });
-    await expect(apply).toHaveAttribute("aria-disabled", "true");
-    await expect(apply).toHaveAccessibleDescription(
-      "Essa data não existe. Confira dia, mês e ano."
-    );
-    await end.press("Enter");
-    await expect(start).toBeFocused();
-    await expect(popup).toBeVisible();
-
-    await start.fill("");
-    await start.pressSequentially("10102026");
-    await expect(
-      popup.locator('button[data-day="2026-10-10"]')
-    ).toHaveAttribute("data-range-start", "true");
-    await apply.click();
+    await expectNoTypedDates(popup);
+    const opened = await panelHeight(popup);
+    await popup.locator('button[data-day="2026-10-10"]').click();
+    await expect(popup.getByText("Início 10/10.")).toBeVisible();
+    expect(await panelHeight(popup)).toBeCloseTo(opened, 1);
+    await popup.locator('button[data-day="2026-10-20"]').click();
     await expect(popup).toBeHidden();
     await expect(
       datePickerButton(page, "Período da meta")
@@ -1207,6 +1273,23 @@ for (const viewport of FORM_VIEWPORTS) {
       endsOn: "2026-10-20",
       startsOn: "2026-10-10",
     });
+  });
+}
+
+for (const width of [360, 700]) {
+  test(`a ${width} px "Nova meta" tem a altura de "Atualizar metas": 40 px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width });
+    await openGoals(page, new FakeGoalServer());
+    const heightOf = (name: string) =>
+      page
+        .getByRole("button", { name })
+        .evaluate((button) => button.getBoundingClientRect().height);
+    const refresh = await heightOf("Atualizar metas");
+    const create = await heightOf("Nova meta");
+    expect(refresh, "Atualizar metas").toBe(40);
+    expect(create, "Nova meta").toBe(refresh);
   });
 }
 
@@ -1332,7 +1415,7 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
   await expect(
     page
       .locator("[data-slot=card]")
-      .filter({ has: page.getByRole("heading", { level: 4 }) })
+      .filter({ has: page.getByRole("heading", { level: 3 }) })
   ).toHaveCount(0);
 
   server.listFailure = null;
@@ -1342,7 +1425,7 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
   await expect(card(page, "Depois da falha")).toContainText("Em andamento");
 });
 
-test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de altura quando a lista chega", async ({
+test("durante a leitura das metas a linha do título já traz Nova meta e não muda de altura quando a lista chega", async ({
   page,
 }) => {
   const server = new FakeGoalServer();
@@ -1355,10 +1438,10 @@ test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de
 
   const region = page.getByRole("region", { exact: true, name: "Metas" });
   await expect(region.getByText("Carregando as metas…")).toBeVisible();
-  const newButton = region.getByRole("button", { name: "Nova meta" });
+  const newButton = page.getByRole("button", { name: "Nova meta" });
   await expect(newButton).toHaveCount(1);
   await expect(newButton).toBeVisible();
-  const header = region.locator("h2").locator("xpath=../..");
+  const header = page.locator("[data-title-line]");
   const heightOf = async () => (await header.boundingBox())?.height ?? 0;
   const whileReading = await heightOf();
   expect(whileReading).toBeGreaterThan(0);
@@ -1372,7 +1455,7 @@ test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de
 const GOALS_TAB = /^Metas/;
 
 for (const viewport of FORM_VIEWPORTS) {
-  test(`Metas a ${viewport.name} px: o título, a aba e o botão Nova meta ficam no mesmo lugar (até 1 px) lendo, com metas e vazio, e o botão é um só`, async ({
+  test(`Metas a ${viewport.name} px: o título, a aba e o botão Nova meta (na linha do título) ficam no mesmo lugar (até 1 px) lendo, com metas e vazio, e o botão é um só`, async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -1389,8 +1472,8 @@ for (const viewport of FORM_VIEWPORTS) {
     await openGoals(page, server);
     const region = page.getByRole("region", { exact: true, name: "Metas" });
     const parts = {
-      button: region.getByRole("button", { name: "Nova meta" }),
-      heading: region.getByRole("heading", { exact: true, name: "Metas" }),
+      button: page.getByRole("button", { name: "Nova meta" }),
+      support: region.getByText("Também estimativas."),
       screenTitle: page.getByRole("heading", {
         exact: true,
         includeHidden: true,
@@ -1467,4 +1550,145 @@ test("três 503 seguidos nas metas mostram o erro, depois de duas repetições",
     { timeout: 15_000 }
   );
   expect(server.listCalls).toBe(3);
+});
+
+/** The mark of the pace on the bar of a goal, read as the share of the bar it sits at (its center over the track). */
+async function markShareOnBar(goal: Locator) {
+  return await goal.evaluate((root) => {
+    const track = root
+      .querySelector<HTMLElement>("[data-slot=progress-track]")
+      ?.getBoundingClientRect();
+    const mark = root
+      .querySelector<HTMLElement>("[data-slot=progress-marker]")
+      ?.getBoundingClientRect();
+    if (!(track && mark)) {
+      return null;
+    }
+    return {
+      center: mark.left + mark.width / 2 - track.left,
+      markHeight: mark.height,
+      markWidth: mark.width,
+      trackHeight: track.height,
+      trackWidth: track.width,
+    };
+  });
+}
+
+const SPOKEN_PACE = /esperado/;
+const EXPECTED_READS: Record<string, number> = {
+  "goal/list": 1,
+  "report/dailySales": 1,
+  "report/periodSummary": 1,
+};
+
+test.describe("o ritmo da meta na barra (no dia 14/10: 13 dos 31 dias do período passaram)", () => {
+  const EXPECTED = 13 / 31;
+
+  for (const [target, word] of [
+    ["1000.00", "Adiantada"],
+    ["1100.00", "No ritmo"],
+    ["1400.00", "Atrasada"],
+  ] as const) {
+    test(`com R$ 450,00 de R$ ${target}: "${word}", escrita, no nome da barra, e o traço onde 13 ÷ 31 manda`, async ({
+      page,
+    }) => {
+      const server = new FakeGoalServer();
+      server.seed({ kind: "net_sales", name: "Meta de outubro", target });
+      await openGoals(page, server);
+      const goal = card(page, "Meta de outubro");
+      await expect(goal.locator("[data-pace]")).toHaveText(word);
+      await expect(goal.getByRole("progressbar")).toHaveAttribute(
+        "aria-valuetext",
+        new RegExp(`\\. ${word}: o esperado até hoje era 42%\\.$`)
+      );
+      const mark = goal.locator("[data-slot=progress-marker]");
+      await expect(mark).toHaveAttribute("aria-hidden", "true");
+      await expect(
+        goal.locator("[data-pace] svg[aria-hidden=true]")
+      ).toHaveCount(1);
+      const place = await markShareOnBar(goal);
+      expect(place).not.toBeNull();
+      expect(
+        Math.abs((place?.center ?? 0) - (place?.trackWidth ?? 0) * EXPECTED)
+      ).toBeLessThanOrEqual(1);
+      expect(place?.markWidth).toBe(2);
+      expect((place?.markHeight ?? 0) - (place?.trackHeight ?? 0)).toBe(4);
+      expect(await axeFaults(page, "[data-slot=card]")).toEqual([]);
+    });
+  }
+
+  test("sem traço nem palavra no primeiro dia do período; a altura do cartão é a mesma com e sem a palavra", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    server.seed({ kind: "net_sales", name: "Com palavra", target: "1000.00" });
+    server.seed({
+      kind: "net_sales",
+      name: "Primeiro dia",
+      startsOn: "2026-10-14",
+      target: "1000.00",
+    });
+    await openGoals(page, server);
+    const first = card(page, "Primeiro dia");
+    await expect(first.getByRole("progressbar")).toBeVisible();
+    await expect(first.locator("[data-slot=progress-marker]")).toHaveCount(0);
+    await expect(first.locator("[data-pace]")).toHaveText("");
+    await expect(first.getByRole("progressbar")).not.toHaveAttribute(
+      "aria-valuetext",
+      SPOKEN_PACE
+    );
+    const withWord = card(page, "Com palavra");
+    await expect(withWord.locator("[data-pace]")).toHaveText("Adiantada");
+    const [a, b] = await Promise.all([
+      withWord.boundingBox(),
+      first.boundingBox(),
+    ]);
+    expect(Math.abs((a?.height ?? 0) - (b?.height ?? 0))).toBeLessThan(1);
+  });
+
+  test("abrir a aba não pede nada além do que pedia", async ({ page }) => {
+    const server = new FakeGoalServer();
+    server.seed({
+      kind: "net_sales",
+      name: "Meta de outubro",
+      target: "1000.00",
+    });
+    const procedures: string[] = [];
+    page.on("request", (request) => {
+      const match = rpcPrefix.exec(new URL(request.url()).pathname);
+      if (match && request.method() === "POST") {
+        procedures.push(new URL(request.url()).pathname.replace(rpcPrefix, ""));
+      }
+    });
+    await openGoals(page, server);
+    await expect(card(page, "Meta de outubro")).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    const counts: Record<string, number> = {};
+    for (const name of procedures) {
+      counts[name] = (counts[name] ?? 0) + 1;
+    }
+    expect(counts).toEqual(EXPECTED_READS);
+  });
+});
+
+test.describe("Meta a 320 px com a letra do navegador em 20 px", () => {
+  reflowTest(
+    "a palavra do ritmo e o percentual da meta sem corte nem rolagem",
+    async ({ page }) => {
+      await openReflowViewport(page, { fontPixels: 20, width: 320 });
+      const server = new FakeGoalServer();
+      server.seed({
+        kind: "net_sales",
+        name: "Meta de outubro",
+        target: "1400.00",
+      });
+      await openGoals(page, server);
+      await expectReflowFont(page, 20);
+      const goal = card(page, "Meta de outubro");
+      await expect(goal.locator("[data-pace]")).toHaveText("Atrasada");
+      await expect(goal).toContainText("32,1%");
+      await assertNothingClipped(goal);
+      await assertNoPageScroll(page);
+    }
+  );
 });

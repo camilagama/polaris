@@ -28,3 +28,23 @@ export function productInitials(name: string): string {
     .join("")
     .toLocaleUpperCase("pt-BR");
 }
+
+const NAME_SPACES = /[ \t\n\v\f\r]+/g;
+const NAME_EDGE_SPACE = /^ | $/g;
+
+/**
+ * The name as the unique-name rule of the catalog compares it: no difference of case or of repeated spaces, none at
+ * the ends (the database collapses the ASCII spaces, so a no-break space is a character of the name).
+ */
+export function deleteNameKey(name: string): string {
+  return name
+    .replace(NAME_SPACES, " ")
+    .replace(NAME_EDGE_SPACE, "")
+    .toLowerCase();
+}
+
+/** Whether what was typed names the product: only then the button works. */
+export function typedNameMatches(typed: string, name: string): boolean {
+  const key = deleteNameKey(typed);
+  return key !== "" && key === deleteNameKey(name);
+}

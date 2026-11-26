@@ -26,6 +26,10 @@ type Exemption =
 const WITHOUT_OWN_HOLD: Readonly<Record<string, Exemption>> = {
   "catalog/category-form.tsx": { holdIn: ["catalog/categories-page.tsx"] },
   "catalog/category-list.tsx": { holdIn: ["catalog/categories-page.tsx"] },
+  "catalog/product-delete-dialog.tsx": {
+    noWork:
+      "o diálogo aberto segura a troca de build sozinho, e o nome a confirmar se digita de novo",
+  },
   "catalog/product-form.tsx": { holdIn: ["catalog/products-page.tsx"] },
   "catalog/product-variant-parts.tsx": {
     holdIn: [

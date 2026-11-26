@@ -2,18 +2,19 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
-  expectWholeMonthWhileTyping,
+  expectNoTypedDates,
   FORM_VIEWPORTS,
+  panelHeight,
   touchDay,
 } from "./date-pickers";
 import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The filters of the sales history on the filter bar of src/ui (over the DateRangePicker), in the lab of
- * the screens over the real offline runtime, the list answered by the test: the period is a pill whose editor takes
- * two days (in order, whichever is touched first) or a shortcut, "Limpar" and the X take a pill out, "Limpar tudo"
- * takes them all, and what the server is asked for is what the bar shows.
+ * The filters of the sales history, in the lab of the screens over the real offline runtime, the list answered by the
+ * test: the period is the button of the title line, whose picker takes two days (in order, whichever is touched
+ * first) or a shortcut and "Limpar" empties it; the other filters are pills of the filter bar of src/ui, the X takes a
+ * pill out, "Limpar tudo" takes them all and the period, and what the server is asked for is what the screen shows.
  */
 const NOW = "2026-10-14T12:00:00.000Z";
 
@@ -57,9 +58,13 @@ async function addFilter(page: Page, field: string) {
   return popup;
 }
 
-/** The editor of the period: the calendar comes on demand. */
+/** The period of the title line: its name says the range, or that there is none. */
+const periodButton = (page: Page) =>
+  page.locator('header button[aria-label^="Período"]');
+
+/** The picker of the period: the calendar comes on demand. */
 async function openPeriod(page: Page) {
-  await pill(page, "Período").click();
+  await periodButton(page).click();
   const popup = editor(page, "Período");
   await expect(popup.getByRole("grid").first()).toBeVisible();
   return popup;
@@ -69,6 +74,17 @@ const lastAsked = (asked: ListRequest[]) => asked.at(-1);
 const askedWithout = (asked: ListRequest[], key: keyof ListRequest) => {
   const last = lastAsked(asked);
   return last !== undefined && !(key in last);
+};
+
+const FILTER_KEYS = [
+  "customerQuery",
+  "occurredFrom",
+  "occurredTo",
+  "status",
+] as const satisfies readonly (keyof ListRequest)[];
+const filtersAsked = (asked: ListRequest[]) => {
+  const last = lastAsked(asked);
+  return FILTER_KEYS.filter((key) => last !== undefined && key in last);
 };
 
 async function openHistory(page: Page) {
@@ -102,21 +118,24 @@ for (const viewport of FORM_VIEWPORTS) {
       page,
     }) => {
       const asked = await openHistory(page);
-      // no filter yet: the bar is only "Filtrar", with no pill and no "Limpar tudo"
-      await expect(pill(page, "Período")).toHaveCount(0);
+      // no filter yet: the bar is only "Filtrar", with no pill and no "Limpar tudo"; the period says it has no range
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período, Escolher período"
+      );
+      await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(
+        0
+      );
       await expect(
         bar(page).getByRole("button", { name: "Limpar tudo" })
       ).toHaveCount(0);
 
       // the later day first: the period is made in order, so there is no "data inicial posterior à final" to show
-      const popup = await addFilter(page, "Período");
-      await expect(popup.getByRole("grid").first()).toBeVisible();
+      const popup = await openPeriod(page);
       await touchDay(popup, "2026-10-12");
       await expect(popup).toBeVisible();
       await touchDay(popup, "2026-10-05");
-      await applyEditor(page, popup);
       await expect(popup).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
+      await expect(periodButton(page)).toHaveAccessibleName(
         "Período: 05/10 a 12/10, editar"
       );
       await expect(page.getByText("posterior à data final")).toHaveCount(0);
@@ -134,7 +153,7 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("button", { exact: true, name: "7 dias" })
         .click();
       await expect(shortcuts).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
+      await expect(periodButton(page)).toHaveAccessibleName(
         "Período: 08/10 a 14/10, editar"
       );
       await expect
@@ -151,7 +170,7 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("button", { exact: true, name: "Este mês" })
         .click();
       await expect(month).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
+      await expect(periodButton(page)).toHaveAccessibleName(
         "Período: 01/10 a 14/10, editar"
       );
       await expect
@@ -169,12 +188,13 @@ for (const viewport of FORM_VIEWPORTS) {
       await page.keyboard.press("Escape");
       await expect(pressed).toBeHidden();
 
-      // "Limpar" empties the period: the pill goes and the list is asked for with no period
+      // "Limpar" empties the period: the button goes back to "Escolher período" and the list is asked for with no period
       const clearing = await openPeriod(page);
       await clearing.getByRole("button", { name: "Limpar" }).click();
-      await applyEditor(page, clearing);
       await expect(clearing).toBeHidden();
-      await expect(pill(page, "Período")).toHaveCount(0);
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período, Escolher período"
+      );
       await expect.poll(() => askedWithout(asked, "occurredFrom")).toBe(true);
     });
 
@@ -213,14 +233,58 @@ for (const viewport of FORM_VIEWPORTS) {
         .toMatchObject({ customerQuery: "angela", status: "cancelled" });
       await expect(clearAll).toBeVisible();
 
-      // the X of one pill takes only that filter out
+      const shortcuts = await openPeriod(page);
+      await shortcuts
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button", { exact: true, name: "7 dias" })
+        .click();
+      await expect(shortcuts).toBeHidden();
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({ occurredFrom: "2026-10-08", status: "cancelled" });
+
+      // the X of one pill takes only that filter out, the period stays
       await remover(page, "Situação").click();
       await expect(pill(page, "Situação")).toHaveCount(0);
       await expect(pill(page, "Cliente")).toBeVisible();
       await expect.poll(() => askedWithout(asked, "status")).toBe(true);
-      await expect(lastAsked(asked)).toMatchObject({ customerQuery: "angela" });
+      await expect(lastAsked(asked)).toMatchObject({
+        customerQuery: "angela",
+        occurredFrom: "2026-10-08",
+        occurredTo: "2026-10-14",
+      });
+      // "Limpar tudo" does not show for one pill with a period
+      await expect(clearAll).toHaveCount(0);
 
-      // with two pills again, "Limpar tudo" takes them all and the list is asked for with no filter
+      // the X of the last pill (Cliente) takes only that filter out: no pill is left, the period stays and the list is asked for with the period alone
+      await remover(page, "Cliente").click();
+      await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(
+        0
+      );
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período: 08/10 a 14/10, editar"
+      );
+      await expect.poll(() => askedWithout(asked, "customerQuery")).toBe(true);
+      expect(lastAsked(asked)).toMatchObject({
+        occurredFrom: "2026-10-08",
+        occurredTo: "2026-10-14",
+      });
+      expect(filtersAsked(asked)).toEqual(["occurredFrom", "occurredTo"]);
+
+      // Cliente back, so the phase with two pills below starts as before
+      const customerAgain = await addFilter(page, "Cliente");
+      await customerAgain
+        .getByRole("textbox", { name: "Cliente" })
+        .fill("angela");
+      await customerAgain
+        .getByRole("button", { name: onPhone(page) ? "Aplicar" : "Pronto" })
+        .click();
+      await expect(customerAgain).toBeHidden();
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({ customerQuery: "angela" });
+
+      // with two pills again, "Limpar tudo" takes them all and the period too: the list is asked for with no filter at all
       await addFilter(page, "Situação");
       const confirmed = page.getByRole("dialog", { name: "Situação" });
       await confirmed
@@ -233,74 +297,49 @@ for (const viewport of FORM_VIEWPORTS) {
         0
       );
       await expect(clearAll).toHaveCount(0);
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período, Escolher período"
+      );
       await expect
         .poll(
           () =>
             askedWithout(asked, "status") &&
             askedWithout(asked, "customerQuery") &&
-            askedWithout(asked, "occurredFrom")
+            askedWithout(asked, "occurredFrom") &&
+            askedWithout(asked, "occurredTo")
         )
         .toBe(true);
     });
 
-    test("digitar as datas: a data que não existe não aplica e leva o foco ao campo; o período digitado chega à lista", async ({
+    test("o painel do período não tem campo de data digitada e mantém a altura ao abrir e ao marcar o início, e o toque do fim fecha o painel", async ({
       page,
     }) => {
       const asked = await openHistory(page);
-      const popup = await addFilter(page, "Período");
-      await expect(popup.getByRole("grid").first()).toBeVisible();
-      // a first day touched is written in the field when the typing opens, and kept where the caller applies
+      const popup = await openPeriod(page);
+      await expectNoTypedDates(popup);
+      const opened = await panelHeight(popup);
+
       await touchDay(popup, "2026-10-12");
-      await popup.getByRole("button", { name: "Digitar as datas" }).click();
-      const start = popup.getByRole("textbox", { name: "Início" });
-      const end = popup.getByRole("textbox", { name: "Fim" });
-      await expect(start).toBeFocused();
-      await expect(start).toHaveValue("12/10/2026");
-      await expect(end).toHaveValue("");
-      await expectWholeMonthWhileTyping(popup);
+      await expect(
+        popup.getByText("Início 12/10. Escolha o último dia.")
+      ).toBeVisible();
+      await expectNoTypedDates(popup);
+      expect(await panelHeight(popup)).toBeCloseTo(opened, 1);
 
-      await start.fill("");
-      await start.pressSequentially("31022026");
-      await end.pressSequentially("14102026");
-      const apply = popup.getByRole("button", { exact: true, name: "Aplicar" });
-      await expect(apply).toHaveAttribute("aria-disabled", "true");
-      await expect(apply).toHaveAccessibleDescription(
-        "Essa data não existe. Confira dia, mês e ano."
-      );
-      await apply.focus();
-      await page.keyboard.press("Enter");
-      await expect(start).toBeFocused();
-      await expect(popup).toBeVisible();
-      await expect(popup.getByRole("alert")).toHaveText(
-        "Essa data não existe. Confira dia, mês e ano."
-      );
-      await expect(popup.getByRole("alert")).toBeInViewport({ ratio: 1 });
-
-      await start.fill("");
-      await start.pressSequentially("01102026");
-      await expect(popup.getByRole("alert")).toHaveCount(0);
-      await expect(apply).not.toHaveAttribute("aria-disabled", "true");
-      await apply.click();
+      await touchDay(popup, "2026-10-14");
       await expect(popup).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
-        "Período: 01/10 a 14/10, editar"
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período: 12/10 a 14/10, editar"
       );
       await expect
         .poll(() => lastAsked(asked))
         .toMatchObject({
-          occurredFrom: "2026-10-01",
+          occurredFrom: "2026-10-12",
           occurredTo: "2026-10-14",
         });
 
-      // reopened, the fields show the period there is, and a day touched is written in them
       const again = await openPeriod(page);
-      await again.getByRole("button", { name: "Digitar as datas" }).click();
-      await expect(again.getByRole("textbox", { name: "Início" })).toHaveValue(
-        "01/10/2026"
-      );
-      await expect(again.getByRole("textbox", { name: "Fim" })).toHaveValue(
-        "14/10/2026"
-      );
+      await expectNoTypedDates(again);
     });
   });
 }

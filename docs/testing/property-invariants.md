@@ -84,7 +84,7 @@ Legenda: **P** = teste de propriedade com oráculo; **E** = teste por exemplos j
 
 | ID | Invariante | Teste |
 | --- | --- | --- |
-| ENT-1 | Pro só enquanto um estado Pro tem data de fim à frente; qualquer outro estado e prazo vencido valem Free. | P `billing/entitlements.property.test.ts` |
+| ENT-1 | Pro só enquanto um estado Pro tem data de fim à frente (no trial, a data gravada mais a folga até 06:00 de São Paulo do dia seguinte); qualquer outro estado e prazo vencido valem Free. | P `billing/entitlements.property.test.ts` |
 | ENT-2 | Cada chave é o maior entre o valor do plano e o dos grants ativos (flag: ligada se um dos dois liga); um grant nunca baixa nada. | P idem |
 | ENT-3 | A ordem dos grants não muda o resultado. | P idem |
 | ENT-4 | Resolver não altera o catálogo nem os grants, entrega cópia da data de fim e, sem grants, dá exatamente o plano. | P idem |

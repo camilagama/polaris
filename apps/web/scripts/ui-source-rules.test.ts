@@ -8,7 +8,7 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  * Source rules of the interface guardrails (items 4 and 5): what the review of the CSS and the classes finds
  * by reading, a test reads. They run on `src/ui`, on `src/styles` and on the source folders of every
  * screen (`sourceDirs` in e2e-pwa/ui-screens.ts); the measured checks (overflow, touch, axe, motion, focus) are in
- * e2e-pwa/ui-guardrails.e2e.ts. Each rule has a control case: `sourceFaults` runs on a text that has the fault.
+ * e2e-pwa/ui-guardrails/. Each rule has a control case: `sourceFaults` runs on a text that has the fault.
  *
  * 4. only OKLCH and only tokens: no `#hex`, `rgb(`, `hsl(` and the like; no color keyword nor Tailwind palette
  *    class; an `oklch(…)` literal lives only in the token sheet (`packages/ui/src/theme.css`).
@@ -117,6 +117,7 @@ const MOTION_UTILITY =
 const STRING = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;
 const SPACES = /\s+/;
 const TS_OR_TSX = /\.tsx?$/;
+const TSX = /\.tsx$/;
 
 /** The words of the strings of a source: the classes, among other words. */
 const classTokens = (text: string) =>
@@ -336,6 +337,138 @@ export function handTypedReaisFaults(path: string, text: string): string[] {
   return HAND_TYPED_REAIS.test(withoutComments(text))
     ? [
         '"R$" escrito à mão: o valor em reais passa pelo Money ou pelo MoneyText',
+      ]
+    : [];
+}
+
+/**
+ * Number in mono (DESIGN.md "Tipografia"): `tabular-nums` and `font-mono` are what make a number mono and aligned, and
+ * they live in three places only: `ui/money.tsx` (every amount in reais), `ui/figure.tsx` (every other number that is read
+ * as a quantity) and the text of the charts (`ui/charts/`, and `ui/bklit/charts/`, whose axis and tooltip they style).
+ * A screen writes a number through `Money` or `Figure`, never with the class. Today's files that still have the class
+ * are listed with how many tokens and why; the list is exact and can only shrink: a file that left it, or one that has
+ * a token more, fails the test, so each slice that moves a screen onto the components takes its file out of the list.
+ */
+const NUMBER_FONT_COMPONENTS = ["src/ui/money.tsx", "src/ui/figure.tsx"];
+const NUMBER_FONT_FOLDERS = ["src/ui/charts/", "src/ui/bklit/charts/"];
+const NUMBER_FONT_TOKEN =
+  /(?:^|:)!?(?:tabular-nums|font-mono)!?$|font-variant-numeric|(?:^|:)!?font-[([][^\s]*mono|(?:^|:)!?\[font-family:[^\s\]]*mono/i;
+const NUMBER_FONT_INLINE = /fontFamily\s*:[^}]*(?:--font-mono|Geist\s*Mono)/g;
+
+const SLICE_REASON =
+  "ainda não passou por Money ou Figure: sai da lista na fatia da tela";
+const DATE_REASON =
+  "data ou hora fica em Geist (regra do DESIGN.md); o tabular-nums só alinha os algarismos";
+const IDENTIFIER_REASON =
+  "identificador em Geist Mono por regra do DESIGN.md, não é quantidade";
+
+const NUMBER_FONT_ELSEWHERE: readonly {
+  file: string;
+  tokens: number;
+  why: string;
+}[] = [
+  { file: "src/app-shell/app-shell.tsx", tokens: 2, why: SLICE_REASON },
+  { file: "src/app-shell/menu-progress.tsx", tokens: 1, why: SLICE_REASON },
+  {
+    file: "src/app-shell/not-found-page.tsx",
+    tokens: 1,
+    why: IDENTIFIER_REASON,
+  },
+  {
+    file: "src/catalog/product-import/import-rows-table.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  {
+    file: "src/catalog/product-import/import-run-step.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  {
+    file: "src/catalog/product-variants-panel.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  {
+    file: "src/expenses/expense-by-category.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  { file: "src/expenses/expense-list.tsx", tokens: 1, why: SLICE_REASON },
+  {
+    file: "src/expenses/expense-rules-panel.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  { file: "src/expenses/month-picker.tsx", tokens: 1, why: DATE_REASON },
+  { file: "src/inventory/inventory-page.tsx", tokens: 3, why: SLICE_REASON },
+  {
+    file: "src/offline/attention-panel.tsx",
+    tokens: 1,
+    why: IDENTIFIER_REASON,
+  },
+  {
+    file: "src/payment-profiles/payment-profile-list.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  { file: "src/sales/confirmed-sale-parts.tsx", tokens: 4, why: SLICE_REASON },
+  { file: "src/sales/offline-sale-panels.tsx", tokens: 2, why: SLICE_REASON },
+  { file: "src/sales/sale-confirmed-panel.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-fields.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-history-list.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-item-editor.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-receipt.tsx", tokens: 3, why: SLICE_REASON },
+  { file: "src/sales/sale-return-table.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-summary-panel.tsx", tokens: 4, why: SLICE_REASON },
+  { file: "src/sales/sale-timeline.tsx", tokens: 1, why: DATE_REASON },
+  {
+    file: "src/subscription/subscription-parts.tsx",
+    tokens: 2,
+    why: SLICE_REASON,
+  },
+  { file: "src/ui-gallery/ui-gallery.tsx", tokens: 12, why: SLICE_REASON },
+  { file: "src/ui/calendar.tsx", tokens: 1, why: DATE_REASON },
+  { file: "src/ui/date-picker.tsx", tokens: 1, why: DATE_REASON },
+  { file: "src/ui/date-range-picker.tsx", tokens: 1, why: DATE_REASON },
+  { file: "src/ui/kpi-card.tsx", tokens: 7, why: SLICE_REASON },
+  { file: "src/ui/list-total-footer.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/ui/progress.tsx", tokens: 1, why: SLICE_REASON },
+];
+
+const isNumberFontHome = (path: string) =>
+  NUMBER_FONT_COMPONENTS.includes(path) ||
+  NUMBER_FONT_FOLDERS.some((folder) => path.startsWith(folder));
+
+const numberFontTokens = (text: string) =>
+  classTokens(text).filter((token) => NUMBER_FONT_TOKEN.test(token)).length +
+  (withoutComments(text).match(NUMBER_FONT_INLINE)?.length ?? 0);
+
+export function numberFontFaults(path: string, text: string): string[] {
+  if (!TS_OR_TSX.test(path) || isNumberFontHome(path)) {
+    return [];
+  }
+  const found = numberFontTokens(text);
+  const listed =
+    NUMBER_FONT_ELSEWHERE.find((entry) => entry.file === path)?.tokens ?? 0;
+  return found === listed
+    ? []
+    : [
+        `${found} tabular-nums ou font-mono fora de ui/money.tsx, ui/figure.tsx e ui/charts, e a lista diz ${listed}: o número passa por Money ou Figure`,
+      ];
+}
+
+/** An amount written by `{formatBrlAmount(…)}` as the child of an element, alone or after `?`, `&&`, `||`, `??` or `String(`, or as `children=`, skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks only when it is a prop (`text={`…`}`) or a variable, not when it is itself the child; a prop of a component (`text={…}`) reaches the mask. Only `.tsx` files are read: a model that returns text is not JSX. */
+const BRL_IN_JSX =
+  /(?<![=$])\{\s*(?:String\()?formatBrlAmount\(|(?<![=$])\{(?!\s*(?:const|let|return|\w+:))[^{};]*?(?:\?|&&|\|\|)[^{};]*?formatBrlAmount\(|children=\{\s*formatBrlAmount\(|(?<![=$])\{\s*`[^`]*\$\{\s*formatBrlAmount\(/;
+
+export function brlInJsxFaults(path: string, text: string): string[] {
+  if (!TSX.test(path)) {
+    return [];
+  }
+  return BRL_IN_JSX.test(withoutComments(text))
+    ? [
+        "formatBrlAmount escrito direto no JSX: o valor em reais passa pelo Money ou pelo MoneyText",
       ]
     : [];
 }
@@ -660,6 +793,42 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   );
 
+  it.each(FOCUS_SCOPE)(
+    "%s: tabular-nums e font-mono só em Money, Figure e nos gráficos (ou na lista exata)",
+    (path) => {
+      expect(numberFontFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it.each(FOCUS_SCOPE)(
+    "%s: nenhum formatBrlAmount escrito direto no JSX",
+    (path) => {
+      expect(brlInJsxFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("a lista do número em mono está em ordem, cada arquivo dela existe e ainda tem o que ela conta, com o motivo escrito (uma lista velha deixaria passar outra coisa)", () => {
+    const files = NUMBER_FONT_ELSEWHERE.map((entry) => entry.file);
+    expect(files).toEqual([...files].sort((a, b) => a.localeCompare(b, "en")));
+    expect(new Set(files).size).toBe(files.length);
+    for (const entry of NUMBER_FONT_ELSEWHERE) {
+      expect(FOCUS_SCOPE, entry.file).toContain(entry.file);
+      expect(isNumberFontHome(entry.file), entry.file).toBe(false);
+      expect(numberFontTokens(read(entry.file)), entry.file).toBe(entry.tokens);
+      expect(entry.tokens, entry.file).toBeGreaterThan(0);
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+    }
+    for (const home of NUMBER_FONT_COMPONENTS) {
+      expect(existsSync(join(web, home)), home).toBe(true);
+    }
+    for (const folder of NUMBER_FONT_FOLDERS) {
+      expect(
+        FOCUS_SCOPE.some((path) => path.startsWith(folder)),
+        folder
+      ).toBe(true);
+    }
+  });
+
   it("os arquivos de dinheiro e a lista da fração ainda existem (uma lista velha deixaria passar outra coisa)", () => {
     for (const path of [
       ...MONEY_FILES,
@@ -898,6 +1067,127 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
       "3 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
     );
     expect(money('// "text-[1.75rem]" in a comment')).toEqual([]);
+  });
+
+  it("tabular-nums e font-mono fora de Money, Figure e dos gráficos reprovam, e a lista exata reprova o que entrou (controle plantado)", () => {
+    const fault = (text: string, path = "src/home/home-page.tsx") =>
+      numberFontFaults(path, text);
+    expect(fault('const a = "text-sm tabular-nums";').join()).toContain(
+      "1 tabular-nums ou font-mono"
+    );
+    expect(fault('const a = "font-mono text-xs";')).not.toEqual([]);
+    expect(fault('const a = "md:tabular-nums";')).not.toEqual([]);
+    expect(fault('const a = "!tabular-nums";')).not.toEqual([]);
+    expect(fault("const a = `p-2 font-mono`;")).not.toEqual([]);
+    expect(
+      fault('const a = "[font-variant-numeric:tabular-nums]";')
+    ).not.toEqual([]);
+    for (const form of [
+      "font-(family-name:--font-mono)",
+      "font-[family-name:var(--font-mono)]",
+      "font-[Geist_Mono]",
+      "md:font-[Geist_Mono]",
+      "[font-family:var(--font-mono)]",
+    ]) {
+      expect(fault(`const a = "p-2 ${form}";`)).not.toEqual([]);
+    }
+    expect(fault('const a = { fontFamily: "var(--font-mono)" };')).not.toEqual(
+      []
+    );
+    expect(
+      fault('const a = { fontFamily: "Geist Mono, monospace" };')
+    ).not.toEqual([]);
+    expect(
+      fault('const a = { fontFamily: "Arial, Helvetica, monospace" };')
+    ).toEqual([]);
+    expect(fault('const a = "font-[family-name:var(--font-sans)]";')).toEqual(
+      []
+    );
+    expect(fault('const a = "tabular-nums-not font-monospace";')).toEqual([]);
+    expect(fault('// "tabular-nums" in a comment')).toEqual([]);
+    expect(
+      fault('const a = "tabular-nums";', "src/home/home-page.css")
+    ).toEqual([]);
+    for (const home of [
+      "src/ui/money.tsx",
+      "src/ui/figure.tsx",
+      "src/ui/charts/chart-text.tsx",
+      "src/ui/bklit/charts/y-axis.tsx",
+    ]) {
+      expect(fault('const a = "font-mono tabular-nums";', home)).toEqual([]);
+    }
+    expect(
+      fault('const a = "tabular-nums";', "src/ui/kpi-card.tsx").join()
+    ).toContain("a lista diz 7");
+    expect(fault('const a = "tabular-nums";', "src/ui/calendar.tsx")).toEqual(
+      []
+    );
+    expect(
+      fault(
+        'const a = "tabular-nums tabular-nums";',
+        "src/ui/calendar.tsx"
+      ).join()
+    ).toContain("a lista diz 1");
+    expect(fault('const a = "p-2";', "src/ui/calendar.tsx").join()).toContain(
+      "0 tabular-nums ou font-mono"
+    );
+    for (const moved of [
+      "src/home/home-figures.tsx",
+      "src/dashboard/result-chain.tsx",
+    ]) {
+      expect(fault('const a = "tabular-nums";', moved).join()).toContain(
+        "a lista diz 0"
+      );
+    }
+    expect(fault('const a = "p-2";', "src/ui-vizinha/outra.tsx")).toEqual([]);
+    expect(
+      fault('const a = "p-2 tabular-nums";', "src/ui/charts-vizinha.tsx")
+    ).not.toEqual([]);
+  });
+
+  it("formatBrlAmount como filho do JSX reprova; passar o texto ao Money e montar um texto para o MoneyText não (controle plantado)", () => {
+    expect(
+      brlInJsxFaults("src/x.tsx", "<span>{formatBrlAmount(total)}</span>")
+    ).not.toEqual([]);
+    expect(
+      brlInJsxFaults(
+        "src/x.tsx",
+        "const a = `Total $".concat("{formatBrlAmount(total)}`;")
+      )
+    ).toEqual([]);
+    for (const jsx of [
+      "<b>{`Total $".concat("{formatBrlAmount(x)}`}</b>"),
+      "<b>{cond ? formatBrlAmount(x) : '-'}</b>",
+      "<b>{a && formatBrlAmount(x)}</b>",
+      "<b>{a ?? formatBrlAmount(x)}</b>",
+      "<b>{a || formatBrlAmount(x)}</b>",
+      "<b>{String(formatBrlAmount(x))}</b>",
+      "<b children={formatBrlAmount(x)} />",
+      "<b>{ok ? '-' : formatBrlAmount(x)}</b>",
+    ]) {
+      expect(brlInJsxFaults("src/x.tsx", jsx), jsx).not.toEqual([]);
+    }
+    expect(
+      brlInJsxFaults(
+        "src/x.tsx",
+        "<MoneyText text={`Total $".concat("{formatBrlAmount(x)}`} />")
+      )
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults("src/x.tsx", "<Money text={formatBrlAmount(total)} />")
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults(
+        "src/x.tsx",
+        "<Money text={cond ? formatBrlAmount(a) : formatBrlAmount(b)} />"
+      )
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults("src/x.tsx", "const text = formatBrlAmount(total);")
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults("src/x.tsx", "// {formatBrlAmount(total)} in a comment")
+    ).toEqual([]);
   });
 
   it("R$ escrito à mão numa lista reprova, e só nos arquivos da lista (controle plantado)", () => {
@@ -1443,5 +1733,307 @@ describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
   ])("%s passa (controle plantado)", (text) => {
     const path = text.startsWith(".") ? "src/x.css" : "src/x.tsx";
     expect(uppercaseStyleFaults(path, text)).toEqual([]);
+  });
+});
+
+/**
+ * Link sublinhado (DESIGN.md "Link sublinhado é o `TextLink`"): `underline` é escrito em `ui/text-link.tsx` e em mais
+ * nenhum arquivo do app, fora esta lista exata, cada um com a razão. A lista só encolhe: quem tira o último uso do
+ * arquivo tira a linha dele daqui. Os e-mails escrevem `textDecoration` em estilo em linha, que o cliente de e-mail lê.
+ */
+const UNDERLINE_COMPONENT = "src/ui/text-link.tsx";
+const UNDERLINE_EMAILS = "src/server/activation/emails/";
+export const UNDERLINE_ELSEWHERE: readonly { file: string; why: string }[] = [
+  {
+    file: "src/home/home-kpi-cards.tsx",
+    why: "o título do cartão do Resultado estimado é o link do cartão inteiro: o sublinhado ao passar o mouse é a única dica de que o cartão leva ao Resultado",
+  },
+  {
+    file: "src/legal/legal-page.tsx",
+    why: "texto legal: os links são parte do texto corrido dos Termos e da Política",
+  },
+  {
+    file: "src/ui/alert.tsx",
+    why: "o link que o aviso traz dentro da própria frase",
+  },
+  {
+    file: "src/ui/button.tsx",
+    why: "a variante `link` do Button, texto de ação dentro de uma frase (Tentar novamente ao lado do aviso)",
+  },
+  {
+    file: "src/ui/calendar.tsx",
+    why: "a marca do dia de hoje no calendário, que não é link",
+  },
+  {
+    file: "src/ui/dialog.tsx",
+    why: "o link que a descrição do diálogo traz dentro da própria frase",
+  },
+  {
+    file: "src/ui/field.tsx",
+    why: "o link que a descrição do campo traz dentro da própria frase",
+  },
+];
+
+const UNDERLINE = /(?<![\w-])underline(?![\w])/;
+const UNDERLINE_SCOPE = sourcesUnder("src").filter(
+  (path) => !path.startsWith(UNDERLINE_EMAILS)
+);
+
+export function underlineFaults(
+  files: readonly string[],
+  source: (path: string) => string
+): string[] {
+  const allowed = new Set([
+    UNDERLINE_COMPONENT,
+    ...UNDERLINE_ELSEWHERE.map((entry) => entry.file),
+  ]);
+  return files
+    .filter(
+      (path) =>
+        !(allowed.has(path) || path.startsWith(UNDERLINE_EMAILS)) &&
+        UNDERLINE.test(withoutComments(source(path)))
+    )
+    .map(
+      (path) =>
+        `${path}: sublinhado fora do TextLink: use <TextLink> (link dentro de texto) ou um botão ghost (ação do bloco)`
+    );
+}
+
+describe("o sublinhado de link mora no TextLink (item 12, AC-B2.5)", () => {
+  it("a árvore de src foi lida", () => {
+    expect(UNDERLINE_SCOPE.length).toBeGreaterThan(500);
+    expect(UNDERLINE_SCOPE).toContain(UNDERLINE_COMPONENT);
+    expect(UNDERLINE_SCOPE).toContain("src/sales/sale-detail-page.tsx");
+  });
+
+  it("nenhum arquivo de src escreve underline fora do TextLink e da lista", () => {
+    expect(underlineFaults(UNDERLINE_SCOPE, read)).toEqual([]);
+  });
+
+  it("o TextLink escreve o sublinhado e a lista é exata: cada arquivo dela ainda o usa e a razão está escrita", () => {
+    expect(UNDERLINE.test(withoutComments(read(UNDERLINE_COMPONENT)))).toBe(
+      true
+    );
+    expect(UNDERLINE_ELSEWHERE.map((entry) => entry.file)).toEqual(
+      UNDERLINE_ELSEWHERE.map((entry) => entry.file).sort()
+    );
+    for (const entry of UNDERLINE_ELSEWHERE) {
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(
+        UNDERLINE.test(withoutComments(read(entry.file))),
+        entry.file
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    ['<a className="underline decoration-input underline-offset-4">', 1],
+    ['<a className="hover:underline">', 1],
+    ['<p className="[&_a]:underline">', 1],
+    ['<a className={cn("text-sm", "underline")}>', 1],
+    ["<a style={{ textDecoration: 'underline' }}>", 1],
+    ["cn({ underline: active })", 1],
+  ])("%s reprova num arquivo qualquer (controle plantado)", (text, count) => {
+    expect(
+      underlineFaults(["src/sales/sale-detail-page.tsx"], () => text)
+    ).toHaveLength(count);
+  });
+
+  it("a exceção vale para o caminho exato: o mesmo nome em outra pasta reprova (controle plantado)", () => {
+    const plant = '<a className="underline">';
+    expect(underlineFaults(["src/ui/text-link.tsx"], () => plant)).toEqual([]);
+    expect(underlineFaults(["src/x/text-link.tsx"], () => plant)).toHaveLength(
+      1
+    );
+    expect(underlineFaults(["src/ui/alert.tsx.bak"], () => plant)).toHaveLength(
+      1
+    );
+  });
+
+  it.each([
+    '<a className="no-underline">',
+    '<a className="focus-ring rounded-sm no-underline!">',
+    "// underline na documentação",
+    "/* hover:underline */",
+    'const name = "underlined";',
+    "const underlineOffset = 4;",
+  ])("%s passa (controle plantado)", (text) => {
+    expect(
+      underlineFaults(["src/sales/sale-detail-page.tsx"], () => text)
+    ).toEqual([]);
+  });
+});
+
+/**
+ * Aba de tela (DESIGN.md "Abas"): a lista e a aba vêm do `ScreenTabList` e do `ScreenTabTrigger` (ou do `ScreenTabs`),
+ * então altura, fonte, estado ativo e teclado são os mesmos em toda tela. `TabsList` e `TabsTrigger` só se importam em
+ * `ui/` (o `SectionTabs` está em `ui/section-tabs.tsx`); o filtro de estado de uma lista é o `SegmentedFilter`. A lista abaixo é exata
+ * e só encolhe, cada arquivo com a razão.
+ */
+const TABS_HOME = "src/ui/section-tabs.tsx";
+const TABS_FOLDER = "src/ui/";
+export const TABS_ELSEWHERE: readonly { file: string; why: string }[] = [
+  {
+    file: "src/ui-gallery/ui-gallery.tsx",
+    why: "a galeria mostra o primitivo Tabs como ele é, ao lado do SectionTabs",
+  },
+];
+
+const TABS_STATEMENT =
+  /\b(?:import|export)\s+([^;'"`]*?)\s*from\s*(["'`])([^"'`]+)\2/g;
+const TABS_DYNAMIC = /\bimport\s*\(\s*(["'`])([^"'`]+)\1/g;
+const TABS_UI_MODULE =
+  /^(?:@\/ui|(?:\.{1,2}\/)+(?:[\w-]+\/)*ui)\/tabs(?:\.tsx?)?$|^\.\/tabs(?:\.tsx?)?$/;
+const TABS_BASE_MODULE = /^@base-ui\/react\/tabs(?:\/|$)/;
+const TABS_BASE_BARREL = "@base-ui/react";
+const TABS_NAME = /\bTabs\b/;
+const TABS_PART = /\bTabs(?:List|Trigger)\b|\*/;
+const TABS_BASE_JSX = /<Tabs\.(?:List|Tab)\b/;
+const TABS_ROLE = /(?<!\[)\brole=(?:"tab"|'tab'|\{["'`]tab["'`]\})/;
+const TABS_SCOPE = sourcesUnder("src").filter(
+  (path) => !path.startsWith(UNDERLINE_EMAILS)
+);
+
+export function rawTabsFaults(
+  files: readonly string[],
+  source: (path: string) => string
+): string[] {
+  const allowed = new Set([
+    TABS_HOME,
+    ...TABS_ELSEWHERE.map((entry) => entry.file),
+  ]);
+  return files
+    .filter((path) => {
+      if (allowed.has(path) || path.startsWith(TABS_FOLDER)) {
+        return false;
+      }
+      const code = withoutComments(source(path));
+      const statements = [...code.matchAll(TABS_STATEMENT)].map(
+        ([, clause = "", , specifier = ""]) => ({ clause, specifier })
+      );
+      const dynamic = [...code.matchAll(TABS_DYNAMIC)].map(
+        ([, , specifier = ""]) => ({ clause: "*", specifier })
+      );
+      return (
+        TABS_BASE_JSX.test(code) ||
+        TABS_ROLE.test(code) ||
+        [...statements, ...dynamic].some(
+          ({ clause, specifier }) =>
+            TABS_BASE_MODULE.test(specifier) ||
+            (specifier === TABS_BASE_BARREL && TABS_NAME.test(clause)) ||
+            (TABS_UI_MODULE.test(specifier) && TABS_PART.test(clause))
+        )
+      );
+    })
+    .map(
+      (path) =>
+        `${path}: TabsList/TabsTrigger fora de ui/: use SectionTabs (ou ScreenTabList + ScreenTabTrigger) para aba de tela e SegmentedFilter para filtro de lista`
+    );
+}
+
+describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
+  it("a árvore de src foi lida", () => {
+    expect(TABS_SCOPE.length).toBeGreaterThan(500);
+    expect(TABS_SCOPE).toContain(TABS_HOME);
+    expect(TABS_SCOPE).toContain("src/expenses/expenses-page.tsx");
+    expect(TABS_SCOPE).toContain("src/ui/segmented-filter.tsx");
+  });
+
+  it("nenhuma tela importa TabsList ou TabsTrigger fora do ScreenTabs, de ui/ e da lista", () => {
+    expect(rawTabsFaults(TABS_SCOPE, read)).toEqual([]);
+  });
+
+  it("a lista é exata e ordenada: cada arquivo dela ainda importa o primitivo e a razão está escrita", () => {
+    expect(TABS_ELSEWHERE.map((entry) => entry.file)).toEqual(
+      TABS_ELSEWHERE.map((entry) => entry.file).sort()
+    );
+    for (const entry of TABS_ELSEWHERE) {
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(
+        rawTabsFaults([`${entry.file}.x`], () => read(entry.file)),
+        entry.file
+      ).toHaveLength(1);
+    }
+  });
+
+  it("o ScreenTabs e o SegmentedFilter usam o primitivo, e as telas trocadas usam o SectionTabs ou o SegmentedFilter", () => {
+    expect(read(TABS_HOME)).toMatch(TABS_PART);
+    expect(read("src/ui/segmented-filter.tsx")).toMatch(TABS_PART);
+    for (const path of [
+      "src/dashboard/dashboard-page.tsx",
+      "src/expenses/expenses-page.tsx",
+      "src/catalog/product-dialog.tsx",
+    ]) {
+      expect(read(path), path).toContain("SectionTabs");
+    }
+    expect(
+      read("src/catalog/product-import/import-preview-step.tsx")
+    ).toContain("SegmentedFilter");
+    expect(read("src/expenses/expense-filters.tsx")).toContain(
+      "SegmentedFilter"
+    );
+  });
+
+  it.each([
+    'import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";',
+    'import { TabsTrigger } from "@/ui/tabs";',
+    'import { TabsList as List } from "@/ui/tabs";',
+    'import {\n  Tabs,\n  TabsTrigger,\n} from "@/ui/tabs";',
+    'import { TabsTrigger } from "../ui/tabs";',
+    'import { TabsTrigger } from "../../ui/tabs";',
+    'import * as T from "@/ui/tabs";',
+    'import { Tabs } from "@base-ui/react/tabs";',
+    'import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";',
+    'export { TabsList } from "@/ui/tabs";',
+    'const tabs = await import("@/ui/tabs");',
+    "const tabs = await import(`@/ui/tabs`);",
+    'import { TabsTrigger } from "@/ui/tabs.tsx";',
+    'export * from "@/ui/tabs";',
+    'import { Tabs } from "@base-ui/react";\nconst x = <Tabs.List />;',
+    'import { Tabs } from "@base-ui/react";',
+    'import { List } from "@base-ui/react/tabs/list";',
+    'const x = <Tabs.Tab value="a" />;',
+    'const x = <button role="tab" />;',
+    "const x = <button role={'tab'} />;",
+  ])("%s reprova numa tela (controle plantado)", (text) => {
+    expect(
+      rawTabsFaults(["src/expenses/expenses-page.tsx"], () => text)
+    ).toHaveLength(1);
+  });
+
+  it("a exceção vale para o caminho exato: o mesmo nome em outra pasta reprova (controle plantado)", () => {
+    const plant = 'import { TabsTrigger } from "@/ui/tabs";';
+    expect(rawTabsFaults([TABS_HOME], () => plant)).toEqual([]);
+    expect(rawTabsFaults(["src/ui/segmented-filter.tsx"], () => plant)).toEqual(
+      []
+    );
+    for (const path of [
+      "src/x/screen-tabs.tsx",
+      "src/ui-gallery/other.tsx",
+      "src/ui-other/tabs.tsx",
+      "src/app-shell/screen-tabs.tsx.bak",
+    ]) {
+      expect(
+        rawTabsFaults([path], () => plant),
+        path
+      ).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    'import { Tabs, TabsContent } from "@/ui/tabs";',
+    'import { ScreenTabList, ScreenTabTrigger } from "../app-shell/screen-tabs";',
+    'import { SegmentedFilter } from "@/ui/segmented-filter";',
+    "// import { TabsTrigger } from '@/ui/tabs';",
+    "/* TabsList from @/ui/tabs */",
+    'import { TabsTrigger } from "./tabs-trigger";',
+    'const name = "TabsTrigger";',
+    'const x = document.querySelector(\'[role="tab"][aria-selected="true"]\');',
+    'import { Button } from "@base-ui/react/button";',
+    '// <Tabs.List /> e role="tab" na documentação',
+  ])("%s passa (controle plantado)", (text) => {
+    expect(
+      rawTabsFaults(["src/expenses/expenses-page.tsx"], () => text)
+    ).toEqual([]);
   });
 });

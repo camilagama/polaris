@@ -1,12 +1,10 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import type { ReactNode } from "react";
-import { Card, CardContent, CardDescription, CardTitle } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
+import { TextLink } from "@/ui/text-link";
 import { HELP_LABEL } from "../app-shell/navigation-model";
 import { ScreenTitle } from "../app-shell/screen-title";
 import { DPO_EMAIL, mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
-
-const LINK =
-  "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
 export const HELP_INTRO =
   "O Polaris não tem chat nem telefone. Escreva um e-mail e diga o nome da loja e o que aconteceu.";
@@ -20,13 +18,13 @@ export const BEFORE_WRITING = [
 
 function AddressLink({ address, label }: { address: string; label: string }) {
   return (
-    <a
+    <TextLink
       aria-label={`${label}: ${address}`}
-      className={`${LINK} w-fit select-text break-words font-medium text-base`}
+      className="w-fit max-w-full select-text font-medium text-base [overflow-wrap:anywhere]"
       href={mailtoHref(address)}
     >
       {address}
-    </a>
+    </TextLink>
   );
 }
 
@@ -44,15 +42,13 @@ function ContactCard({
   title: string;
 }) {
   return (
-    <Card aria-labelledby={id} role="region">
-      <CardContent className="grid gap-2">
-        <CardTitle aria-level={2} id={id} role="heading">
-          {title}
-        </CardTitle>
-        <CardDescription className="text-sm">{children}</CardDescription>
+    <Block aria-labelledby={id}>
+      <BlockHeader id={id} title={title} />
+      <BlockPanel className="gap-2">
+        <p className="m-0 text-muted-foreground text-sm">{children}</p>
         <AddressLink address={address} label={label} />
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
 
@@ -91,29 +87,27 @@ export function HelpPage() {
           <li>{BEFORE_WRITING[0]}</li>
           <li>
             {BEFORE_WRITING[1]}{" "}
-            <a className={LINK} href="/configuracoes#versao-do-app">
+            <TextLink href="/configuracoes#versao-do-app">
               Ver a versão
-            </a>
+            </TextLink>
           </li>
         </ul>
       </section>
       <p className="m-0 flex flex-wrap gap-x-5 gap-y-2 text-muted-foreground text-sm">
-        <a
-          className={LINK}
+        <TextLink
           href={LEGAL_PATHS.terms}
           rel="noopener noreferrer"
           target="_blank"
         >
           Termos de Uso
-        </a>
-        <a
-          className={LINK}
+        </TextLink>
+        <TextLink
           href={LEGAL_PATHS.privacy}
           rel="noopener noreferrer"
           target="_blank"
         >
           Política de Privacidade
-        </a>
+        </TextLink>
       </p>
     </div>
   );

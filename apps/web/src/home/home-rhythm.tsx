@@ -4,11 +4,13 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/ui/skeleton";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import {
   type HeatmapDay,
@@ -16,7 +18,6 @@ import {
   OnDemandHeatmap,
   useHeatmapFailed,
 } from "@/ui/charts/on-demand";
-import { MoneyText } from "@/ui/hidden-values";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
   MASKED_SPOKEN,
@@ -35,7 +36,7 @@ import {
   type RhythmDay,
   type RhythmView,
   rhythmDays,
-  rhythmInsight,
+  rhythmInsightText,
   rhythmRangesText,
   rhythmReading,
   rhythmReadingText,
@@ -45,27 +46,46 @@ import {
 import type { Block, HomeFigures } from "./use-home";
 
 /**
- * "Ritmo de vendas" (revisão de UI v7, § 3 item 10; compact): the map of the store's days and
- * nothing else, as many weeks as fit up to 26 (13 at least), Sunday on top, cells of 12 px. The value of a day is in a
+ * "Ritmo de vendas" (revisão de UI v7, § 3 item 10; compact): the map of the store's days and nothing else, as many
+ * weeks as fit up to 26 (13 at least), Sunday on top, cells of 12 px. The legend in one line ("Menos" to "Mais") is in
+ * the line of the title, and drops whole under it when the two do not fit side by side. The value of a day is in a
  * tooltip over its square, opened by the pointer, by the finger (the square nearest to it, following it as it drags)
- * and by the keyboard; under the map one fixed sentence (the best weekday and its mean, or that the map is still
- * filling up) and the legend in one line ("Menos" to "Mais"; the ranges in reais are in the (i) of the block and in the
- * `title` of the legend; the legend goes when the drawing does not open). The drawing (Bklit UI, its own chunk) is `aria-hidden`: the summary (`role="img"`), the
- * keyboard control (a transparent `input type="range"` over the map, as the charts have) and the table of the days are
- * ours. The table is invisible on the screen and tied to the map by `aria-details` (a description would read its 182
- * rows in one go); if the drawing does not open it is shown in its place. With the values hidden every amount is
- * "R$ ••••", in the tooltip too; the counts and the shape stay.
+ * and by the keyboard; the ranges in reais are in the (i) of the block and in the `title` of the legend (the legend goes
+ * when the drawing does not open). The drawing (Bklit UI, its own chunk) is `aria-hidden`: the summary (`role="img"`),
+ * which says the weeks, the best day and the best weekday, the keyboard control (a transparent `input type="range"`
+ * over the map, as the charts have) and the table of the days are ours. The table is invisible on the screen and tied to
+ * the map by `aria-details` (a description would read its 182 rows in one go); if the drawing does not open it is shown
+ * in its place. With the values hidden every amount is "R$ ••••", in the tooltip too; the counts and the shape stay.
  */
 
 /** The width of the initials of the weekdays and the contours around the map, in pixels (`MARGIN` of the drawing). */
 const MAP_SIDES = 22;
 const MAP_TOP = 18;
 
-/** The cell and its gap: 12 + 3 on every width, and as many weeks as fit (a phone shows about 15 to 20). */
+/** The cell and its gap: 12 + 3 with the blocks one under the other, and as many weeks as fit (a phone shows about 15 to 20). */
 const CELL = 12;
 const GAP = 3;
+/** Beside the goal the cell grows with the card, by whole pixels up to this, and the gap with it (a quarter of the cell, rounded). */
+const CELL_MAX = 20;
+/** The width of the content area from which the two lower blocks stand side by side (`@min-[60rem]/home` of `LowerBlocks`). */
+const PAIR_REM = 60;
 
-function mapLayout(width: number) {
+const gapOf = (cell: number) => Math.round(cell / 4);
+
+/**
+ * The cell, the gap and the weeks for a box of `width` pixels. In the pair of the goal and the map the 26 weeks stay and
+ * the cell is the largest whole size from 12 to 20 px that lets them fit the box; otherwise it is 12 + 3 and as many
+ * weeks as fit.
+ */
+export function mapLayout(width: number, pair = false) {
+  if (pair && width > 0) {
+    for (let cell = CELL_MAX; cell > CELL; cell -= 1) {
+      const gap = gapOf(cell);
+      if (RHYTHM_WEEKS * (cell + gap) + MAP_SIDES <= width) {
+        return { cell, gap, weeks: RHYTHM_WEEKS };
+      }
+    }
+  }
   const fit =
     width > 0 ? Math.floor((width - MAP_SIDES) / (CELL + GAP)) : RHYTHM_WEEKS;
   return {
@@ -75,31 +95,59 @@ function mapLayout(width: number) {
   };
 }
 
+type MapLayout = ReturnType<typeof mapLayout>;
+
 /** The width the map takes: its weeks of cells plus the sides. */
-function mapWidth(layout: ReturnType<typeof mapLayout>) {
+function mapWidth(layout: MapLayout) {
   return layout.weeks * (layout.cell + layout.gap) + MAP_SIDES;
 }
 
-/** The width of the box the map is drawn in, followed as the window changes. */
-function useWidth() {
+/** The height the map takes: the months above it and its seven rows. */
+export function mapHeight(layout: Pick<MapLayout, "cell" | "gap">) {
+  return MAP_TOP + 7 * (layout.cell + layout.gap);
+}
+
+/**
+ * The width of the box the map is drawn in and whether the block stands beside the goal, both followed as the window
+ * and the side menu change them. The pair is the container of the lower blocks with 60 rem or more and a row of two.
+ */
+function useMapBox() {
   const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
+  const [box, setBox] = useState({ pair: false, width: 0 });
+  // before the first paint, so the map is never drawn once at 12 + 3 and then jumps to the cell the card allows
+  useLayoutEffect(() => {
     const element = ref.current;
     if (!element) {
       return;
     }
-    setWidth(element.getBoundingClientRect().width);
+    const row = element.closest("[data-pair]");
+    const lower = element.closest("[data-home-lower]");
+    const measure = () => {
+      const rem =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement).fontSize
+        ) || 16;
+      const pair =
+        row !== null &&
+        lower !== null &&
+        lower.getBoundingClientRect().width >= PAIR_REM * rem;
+      const { width } = element.getBoundingClientRect();
+      setBox((now) =>
+        now.pair === pair && now.width === width ? now : { pair, width }
+      );
+    };
+    measure();
     if (typeof ResizeObserver === "undefined") {
       return;
     }
-    const observer = new ResizeObserver(([entry]) =>
-      setWidth(entry?.contentRect.width ?? 0)
-    );
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
+    if (lower) {
+      observer.observe(lower);
+    }
     return () => observer.disconnect();
   }, []);
-  return { ref, width };
+  return { ...box, ref };
 }
 
 /* transparent, with no track and no thumb (the map shows the day read) and deaf to the pointer (the map under it reads
@@ -152,34 +200,16 @@ function Legend({ view }: { view: RhythmView }) {
   );
 }
 
-/** The fixed sentence under the map: the best weekday and its mean, or that the map is still filling up. */
-function Insight({ view }: { view: RhythmView }) {
-  const insight = rhythmInsight(view);
-  return (
-    <p
-      className="min-w-0 @min-[41rem]/rhythm:flex-none flex-1 @min-[41rem]/rhythm:basis-auto basis-60 text-support"
-      data-rhythm-insight=""
-    >
-      {insight.kind === "few" ? (
-        <>
-          {insight.text}{" "}
-          <span className="text-muted-foreground">{insight.detail}</span>
-        </>
-      ) : (
-        <MoneyText text={insight.text} />
-      )}
-    </p>
-  );
-}
-
 const NUMBERS_COLUMNS = [
   { header: "Dia" },
   { header: "Vendas líquidas", numeric: true },
   { header: "Vendas", numeric: true },
 ] as const;
 
-/** The caption of the table: what it is, and the note that the months before this one are read once a day. */
-const NUMBERS_CAPTION = `Vendas por dia, do mais novo ao mais antigo. ${PAST_UNTIL_YESTERDAY}`;
+/** The caption of the table: what it is and the weeks it covers, the best weekday, and the note that the months before this one are read once a day. */
+function numbersCaption(view: RhythmView) {
+  return `Vendas por dia nas últimas ${view.weeks} semanas, do mais novo ao mais antigo. ${rhythmInsightText(view)} ${PAST_UNTIL_YESTERDAY}`;
+}
 
 /** The days read, newest first, as the table the map is tied to (shown only when the drawing does not open). */
 function RhythmNumbers({
@@ -191,6 +221,7 @@ function RhythmNumbers({
   view: RhythmView;
   visible: boolean;
 }) {
+  const [hidden] = useHiddenValues();
   const rows = useMemo(
     () =>
       view.cells
@@ -208,9 +239,10 @@ function RhythmNumbers({
         })),
     [view]
   );
+  const caption = numbersCaption(view);
   return (
     <ChartDataTable
-      caption={NUMBERS_CAPTION}
+      caption={hidden ? maskMoney(caption) : caption}
       columns={NUMBERS_COLUMNS}
       id={id}
       rows={rows}
@@ -222,8 +254,8 @@ function RhythmNumbers({
 /** The map, its tooltip, its keyboard, its legend and its numbers, for the days read. */
 function RhythmMap({ days }: { days: RhythmDay[] }) {
   const phone = useIsMobile();
-  const { ref, width } = useWidth();
-  const { cell, gap, weeks } = mapLayout(width);
+  const { pair, ref, width } = useMapBox();
+  const { cell, gap, weeks } = mapLayout(width, pair);
   const view = useMemo(() => rhythmView(days, weeks), [days, weeks]);
   const [hidden] = useHiddenValues();
   const [hovered, setHovered] = useState<number | null>(null);
@@ -309,7 +341,7 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
   const onBlur = useCallback(() => setKeyed(null), []);
   const onFocus = useCallback(() => setKeyed((day) => day ?? rest), [rest]);
   const summary = rhythmSummary(view);
-  const height = MAP_TOP + 7 * (cell + gap);
+  const height = mapHeight({ cell, gap });
   const focus = hovered ?? keyed;
   const tip = useMemo<HeatmapTip | null>(() => {
     const focused = focus === null ? null : rhythmReading(view, focus);
@@ -328,24 +360,19 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
       : null;
   }, [focus, hidden, view]);
   const rangesText = rhythmRangesText(view);
-  const help = `${RHYTHM_HELP} ${hidden ? maskMoney(rangesText) : rangesText}`;
+  const help = `${rhythmHelp(weeks)} ${hidden ? maskMoney(rangesText) : rangesText}`;
   const mapPx = mapWidth({ cell, gap, weeks });
   const numbersId = useId();
   const drawingFailed = useHeatmapFailed();
   return (
     <HomeBlock
-      action={
-        <p className="text-muted-foreground text-support">
-          {`Últimas ${weeks} semanas`}
-        </p>
-      }
-      className="@container/rhythm"
+      action={drawingFailed ? null : <Legend view={view} />}
       help={{ about: "Ritmo de vendas", text: help }}
       id="home-rhythm"
       title="Ritmo de vendas"
     >
-      <div className="flex @min-[41rem]/rhythm:grid flex-1 @min-[41rem]/rhythm:grid-cols-[25.75rem_minmax(0,1fr)] flex-col gap-2 @min-[41rem]/rhythm:gap-x-6">
-        <div className="@min-[41rem]/rhythm:my-0 my-auto min-w-0" ref={ref}>
+      <div className="flex flex-1 flex-col gap-2">
+        <div className="my-auto min-w-0" ref={ref}>
           <div
             className="relative max-w-full"
             ref={mapBox}
@@ -357,7 +384,6 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
               role="img"
             >
               <OnDemandHeatmap
-                best={view.best}
                 cell={cell}
                 days={heatmapDays}
                 failed={<ChartFailed />}
@@ -388,24 +414,48 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
             />
           </div>
         </div>
-        {/* the sentence takes two or three lines by width: the row keeps the room of the longest, so the card never changes height */}
-        <div className="flex @min-[41rem]/rhythm:min-h-0 min-h-20 @min-[41rem]/rhythm:flex-col flex-wrap @min-[41rem]/rhythm:flex-nowrap items-start justify-between gap-x-6 gap-y-2 md:min-h-13.5">
-          <Insight view={view} />
-          {drawingFailed ? null : <Legend view={view} />}
-        </div>
         <RhythmNumbers id={numbersId} view={view} visible={drawingFailed} />
       </div>
     </HomeBlock>
   );
 }
 
-/** What the (i) of the block says: how to read a square (the line under the title says only the weeks). */
-const RHYTHM_HELP = "Cada quadrado é um dia: quanto mais escuro, mais venda.";
+/** What the (i) of the block says: what the map is for, and how to read a square and how far back it goes. */
+const rhythmHelp = (weeks: number) =>
+  `Em que dias da semana você vende mais. Cada quadrado é um dia das últimas ${weeks} semanas: quanto mais escuro, mais venda.`;
 
 /** Where the series of the map comes from: the server's read, or without a connection the copy (null without one). */
 export type RhythmSource =
   | Block<DailySeries>
   | { data: DailySeries | null; status: "copy" };
+
+/**
+ * The block while the series is read, as tall as the block with the map: at the default letter 199 px (203 px from 768
+ * px) with the map of 12 + 3, which is 123 px tall; beside the goal the map is as tall as its cell makes it, so the
+ * minimum height is the block's own (12.6875 rem) with the map's height in pixels in place of the 123. The bar sits in a
+ * box of the panel's width, the one the map is measured in, so the cell is the one the map will have.
+ */
+function RhythmSkeleton() {
+  const { pair, ref, width } = useMapBox();
+  const layout = mapLayout(width, pair);
+  return (
+    <BlockSkeleton
+      className="min-h-[12.4375rem] md:min-h-[12.6875rem]"
+      label="Carregando o ritmo de vendas…"
+      style={
+        pair
+          ? {
+              minHeight: `calc(12.6875rem - ${mapHeight(mapLayout(0))}px + ${mapHeight(layout)}px)`,
+            }
+          : undefined
+      }
+    >
+      <div className="min-w-0" ref={ref}>
+        <Skeleton aria-hidden="true" className="h-8 w-40" />
+      </div>
+    </BlockSkeleton>
+  );
+}
 
 /**
  * The block of the map, beside the figures it composes with: loading, the error with "Tentar novamente", "O mapa abre
@@ -447,12 +497,7 @@ export function RhythmBlock({
         <p className="text-muted-foreground">O mapa abre com internet.</p>
       </HomeBlock>
     ) : (
-      // the height of the block read, so the blocks under it stay
-      <BlockSkeleton
-        className="min-h-[16.6875rem] max-[21.25rem]:min-h-[18.0625rem] md:min-h-[15.8125rem]"
-        label="Carregando o ritmo de vendas…"
-        lines={0}
-      />
+      <RhythmSkeleton />
     );
   }
   return <RhythmMap days={days} />;

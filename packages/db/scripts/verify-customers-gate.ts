@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  CustomerNotFoundError,
   CustomerVersionConflictError,
   InvalidCustomerProfileError,
 } from "@polaris/domain/customers/customer";
@@ -11,6 +12,7 @@ import {
   CustomerIdConflictError,
   createCustomer,
   findPossibleCustomerDuplicates,
+  getCustomer,
   listCustomers,
   restoreCustomer,
   updateCustomer,
@@ -21,6 +23,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
+import { rollbackQuietly } from "./gate-roles";
 import { redactedFailure } from "./sales-gate-support";
 
 const gateDatabase =
@@ -112,6 +115,7 @@ async function withTenant<T>(
       authenticatedUserId: fixture.userId,
       capability: "customer:update",
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     operation
   );
@@ -137,7 +141,7 @@ async function withRuntimeSqlContext<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    await rollbackQuietly(client);
     throw error;
   } finally {
     await client.end();
@@ -454,6 +458,51 @@ async function run() {
       "a client-supplied customer ID is kept; a duplicate (same or other tenant) is a clean conflict that does not abort the transaction"
     );
 
+    const ownCustomerFromList = activeCustomers.find(
+      (customer) => customer.id === first.id
+    );
+    assert.ok(ownCustomerFromList);
+    const ownCustomer = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) => getCustomer(transaction, identity, first.id)
+    );
+    // `get` adds the summary to the row `list` gives; with no sale the last purchase is the same null in both
+    const { summary: ownSummary, ...ownCustomerFields } = ownCustomer;
+    assert.deepEqual(
+      { ...ownCustomerFields, lastPurchaseOn: ownSummary.lastPurchaseOn },
+      ownCustomerFromList
+    );
+    assert.deepEqual(ownSummary, {
+      lastPurchaseOn: null,
+      purchaseCount: 0,
+      totalSpent: "0",
+    });
+    const missingCustomerError = await withTenant(
+      runtime.db,
+      tenantB,
+      (transaction, identity) =>
+        getCustomer(transaction, identity, randomUUID()).then(
+          () => undefined,
+          (error: unknown) => error
+        )
+    );
+    assert.ok(missingCustomerError instanceof CustomerNotFoundError);
+    const foreignCustomerError = await withTenant(
+      runtime.db,
+      tenantB,
+      (transaction, identity) =>
+        getCustomer(transaction, identity, first.id).then(
+          () => undefined,
+          (error: unknown) => error
+        )
+    );
+    assert.ok(foreignCustomerError instanceof CustomerNotFoundError);
+    assert.equal(foreignCustomerError.message, missingCustomerError.message);
+    tests.push(
+      "getCustomer returns the own customer with the listing fields and answers another organization's customer ID with the same CustomerNotFoundError as a missing ID"
+    );
+
     const archivedDuplicate = await withTenant(
       runtime.db,
       tenantA,
@@ -726,7 +775,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     await admin.pool.end();

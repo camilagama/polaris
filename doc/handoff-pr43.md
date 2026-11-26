@@ -104,7 +104,7 @@ Implementar o comando de confirmação da venda completa. A transação deve val
 4. Cálculo pela biblioteca de domínio existente: preço de tabela e cobrado por item, `calculateSaleAdjustments`, pagamento igual ao total devido e preservação do custo desconhecido.
 5. Entrada explícita para perfil opcional e intenção de antecipação. Consultar regra exata por método/parcelas/modalidade; chamar `snapshotPaymentProfileForSale`; ausência de perfil/regra segue a venda com custo desconhecido.
 6. Persistir no pagamento os snapshots de perfil, versão, regra, prazo, componentes/valores das taxas e estado da antecipação. Mudança futura do perfil não muda venda confirmada.
-7. Exigir modalidade e parcelas válidas em cartão de crédito novo; não aceitar parcelas nos outros métodos; no máximo um pagamento igual ao total devido.
+7. Exigir modalidade e parcelas válidas em cartão de crédito novo; não aceitar parcelas nos outros métodos; um único pagamento igual ao total devido, como era a regra na época (hoje de uma a três partes que somam o total, [ADR 0107](../docs/adr/0107-venda-paga-em-partes.md)).
 8. Erro de estoque, versão, validação, pagamento, movimento ou auditoria não pode deixar venda/item/saldo/ledger parcialmente gravados.
 9. Registrar auditoria na mesma transação usando identidade já validada; não colocar PII, tokens ou payload livre em logs/auditoria.
 10. UI de venda deve tornar clara a seleção do perfil ou opção sem perfil, a marca de antecipação e estados de desconhecido; evitar gravar vários pedaços por mutations independentes.
@@ -154,7 +154,7 @@ Use fixtures sintéticas. Não clone dados de produção. O perfil autorizado n�
 - Email transacional escolheu Resend e templates minimalistas, mas domínio/credenciais permanecem configuração de outro gate; não é dependência da venda.
 - Atribuição de cliente, cancelamento e devolução ficam em PR44/PR45 e seguintes, conforme o plano.
 - Vários PRs anteriores permanecem drafts. O status exato de cada gate está em `doc/status-implementacao.md`; não assumir que estar na branch significa estar em `main`.
-- `docs/agents/issue-tracker.md` não existe neste checkout; revisão de PR42 usou o plano como spec. Se o fluxo de review exigir issue tracker, o responsável pode configurar `/setup-matt-pocock-skills`.
+- docs/agents/issue-tracker.md não existe neste checkout; revisão de PR42 usou o plano como spec. Se o fluxo de review exigir issue tracker, o responsável pode configurar `/setup-matt-pocock-skills`.
 - `rg` não está instalado neste ambiente; use `Select-String`, `Get-ChildItem` ou ferramentas equivalentes do PowerShell para buscar arquivos/texto.
 
 ## 8. Regras de colaboração e fechamento

@@ -13,7 +13,7 @@ import {
   timeOfDay,
 } from "./sale-form-model";
 import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
-import { chosenItemCount } from "./sale-draft-restore";
+import { chosenSaleCount } from "./sale-draft-restore";
 import { AddItemButton, ItemEditor, ItemsCount } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
 import { SummaryPanel } from "./sale-summary-panel";
@@ -22,7 +22,24 @@ import { pickerView, storeHasNothingToSell } from "./sale-variant-picker-model";
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 const noop = () => undefined;
-const EMPTY_COUNT_LINE = /data-slot="card-description">\u00a0<\/div>/;
+const NO_SPLIT = {
+  blocker: null,
+  evaluation: null,
+  handlers: {
+    onAcknowledgeSecondReview: noop,
+    onAction: noop,
+    onEnd: noop,
+    onFirstAmountChange: noop,
+    onSecondAmountChange: noop,
+    onSecondAnticipationChange: noop,
+    onSecondInstallmentPlanChange: noop,
+    onSecondInstallmentsChange: noop,
+    onSecondMethodChange: noop,
+    onSecondProfileChange: noop,
+    onStart: noop,
+  },
+};
+const COUNT_SLOT = 'data-slot="items-count"';
 const variantId = "22222222-2222-4222-8222-222222222222";
 const NOW = new Date(2026, 10, 3, 14, 5);
 const chosenItem: ItemDraft = {
@@ -97,7 +114,7 @@ describe("o item da venda, enxuto", () => {
     expect(html).toContain(">Camiseta · Preta</span>");
     expect(html).toContain(">Saldo 6</span>");
     expect(html).toContain(
-      'Custo médio: <span class="whitespace-nowrap">R$ 12,00</span>.'
+      'Custo médio: <span class="whitespace-nowrap font-mono tabular-nums">R$ 12,00</span>.'
     );
     expect(html).toContain(
       'Trocar<span class="sr-only"> variante de Camiseta · Preta</span>'
@@ -145,12 +162,12 @@ describe("o item da venda, enxuto", () => {
 });
 
 function renderItemsChrome(form: SaleFormState): string {
-  const chosen = chosenItemCount(form);
+  const chosen = chosenSaleCount(form);
   const total = form.items.length;
   return renderToStaticMarkup(
     <>
-      <ItemsCount chosen={chosen} />
-      <AddItemButton chosen={chosen} onAdd={noop} total={total} />
+      <ItemsCount count={chosen} />
+      <AddItemButton chosen={chosen.lines} onAdd={noop} total={total} />
     </>
   );
 }
@@ -164,25 +181,27 @@ describe("o contador e o Adicionar item da venda", () => {
     };
   };
 
-  it("venda vazia: sem 'N item(s)' e sem Adicionar item, e a linha do contador segue no DOM", () => {
+  it("venda vazia: sem 'N linhas · M unidades', sem Adicionar item e sem linha reservada do contador", () => {
     const html = renderItemsChrome(createBlankSaleForm(ids()));
-    expect(html).toMatch(EMPTY_COUNT_LINE);
+    expect(html).toBe("");
     expect(html).not.toContain("Adicionar");
     expect(html).not.toContain("<button");
   });
 
-  it("com o primeiro produto escolhido, aparecem 'Itens · 1 item' e Adicionar item", () => {
+  it("com o primeiro produto escolhido, aparecem '1 linha · 1 unidade' e Adicionar item", () => {
     const blank = createBlankSaleForm(ids());
     const form: SaleFormState = {
       ...blank,
       items: [{ ...chosenItem, draftId: "d1" }],
     };
     const html = renderItemsChrome(form);
-    expect(html).toContain(">1 item<");
+    expect(html).toContain(">1 linha · 1 unidade<");
+    expect(html).toContain(COUNT_SLOT);
+    expect(html).not.toContain("card-description");
     expect(html).toContain("Adicionar item");
   });
 
-  it("1 escolhida e 1 linha vazia: o contador diz '1 item'", () => {
+  it("1 escolhida e 1 linha vazia: o contador diz '1 linha · 1 unidade'", () => {
     const form: SaleFormState = {
       ...createBlankSaleForm(ids()),
       items: [
@@ -191,12 +210,12 @@ describe("o contador e o Adicionar item da venda", () => {
       ],
     };
     const html = renderItemsChrome(form);
-    expect(html).toContain(">1 item<");
-    expect(html).not.toContain(">2 itens<");
+    expect(html).toContain(">1 linha · 1 unidade<");
+    expect(html).not.toContain(">2 linhas · 2 unidades<");
     expect(html).toContain("Adicionar item");
   });
 
-  it("2 escolhidas e 1 linha vazia: o contador diz '2 itens' e o botão segue ligado", () => {
+  it("2 escolhidas e 1 linha vazia: o contador diz '2 linhas · 2 unidades' e o botão segue ligado", () => {
     const form: SaleFormState = {
       ...createBlankSaleForm(ids()),
       items: [
@@ -206,10 +225,39 @@ describe("o contador e o Adicionar item da venda", () => {
       ],
     };
     const html = renderItemsChrome(form);
-    expect(html).toContain(">2 itens<");
-    expect(html).not.toContain(">3 itens<");
+    expect(html).toContain(">2 linhas · 2 unidades<");
+    expect(html).not.toContain(">3 linhas · 3 unidades<");
     expect(html).toContain("Adicionar item");
     expect(html).not.toContain('disabled=""');
+  });
+
+  it("conta as unidades, não só as linhas: 2 linhas de 3 e 2 unidades dizem '2 linhas · 5 unidades', e o leitor ouve o mesmo", () => {
+    const form: SaleFormState = {
+      ...createBlankSaleForm(ids()),
+      items: [
+        { ...chosenItem, draftId: "d1", quantity: "3" },
+        { ...chosenItem, draftId: "d2", quantity: "2" },
+        { ...blankItem, draftId: "d3", quantity: "9" },
+      ],
+    };
+    const html = renderItemsChrome(form);
+    expect(html).toContain(
+      '<span aria-hidden="true">2 linhas · 5 unidades</span>'
+    );
+    expect(html).toContain('<span class="sr-only">2 linhas, 5 unidades</span>');
+    expect(html).not.toContain(" itens<");
+  });
+
+  it("uma quantidade vazia ou inválida soma zero unidades, sem derrubar a conta", () => {
+    const form: SaleFormState = {
+      ...createBlankSaleForm(ids()),
+      items: [
+        { ...chosenItem, draftId: "d1", quantity: "4" },
+        { ...chosenItem, draftId: "d2", quantity: "" },
+        { ...chosenItem, draftId: "d3", quantity: "abc" },
+      ],
+    };
+    expect(chosenSaleCount(form)).toEqual({ lines: 3, units: 4 });
   });
 
   it("só linhas vazias: o contador fica sem texto e não é região viva", () => {
@@ -221,7 +269,7 @@ describe("o contador e o Adicionar item da venda", () => {
       ],
     };
     const html = renderItemsChrome(form);
-    expect(html).toMatch(EMPTY_COUNT_LINE);
+    expect(html).not.toContain(COUNT_SLOT);
     expect(html).not.toContain("aria-live");
     expect(html).not.toContain('role="status"');
   });
@@ -332,6 +380,7 @@ describe("Data e ajustes numa linha fechada", () => {
           message: "Nenhum perfil de pagamento ativo.",
         }}
         singlePaymentText="Um pagamento só."
+        split={NO_SPLIT}
         timezone="America/Sao_Paulo"
       />
     );

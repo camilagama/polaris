@@ -6,22 +6,23 @@ import { fileURLToPath } from "node:url";
  * The plan asks for "zero dependency circular" between packages and modules.
  * Knip does not detect cycles, so this script builds the runtime import graph
  * (type-only imports are erased and ignored) of every workspace source folder
- * and fails when a strongly connected component has more than one file.
+ * (`.ts`, `.tsx` and the `.mjs`/`.js` modules a `.ts` file imports by its
+ * extension, as `apps/web/scripts` does) and fails when a strongly connected component has more than one file.
  * Workspace package specifiers (`@polaris/<name>/<subpath>`) are resolved
  * through each package's `exports` map.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const sourceExtensions = [".ts", ".tsx"];
+const sourceExtensions = [".ts", ".tsx", ".mjs", ".js"];
 const ignoredFolders = new Set([
   "node_modules",
   "dist",
   ".wrangler",
   "drizzle",
-  "scripts",
   "e2e",
 ]);
 const workspaceSpecifier = /^(@polaris\/[^/]+)(?:\/(.+))?$/;
-const sourceSuffix = /\.tsx?$/;
+const sourceSuffix = /\.(?:tsx?|mjs|js)$/;
+const testSuffix = /\.test\.(?:tsx?|mjs|js)$/;
 const importPattern =
   /(?:^|\n)\s*(?:import|export)\s+(type\s+)?(?:[^"'`;]*?\sfrom\s+)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -35,8 +36,7 @@ function walk(directory, found) {
       walk(full, found);
     } else if (
       sourceExtensions.includes(path.extname(full)) &&
-      !full.endsWith(".test.ts") &&
-      !full.endsWith(".test.tsx") &&
+      !testSuffix.test(full) &&
       !full.endsWith(".d.ts") &&
       // generated files omit semicolons, which the import scan below needs to tell statements apart
       !full.endsWith(".gen.ts")
@@ -75,7 +75,7 @@ for (const folder of workspaceRoots) {
 
 const files = [];
 for (const folder of workspaceRoots) {
-  for (const sub of ["src", "worker", "poc"]) {
+  for (const sub of ["src", "worker", "poc", "scripts"]) {
     const candidate = path.join(folder, sub);
     try {
       if (statSync(candidate).isDirectory()) {

@@ -29,10 +29,14 @@ const LAB_KEY = {
   secret: "lab-secret-lab-secret-lab-secret-0123456789",
 };
 const HOUR = 3_600_000;
-// the lookup gives up after 4 s (runtime-api.ts): an answer that takes 30 s only
+// the lookup gives up after 4 s (session-lookup.ts): an answer that takes 30 s only
 // lets the app open within the chip's timeout if the app really stops waiting
 const SLOW_ANSWER_MS = 30_000;
 const DEVICE_KEY = "polaris.offline.device";
+const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
+/** The token get-session carries next to the session id: never kept on the device. */
+const SESSION_TOKEN = "token-da-sessao-nunca-guardado";
+const SETTLE_PAST_SESSION_MEMORY_MS = 15_000;
 const SESSION_USER_KEY = "polaris.offline.session-user";
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const uuid = (n: number) =>
@@ -55,6 +59,31 @@ const KILLED_FOR_CPU = {
   status: 503,
 };
 
+const FREE_PLAN = {
+  accessEndsAt: null,
+  cycleMonths: null,
+  kept: { historyMonths: 3, products: 18, sales: 47 },
+  limits: { goals: 1, images: 50, variants: 50 },
+  method: null,
+  nextCharge: null,
+  offer: {
+    methods: ["card", "pix_automatic"],
+    prices: [
+      { amount: "249.00", cycleMonths: 12 },
+      { amount: "24.90", cycleMonths: 1 },
+    ],
+  },
+  recovery: null,
+  refund: null,
+  refundPending: false,
+  refundWindowEndedOn: null,
+  renewalCancelled: false,
+  resubscribeFrom: null,
+  state: "free",
+  trialAvailable: true,
+  usage: { goals: 1, images: 12, variants: 38 },
+};
+
 interface PushedCommand {
   commandId: string;
 }
@@ -63,6 +92,8 @@ interface PushedCommand {
 class RpcServer {
   /** Who the session cookie belongs to; null is a session that ended. */
   sessionUser: string | null;
+  /** The id of the session row get-session names; a new one is a new sign-in on this browser. */
+  sessionId = "s";
   sessionAnswer: SessionAnswer = "ok";
   deviceCheckAnswer: DeviceCheckAnswer = "ok";
   pushAnswer: PushAnswer = "accept";
@@ -74,6 +105,8 @@ class RpcServer {
   registered = 0;
   checked = 0;
   sessionLookups = 0;
+  /** The store has the Assinatura on: the owner sees its tab and `billing.readPlan` answers a Free plan. */
+  billingSelfService = false;
   readonly pushed: PushedCommand[][] = [];
   /** Every call is dropped as if the connection were gone (the browser still says it is online). */
   connection: "down" | "up" = "up";
@@ -151,7 +184,10 @@ class RpcServer {
       return;
     }
     await route.fulfill({
-      body: JSON.stringify({ session: { id: "s" }, user: { id: user } }),
+      body: JSON.stringify({
+        session: { id: this.sessionId, token: SESSION_TOKEN },
+        user: { id: user },
+      }),
       contentType: "application/json",
       headers: { ...WORKER_MARK },
     });
@@ -173,7 +209,13 @@ class RpcServer {
     }
     switch (procedure) {
       case "organization/listMine":
-        await RpcServer.ok(route, { organizations: [ORGANIZATION] });
+        await RpcServer.ok(route, {
+          billingSelfService: this.billingSelfService,
+          organizations: [ORGANIZATION],
+        });
+        return;
+      case "billing/readPlan":
+        await RpcServer.ok(route, FREE_PLAN);
         return;
       case "device/register": {
         this.registered += 1;
@@ -523,6 +565,49 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
       .toBeNull();
   });
 
+  test("2 na abertura: rodapé pela memória, runtime fresco; a Assinatura logo depois não lê de novo (AC-2.1)", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    server.billingSelfService = true;
+    await page.clock.install();
+    let inFlight = 0;
+    page.on("request", () => {
+      inFlight += 1;
+    });
+    page.on("requestfinished", () => {
+      inFlight -= 1;
+    });
+    page.on("requestfailed", () => {
+      inFlight -= 1;
+    });
+    await server.install(page);
+    await page.goto("/sales");
+    // the second read is the runtime's, fresh: its answer is the memory the Assinatura finds, so go there at once
+    await expect.poll(() => server.sessionLookups).toBe(2);
+    await page.evaluate(() => {
+      window.history.pushState(null, "", "/configuracoes?aba=assinatura");
+      window.dispatchEvent(new Event("polaris:address"));
+    });
+    await expect(
+      page.getByRole("heading", { exact: true, level: 2, name: "Assinatura" })
+    ).toBeVisible();
+    await expect(page.locator("#subscription-plan-title")).toHaveText(
+      "Plano Free"
+    );
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    // a late read would come after the memory of the lookup (10 s) ran out: take the page's clock past it, let
+    // the network settle, and only then count
+    await page.clock.fastForward(SETTLE_PAST_SESSION_MEMORY_MS);
+    // the round trip delivers every request event the fast-forward caused before the count below
+    await page.evaluate(() => 0);
+    await expect.poll(() => inFlight).toBe(0);
+    expect(server.sessionLookups).toBe(2);
+  });
+
   test("get-session 429: o app segue com o usuário lembrado e o lease próprio, sem registrar outro aparelho", async ({
     page,
   }) => {
@@ -572,6 +657,44 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await expect(page.getByLabel("Produto ou variante")).toBeVisible();
   });
 
+  // ADR 0048: the session was linked to the device by the first start; a reload of the same
+  // session within 12 h does not ask again, and a new sign-in does.
+  test("device.check: a mesma sessão recarrega sem perguntar; um login novo pergunta de novo, e o token nunca fica no aparelho", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    await openSales(page, server);
+    const device = await stored(page, DEVICE_KEY);
+    const { checked } = server;
+    expect(
+      JSON.parse((await stored(page, DEVICE_CHECK_KEY)) ?? "null")
+    ).toMatchObject({ deviceId: device, sessionId: "s", userId: user });
+
+    const lookups = server.sessionLookups;
+    await page.reload();
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    expect(server.sessionLookups).toBeGreaterThan(lookups);
+    expect(server.checked).toBe(checked);
+    expect(await stored(page, DEVICE_KEY)).toBe(device);
+
+    server.sessionId = "s-2";
+    await page.reload();
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    expect(server.checked).toBe(checked + 1);
+    expect(
+      JSON.parse((await stored(page, DEVICE_CHECK_KEY)) ?? "null")
+    ).toMatchObject({ deviceId: device, sessionId: "s-2", userId: user });
+    const everything = await page.evaluate(() =>
+      JSON.stringify({ ...window.localStorage })
+    );
+    expect(everything).not.toContain(SESSION_TOKEN);
+  });
+
   // ADR 0047 (emenda do 0044, L6): only an explicit refusal is "not mine". A
   // device the server does not know (404 NOT_FOUND) or one that belongs to
   // someone else (409 CONFLICT) is dropped with its lease, and the app registers
@@ -584,6 +707,8 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await openSales(page, server);
     const device = await stored(page, DEVICE_KEY);
 
+    // a refused device is only met by a new session: the one linked to it would have ended with the revocation
+    server.sessionId = "s-2";
     server.deviceCheckAnswer = "not-found";
     await page.reload();
     await expect(chip(page)).toContainText("Tudo sincronizado", {
@@ -613,6 +738,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await openSales(page, server);
     const device = await stored(page, DEVICE_KEY);
 
+    server.sessionId = "s-2"; // a new sign-in: the start asks whose the device is
     server.deviceCheckAnswer = "error";
     await page.reload();
     await expect(chip(page)).toContainText("Tudo sincronizado", {
@@ -623,7 +749,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     expect(await stored(page, DEVICE_KEY)).toBe(device);
   });
 
-  test("device.check 500 para quem não tem lease do aparelho: falha fechada, o aparelho de outro usuário não é emprestado", async ({
+  test("device.check 500 para quem não tem lease do aparelho: falha fechada, o aparelho de outro usuário não é emprestado e nada é registrado", async ({
     page,
   }) => {
     const first = `user-${crypto.randomUUID()}`;
@@ -635,6 +761,17 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     const second = `user-${crypto.randomUUID()}`;
     server.sessionUser = second;
     server.deviceCheckAnswer = "error";
+    await page.reload();
+    await expect(chip(page)).toContainText("Offline indisponível", {
+      timeout: 20_000,
+    });
+    expect(server.checked).toBeGreaterThan(0);
+    expect(server.registered).toBe(1);
+    expect(await stored(page, DEVICE_KEY)).toBe(device);
+    expect(server.devices.get(String(device))).toBe(first);
+
+    // the server back: it answers that the device is not this person's, and only then is a new one registered
+    server.deviceCheckAnswer = "ok";
     await page.reload();
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,

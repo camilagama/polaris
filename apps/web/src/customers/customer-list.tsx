@@ -1,9 +1,10 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
-import { useCallback, useState } from "react";
+import UsersIcon from "lucide-react/dist/esm/icons/users";
+import { type ReactNode, useCallback, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,10 +13,15 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { EmptyState } from "@/ui/empty-state";
+import { InsetBlock } from "@/ui/inset-block";
+import { ListBlock } from "@/ui/list-block";
+import { Skeleton } from "@/ui/skeleton";
+import { TextLink } from "@/ui/text-link";
 import { productInitials } from "../catalog/product-search-model";
 import {
-  ListNotice,
   OPENABLE_ROW_CLASS,
+  ROW_BODY_CLASS,
+  ROW_TEXT_CLASS,
   RowOpenButton,
 } from "../catalog/screen-parts";
 import type { PendingCustomer } from "../offline/customer-create";
@@ -28,6 +34,7 @@ import {
   lockedReasonFor,
   syncStateLabel,
 } from "./customers-model";
+import { lastPurchaseRowText } from "./last-purchase";
 
 interface RowActions {
   onAnonymize: (customer: CustomerReadModel) => void;
@@ -109,10 +116,12 @@ function AnonymizeConfirm({
   onConfirm,
 }: AnonymizeConfirmProps) {
   return (
-    <fieldset className="mb-2.5 grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-      <legend className="sr-only">
-        Confirmar a anonimização de {customer.name}
-      </legend>
+    <InsetBlock
+      aria-label={`Confirmar a anonimização de ${customer.name}`}
+      className="mb-2.5 grid gap-3 p-3"
+      role="group"
+      tone="destructive"
+    >
       <p className="text-support">
         Anonimizar remove o nome, o telefone, o email e as observações deste
         cliente. <strong>Não dá para desfazer.</strong> As vendas ligadas a ele
@@ -136,7 +145,7 @@ function AnonymizeConfirm({
           Anonimizar definitivamente
         </Button>
       </div>
-    </fieldset>
+    </InsetBlock>
   );
 }
 
@@ -197,6 +206,38 @@ interface ContactsLineProps {
   id: string;
 }
 
+interface RowTrailingProps {
+  badge: ReactNode;
+  /** The purchase text leaves the reading tree unless the row is only text (the customer was anonymized). */
+  hidden: boolean;
+  purchase: string | null;
+  purchaseId: string;
+}
+
+/** The state badge and the last purchase: under the contacts on a narrow window, at the right corner from 40 rem. */
+function RowTrailing({
+  badge,
+  hidden,
+  purchase,
+  purchaseId,
+}: RowTrailingProps) {
+  return (
+    <span className="flex min-w-0 flex-col items-start gap-1 min-[40rem]:items-end">
+      {badge}
+      {purchase ? (
+        <span
+          aria-hidden={hidden ? true : undefined}
+          className="text-muted-foreground text-support"
+          data-last-purchase=""
+          id={purchaseId}
+        >
+          {purchase}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function ContactsLine({ contacts, hidden, id }: ContactsLineProps) {
   return (
     <span
@@ -225,6 +266,8 @@ interface CustomerMainProps {
   lockedReasonId: string | undefined;
   onEdit: (customer: CustomerReadModel) => void;
   pendingLabelId: string | undefined;
+  /** The store's today: what "Última compra" counts from. */
+  today: string;
 }
 
 /**
@@ -238,11 +281,14 @@ function CustomerMain({
   lockedReasonId,
   onEdit,
   pendingLabelId,
+  today,
 }: CustomerMainProps) {
   const handleOpen = useCallback(() => onEdit(customer), [customer, onEdit]);
   const isAnonymized = customer.anonymizedAt !== null;
   const supportId = `customer-support-${customer.id}`;
   const stateId = `customer-state-${customer.id}`;
+  const purchaseId = `customer-purchase-${customer.id}`;
+  const purchaseText = lastPurchaseRowText(customer.lastPurchaseOn, today);
   // the active tab already says "Ativo": the badge is for the other states
   const hasStateBadge = customer.status !== "active" || isAnonymized;
   const hasContacts = Boolean(contacts.phone || contacts.email);
@@ -254,31 +300,40 @@ function CustomerMain({
       >
         {productInitials(customer.name)}
       </span>
-      <span className="grid min-w-0 flex-1 gap-0.5">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className={ROW_BODY_CLASS}>
+        <span className={ROW_TEXT_CLASS}>
           <span className="font-medium [overflow-wrap:anywhere]">
             {isAnonymized ? null : <span className="sr-only">Editar </span>}
             {customer.name}
           </span>
-          {hasStateBadge ? (
-            <Badge
-              aria-hidden={isAnonymized ? undefined : true}
-              id={stateId}
-              variant={
-                customer.status === "archived" && !isAnonymized
-                  ? "warning"
-                  : "outline"
-              }
-            >
-              {customerStatusLabel(customer)}
-            </Badge>
+          {hasContacts ? (
+            <ContactsLine
+              contacts={contacts}
+              hidden={!isAnonymized}
+              id={supportId}
+            />
           ) : null}
         </span>
-        {hasContacts ? (
-          <ContactsLine
-            contacts={contacts}
+        {hasStateBadge || purchaseText ? (
+          <RowTrailing
+            badge={
+              hasStateBadge ? (
+                <Badge
+                  aria-hidden={isAnonymized ? undefined : true}
+                  id={stateId}
+                  variant={
+                    customer.status === "archived" && !isAnonymized
+                      ? "warning"
+                      : "outline"
+                  }
+                >
+                  {customerStatusLabel(customer)}
+                </Badge>
+              ) : null
+            }
             hidden={!isAnonymized}
-            id={supportId}
+            purchase={purchaseText}
+            purchaseId={purchaseId}
           />
         ) : null}
       </span>
@@ -286,17 +341,21 @@ function CustomerMain({
   );
   if (isAnonymized) {
     return (
-      <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
-        {content}
-      </div>
+      <>
+        <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
+          {content}
+        </div>
+        <span aria-hidden="true" className="size-ctl-md shrink-0" />
+      </>
     );
   }
   return (
     <RowOpenButton
       describedBy={
         [
-          hasStateBadge ? stateId : undefined,
           hasContacts ? supportId : undefined,
+          hasStateBadge ? stateId : undefined,
+          purchaseText ? purchaseId : undefined,
           lockedReasonId,
           pendingLabelId,
         ]
@@ -349,12 +408,9 @@ function CustomerRowNotes({
             {syncStateLabel(shownState, !unconfirmedCreation)}
           </Badge>
           {shownState.state === "rejected" ? (
-            <a
-              className="focus-ring touch-hit w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-              href="/attention"
-            >
+            <TextLink className="w-fit text-support" href="/attention">
               Resolver em Pendências
-            </a>
+            </TextLink>
           ) : null}
         </div>
       ) : null}
@@ -391,6 +447,8 @@ interface CustomerRowProps extends RowActions {
   pendingAction: string | null;
   /** The customer was created on this device and the server has not confirmed it yet. */
   syncState: PendingCustomer | undefined;
+  /** The store's today, in its own time zone. */
+  today: string;
   /** An edit made on this device that the server has not confirmed yet. */
   updateState: PendingCustomerUpdate | undefined;
 }
@@ -405,6 +463,7 @@ function CustomerRow({
   onRestore,
   pendingAction,
   syncState,
+  today,
   updateState,
 }: CustomerRowProps) {
   const [confirming, setConfirming] = useState(false);
@@ -427,8 +486,8 @@ function CustomerRow({
   }, [customer, onAnonymize]);
 
   return (
-    <li
-      className={`grid px-3 md:px-4 ${isAnonymized ? "" : OPENABLE_ROW_CLASS}`}
+    <ListBlock.Row
+      className={cn("grid gap-0 py-0", isAnonymized ? "" : OPENABLE_ROW_CLASS)}
       data-customer-id={customer.id}
     >
       <div className="flex items-center gap-3">
@@ -439,6 +498,7 @@ function CustomerRow({
           lockedReasonId={lockedReason ? reasonId : undefined}
           onEdit={onEdit}
           pendingLabelId={pendingLabel ? pendingLabelId : undefined}
+          today={today}
         />
         {isAnonymized ? null : (
           <CustomerMenu
@@ -468,11 +528,13 @@ function CustomerRow({
           onConfirm={handleConfirm}
         />
       ) : null}
-    </li>
+    </ListBlock.Row>
   );
 }
 
 interface CustomerListProps extends RowActions {
+  /** "5 clientes" or "2 de 5 clientes": the support text beside the title; empty while the list loads or finds nothing. */
+  count: string;
   /** The customers that match the search. */
   customers: CustomerReadModel[];
   isLoading: boolean;
@@ -484,13 +546,31 @@ interface CustomerListProps extends RowActions {
   status: CustomerListStatus;
   /** Customers created on this device that the server has not confirmed yet. */
   syncStates: ReadonlyMap<string, PendingCustomer>;
+  /** The store's today, in its own time zone. */
+  today: string;
   /** How many customers the status has, before the search. */
   total: number;
   /** Edits made on this device that the server has not confirmed yet. */
   updateStates: ReadonlyMap<string, PendingCustomerUpdate>;
 }
 
+/** The shape of a row, drawn while the list loads: the circle and two lines. */
+function CustomerRowSkeleton() {
+  return (
+    <div className="flex items-center gap-3">
+      <Skeleton className="size-9 shrink-0 rounded-full" />
+      <div className="grid min-w-0 flex-1 gap-1.5">
+        <Skeleton className="h-4 w-40 max-w-full" />
+        <Skeleton className="h-3.5 w-56 max-w-full" />
+      </div>
+    </div>
+  );
+}
+
+const LIST_TITLE = "Clientes cadastrados";
+
 export function CustomerList({
+  count,
   customers,
   isLoading,
   isOffline,
@@ -498,50 +578,64 @@ export function CustomerList({
   query,
   status,
   syncStates,
+  today,
   total,
   updateStates,
   ...actions
 }: CustomerListProps) {
   if (isLoading) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Carregando clientes…
-        </p>
-      </ListNotice>
+      <ListBlock
+        count=""
+        skeleton={<CustomerRowSkeleton />}
+        state="loading"
+        title={LIST_TITLE}
+      />
     );
   }
   if (total === 0) {
     if (status !== "active") {
-      return <EmptyState afterRead title="Nenhum cliente arquivado." />;
+      return (
+        <EmptyState
+          afterRead
+          icon={UsersIcon}
+          title="Nenhum cliente arquivado."
+        />
+      );
     }
-    return <EmptyState afterRead title="Nenhum cliente ainda." />;
+    return (
+      <EmptyState afterRead icon={UsersIcon} title="Nenhum cliente ainda." />
+    );
   }
   if (customers.length === 0) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Nenhum cliente com “{query.trim()}”.
-        </p>
-      </ListNotice>
+      <ListBlock
+        count={count}
+        emptyNotice={
+          <p className="text-muted-foreground" role="status">
+            Nenhum cliente com “{query.trim()}”.
+          </p>
+        }
+        state="filtered-empty"
+        title={LIST_TITLE}
+      />
     );
   }
   return (
-    <Card className="gap-0 py-0">
-      <ul aria-label="Clientes" className="divide-y divide-border">
-        {customers.map((customer) => (
-          <CustomerRow
-            {...actions}
-            customer={customer}
-            isOffline={isOffline}
-            isPending={pendingAction !== null}
-            key={customer.id}
-            pendingAction={pendingAction}
-            syncState={syncStates.get(customer.id)}
-            updateState={updateStates.get(customer.id)}
-          />
-        ))}
-      </ul>
-    </Card>
+    <ListBlock count={count} state="rows" title={LIST_TITLE}>
+      {customers.map((customer) => (
+        <CustomerRow
+          {...actions}
+          customer={customer}
+          isOffline={isOffline}
+          isPending={pendingAction !== null}
+          key={customer.id}
+          pendingAction={pendingAction}
+          syncState={syncStates.get(customer.id)}
+          today={today}
+          updateState={updateStates.get(customer.id)}
+        />
+      ))}
+    </ListBlock>
   );
 }

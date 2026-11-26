@@ -6,7 +6,11 @@ import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import { account, user, verification } from "../src/schema/auth";
 import { assertClean, findViolations } from "./definer-hardening-checks";
-import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  replaceFunctionAsOwner,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -432,12 +436,7 @@ async function run() {
   };
   /** Runs `body` in a transaction of the admin that is always rolled back (the planted defects). */
   const rolledBack = async (body: () => Promise<void>) => {
-    await admin.query("BEGIN");
-    try {
-      await body();
-    } finally {
-      await admin.query("ROLLBACK");
-    }
+    await inRolledBackTransaction(admin, body);
   };
 
   try {
@@ -724,22 +723,20 @@ async function run() {
     // ------------------------------------------------------------------ 3. the audit, type by type
     const userA = await makeUser("a");
     const userB = await makeUser("b");
-    const accepted = async (client: Client, sql: string, values: unknown[]) => {
-      await client.query("BEGIN");
-      try {
-        await client.query(sql, values);
-        return true;
-      } catch (error) {
-        assert.equal(
-          (error as { code?: string }).code,
-          "42501",
-          `refused by row security, not by ${redactedFailure(error)}`
-        );
-        return false;
-      } finally {
-        await client.query("ROLLBACK");
-      }
-    };
+    const accepted = async (client: Client, sql: string, values: unknown[]) =>
+      await inRolledBackTransaction(client, async () => {
+        try {
+          await client.query(sql, values);
+          return true;
+        } catch (error) {
+          assert.equal(
+            (error as { code?: string }).code,
+            "42501",
+            `refused by row security, not by ${redactedFailure(error)}`
+          );
+          return false;
+        }
+      });
     const byAuth: string[] = [];
     const byOwners: string[] = [];
     for (const type of types) {
@@ -881,8 +878,7 @@ async function run() {
       "42501",
       "the purge owner changes no user (its UPDATE is for the lock only)"
     );
-    await unverifiedOwner.client.query("BEGIN");
-    try {
+    await inRolledBackTransaction(unverifiedOwner.client, async () => {
       assert.deepEqual(
         await visible(
           unverifiedOwner.client,
@@ -892,9 +888,7 @@ async function run() {
         [neverVerified],
         "the lock of the candidates still works"
       );
-    } finally {
-      await unverifiedOwner.client.query("ROLLBACK");
-    }
+    });
     const deleteVerified = await unverifiedOwner.client.query(
       'DELETE FROM public."user" WHERE id = $1',
       [verifiedOld]
@@ -919,8 +913,7 @@ async function run() {
 
     // ------------------------------------------------------------------ 5. the onboarding owner
     const founder = await makeUser("founder");
-    await onboardingOwner.client.query("BEGIN");
-    try {
+    await inRolledBackTransaction(onboardingOwner.client, async () => {
       assert.deepEqual(
         await visible(
           onboardingOwner.client,
@@ -952,9 +945,7 @@ async function run() {
         "42501",
         "the onboarding owner changes no user (its UPDATE is for FOR SHARE only)"
       );
-    } finally {
-      await onboardingOwner.client.query("ROLLBACK");
-    }
+    });
     const created = await onboardingRuntime.client.query<{
       created: boolean;
       id: string;
@@ -1028,9 +1019,8 @@ async function run() {
       email: `${ownerA}@example.invalid`,
       verified: true,
     });
-    const asNoticeOwner = async (scope: string | null) => {
-      await noticeOwner.client.query("BEGIN");
-      try {
+    const asNoticeOwner = async (scope: string | null) =>
+      await inRolledBackTransaction(noticeOwner.client, async () => {
         if (scope !== null) {
           await noticeOwner.client.query(
             "SELECT pg_catalog.set_config($1, $2, true)",
@@ -1042,10 +1032,7 @@ async function run() {
           'SELECT id FROM public."user"',
           []
         );
-      } finally {
-        await noticeOwner.client.query("ROLLBACK");
-      }
-    };
+      });
     assert.deepEqual(await asNoticeOwner(null), [], "no scope, no user");
     assert.deepEqual(
       await asNoticeOwner(noticeA),

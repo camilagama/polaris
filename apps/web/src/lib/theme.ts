@@ -91,10 +91,12 @@ interface SystemQuery {
 }
 
 /**
- * Keeps the `dark` class in step with the system while the page is open (U-40): `theme-init.js` reads the
- * system once, at load, so a system that went back to light would leave the class on and the screen half
- * dark. Reads the stored choice again at each change, so "claro" and "escuro" stay as chosen. Returns
- * the function that stops listening.
+ * Puts the `dark` class as the stored choice and the system say when the app starts, and keeps it in step with the
+ * system while the page is open (U-40). At the start, because `theme-init.js` may not have run: the browser can
+ * cancel that script on a reload, and the page would stay light for a user of the dark theme. Then at each change,
+ * because `theme-init.js` reads the system once, at load, so a system that went back to light would leave the class
+ * on and the screen half dark. Reads the stored choice again each time, so "claro" and "escuro" stay as chosen.
+ * Returns the function that stops listening.
  */
 export function followSystemTheme(
   query: SystemQuery = systemDarkQuery(),
@@ -106,6 +108,7 @@ export function followSystemTheme(
       "dark",
       themeIsDark(readTheme(storage), query.matches)
     );
+  follow();
   query.addEventListener("change", follow);
   return () => query.removeEventListener("change", follow);
 }

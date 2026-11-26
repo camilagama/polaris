@@ -270,7 +270,7 @@ describe("the build manifest", () => {
           "assets/index-AAA.js.map",
           "assets/page-BBB.css",
           "manifest.webmanifest",
-          "icons/icon-192.png",
+          "icons/icon-v2-192.png",
           "sw.js",
           "_headers",
           ".assetsignore",
@@ -280,7 +280,7 @@ describe("the build manifest", () => {
       "/",
       "/assets/index-AAA.js",
       "/assets/page-BBB.css",
-      "/icons/icon-192.png",
+      "/icons/icon-v2-192.png",
       "/manifest.webmanifest",
     ]);
   });
@@ -388,10 +388,12 @@ describe("the build manifest", () => {
 });
 
 interface FakeResponse {
+  blob: () => Promise<string>;
   body: string;
   clone: () => FakeResponse;
   headers: { get: (name: string) => string | null };
   status: number;
+  statusText: string;
 }
 
 const EXTENSION_TYPES: Record<string, string> = {
@@ -400,9 +402,12 @@ const EXTENSION_TYPES: Record<string, string> = {
   webmanifest: "application/manifest+json",
 };
 
-function withClone(response: Omit<FakeResponse, "clone">): FakeResponse {
+function withClone(
+  response: Omit<FakeResponse, "blob" | "clone">
+): FakeResponse {
   const copy: FakeResponse = {
     ...response,
+    blob: () => Promise.resolve(response.body),
     clone: () => withClone(response),
   };
   return copy;
@@ -416,6 +421,7 @@ function fileOf(path: string): FakeResponse {
     body: `net:${path}`,
     headers: { get: () => type },
     status: 200,
+    statusText: "OK",
   });
 }
 
@@ -425,6 +431,7 @@ function htmlOf(path: string): FakeResponse {
     body: `<html>shell instead of ${path}</html>`,
     headers: { get: () => "text/html; charset=utf-8" },
     status: 200,
+    statusText: "OK",
   });
 }
 
@@ -526,8 +533,21 @@ async function runWorker(build: {
         return { body: "error" };
       }
       readonly body: string;
-      constructor(body: string) {
+      readonly headers: FakeResponse["headers"] | undefined;
+      readonly status: number;
+      readonly statusText: string;
+      constructor(
+        body: string,
+        init?: {
+          headers?: FakeResponse["headers"];
+          status?: number;
+          statusText?: string;
+        }
+      ) {
         this.body = body;
+        this.headers = init?.headers;
+        this.status = init?.status ?? 200;
+        this.statusText = init?.statusText ?? "";
       }
       text() {
         return Promise.resolve(this.body);
@@ -642,11 +662,29 @@ describe("the worker as the browser runs it", () => {
       body: "net:/assets/index-BBB.js",
     });
     expect(worker.fetched).toEqual([]); // came from the cache, not the network
-    // a clone, not the object `cache.match` returned (Chrome refuses the page's preload of the latter)
-    const kept = worker.stores
-      .get(shellCacheName(build))
-      ?.get("/assets/index-BBB.js");
-    expect(await worker.run("fetch", { request: asset })).not.toBe(kept);
+    // a new response over the body read whole, with the copy's status and headers: neither the object
+    // `cache.match` returned nor a clone of it (Chrome cancels some of those on a reload right after `load`)
+    const shell = worker.stores.get(shellCacheName(build));
+    shell?.set(
+      "/assets/index-BBB.js",
+      withClone({
+        ...fileOf("/assets/index-BBB.js"),
+        statusText: "Kept by the test",
+      })
+    );
+    const kept = shell?.get("/assets/index-BBB.js");
+    const read = vi.spyOn(kept as FakeResponse, "blob");
+    const clone = vi.spyOn(kept as FakeResponse, "clone");
+    const served = await worker.run("fetch", { request: asset });
+    expect(served).not.toBe(kept);
+    expect(served).toMatchObject({
+      body: "net:/assets/index-BBB.js",
+      headers: kept?.headers,
+      status: 200,
+      statusText: "Kept by the test",
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(clone).not.toHaveBeenCalled();
     for (const path of ["/rpc/sale/confirm", "/api/auth/get-session"]) {
       // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
       const answer = await worker.run("fetch", {
@@ -731,6 +769,25 @@ describe("the worker as the browser runs it", () => {
     expect(await chunk("/assets/sale-page-AAA.js")).toMatchObject({
       body: "net:/assets/sale-page-AAA.js",
     });
+    expect(worker.fetched).toEqual([]);
+    // the `kept` route answers with a new response over the body read whole too, with the copy's status text
+    const olderCopy = withClone({
+      ...fileOf("/assets/sale-page-AAA.js"),
+      statusText: "Kept by an older build",
+    });
+    worker.stores.get(older)?.set("/assets/sale-page-AAA.js", olderCopy);
+    const olderRead = vi.spyOn(olderCopy, "blob");
+    const olderClone = vi.spyOn(olderCopy, "clone");
+    const keptServed = await chunk("/assets/sale-page-AAA.js");
+    expect(keptServed).not.toBe(olderCopy);
+    expect(keptServed).toMatchObject({
+      body: "net:/assets/sale-page-AAA.js",
+      headers: olderCopy.headers,
+      status: 200,
+      statusText: "Kept by an older build",
+    });
+    expect(olderRead).toHaveBeenCalledTimes(1);
+    expect(olderClone).not.toHaveBeenCalled();
     expect(worker.fetched).toEqual([]);
     // one no build kept goes to the network, as before
     expect(await chunk("/assets/product-import-dialog-ZZZ.js")).toMatchObject({
@@ -914,12 +971,13 @@ describe("the worker as the browser runs it", () => {
     expect(seesAnew(10, 11)).toBe(true);
   });
 
-  it("does not serve a page kept in place of a chunk by an older worker: it asks the network", async () => {
+  it("asks the network for a file whose copy cannot be read", async () => {
     const worker = await runWorker(build);
     await worker.run("install", {});
-    worker.stores
+    const kept = worker.stores
       .get(shellCacheName(build))
-      ?.set("/assets/index-BBB.js", htmlOf("/assets/index-BBB.js"));
+      ?.get("/assets/index-BBB.js") as FakeResponse;
+    vi.spyOn(kept, "blob").mockRejectedValue(new TypeError("evicted"));
     worker.fetched.length = 0;
     const asset = {
       method: "GET",
@@ -930,6 +988,26 @@ describe("the worker as the browser runs it", () => {
       body: "net:/assets/index-BBB.js",
     });
     expect(worker.fetched).toEqual(["/assets/index-BBB.js"]);
+  });
+
+  it("does not serve a page kept in place of a chunk by an older worker: it asks the network", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    const page = htmlOf("/assets/index-BBB.js");
+    const read = vi.spyOn(page, "blob");
+    worker.stores.get(shellCacheName(build))?.set("/assets/index-BBB.js", page);
+    worker.fetched.length = 0;
+    const asset = {
+      method: "GET",
+      mode: "cors",
+      url: `${origin}/assets/index-BBB.js`,
+    };
+    expect(await worker.run("fetch", { request: asset })).toMatchObject({
+      body: "net:/assets/index-BBB.js",
+    });
+    expect(worker.fetched).toEqual(["/assets/index-BBB.js"]);
+    // checked before its body is read: the page is never read into an answer
+    expect(read).not.toHaveBeenCalled();
     // and what the network answers is not stored either
     expect(
       worker.stores.get(shellCacheName(build))?.get("/assets/index-BBB.js")

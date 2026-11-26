@@ -36,6 +36,7 @@
         "e2e/**/*.e2e.ts",
         "e2e-pwa/**/*.e2e.ts",
         "scripts/lighthouse-servers.ts",
+        "scripts/precache-delta.ts",
         "playwright.pwa.config.ts",
         "vite.ui.ts"
       ],
@@ -44,7 +45,6 @@
       "ignoreDependencies": [
         "cloudflare",
         "@fontsource-variable/geist",
-        "@fontsource-variable/geist-mono",
         "tw-animate-css",
         "@polaris/ui"
       ],

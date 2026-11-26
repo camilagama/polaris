@@ -359,7 +359,7 @@ test("cada pílula pede ao servidor o que o filtro de antes pedia e sai pelo X",
 });
 
 const rowNames = (page: Page) =>
-  page.getByRole("list", { name: "Saldos por variante" }).getByRole("listitem");
+  page.getByRole("list", { name: "Saldos em estoque" }).getByRole("listitem");
 
 test("o nome da linha é um link para o produto, na variante quando a linha é de variante", async ({
   page,
@@ -386,7 +386,7 @@ test("com um painel aberto o nome de nenhuma linha leva ao produto, e fechado o 
 }) => {
   await openStockLab(page, "claro");
   const productLinks = page
-    .getByRole("list", { name: "Saldos por variante" })
+    .getByRole("list", { name: "Saldos em estoque" })
     .locator('a[href^="/products"]');
   await expect(productLinks.first()).toBeVisible();
   const withLinks = await productLinks.count();
@@ -634,6 +634,93 @@ test("a faixa Precisa de ação conta a loja em duas leituras de 100 e não muda
   await strip.getByRole("link", { name: "1 variante sem custo" }).click();
   await expectPills(page, ["Custo desconhecido"]);
   expect(attentionRequests).toHaveLength(2);
+});
+
+const rpcProcedure = (url: string) => new URL(url).pathname.split("/rpc/")[1];
+
+function watchRpc(page: Page) {
+  const procedures: string[] = [];
+  page.on("request", (request) => {
+    const procedure = rpcProcedure(request.url());
+    if (request.url().includes("/rpc/") && procedure !== undefined) {
+      procedures.push(procedure);
+    }
+  });
+  return procedures;
+}
+
+/** What each read of `inventory/listBalances` asked for, as the filter that tells them apart. */
+function balanceReads() {
+  const filter = (body: string) => {
+    if (body.includes('"cost":"unknown"')) {
+      return "cost:unknown";
+    }
+    return body.includes('"stock":"without_stock"')
+      ? "stock:without_stock"
+      : "list";
+  };
+  return [...listRequests.map(filter), ...attentionRequests.map(filter)].sort();
+}
+
+test("leituras da abertura: 3 listBalances (a lista e as duas contagens de Precisa de ação) e o total de /rpc", async ({
+  page,
+}) => {
+  const procedures = watchRpc(page);
+  await openStockLab(page, "claro");
+  await expect(page.locator('[data-slot="action-strip"]')).toContainText(
+    "1 variante sem custo"
+  );
+  await expect.poll(() => balanceReads().length).toBe(3);
+  await page.route("**/__settled", (route) =>
+    route.fulfill({ body: "", status: 204 })
+  );
+  await settled(page);
+  expect(
+    balanceReads(),
+    "a abertura do Estoque deve ler listBalances 3 vezes: 1 da lista e 2 contagens de Precisa de ação (cost:unknown e stock:without_stock)"
+  ).toEqual(["cost:unknown", "list", "stock:without_stock"]);
+  expect(
+    procedures.filter((name) => name === "inventory/listBalances"),
+    "total de inventory/listBalances na abertura"
+  ).toHaveLength(3);
+  expect(
+    procedures.filter((name) => name !== "inventory/listBalances"),
+    "as outras chamadas /rpc da abertura: só a sondagem do laboratório"
+  ).toEqual(["__screens-lab"]);
+});
+
+test("leituras de um movimento: registrar o recebimento relê as 2 contagens de Precisa de ação e não a lista", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  await answerReceiveStock(page);
+  await expect(page.locator('[data-slot="action-strip"]')).toContainText(
+    "1 variante sem custo"
+  );
+  await expect.poll(() => balanceReads().length).toBe(3);
+  await page.route("**/__settled", (route) =>
+    route.fulfill({ body: "", status: 204 })
+  );
+  await settled(page);
+  expect(
+    balanceReads(),
+    "antes do movimento a abertura leu cost:unknown, list e stock:without_stock, uma vez cada"
+  ).toEqual(["cost:unknown", "list", "stock:without_stock"]);
+  listRequests = [];
+  attentionRequests = [];
+
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await page.getByLabel("Quantidade recebida").fill("10");
+  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+  await page.getByRole("button", { name: "Confirmar recebimento" }).click();
+  await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
+  await expect.poll(() => attentionRequests.length).toBe(2);
+  await settled(page);
+  expect(
+    balanceReads(),
+    "um movimento deve reler só as 2 contagens de Precisa de ação (cost:unknown e stock:without_stock), sem reler a lista"
+  ).toEqual(["cost:unknown", "stock:without_stock"]);
 });
 
 test("o filtro de custo combina com o filtro de saldo na mesma leitura", async ({

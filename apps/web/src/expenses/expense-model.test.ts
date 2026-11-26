@@ -1,7 +1,13 @@
+import type {
+  ExpenseCategoryReadModel,
+  ExpenseCategoryTotalReadModel,
+} from "@polaris/contracts";
 import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { describe, expect, it } from "vitest";
 import { formatDate } from "@/ui/date-values";
 import {
+  categoryFieldsDiffer,
+  categoryShareRows,
   EARLIEST_COMPETENCE_REASON,
   EARLIEST_EXPENSE_MONTH,
   EXPENSE_GROUP_ORDER,
@@ -10,14 +16,14 @@ import {
   formatMonthLabel,
   groupByExpenseGroup,
   isExpenseDraftChanged,
-  isMonthValue,
   type MoneyInputError,
+  moneyInputMessage,
+  moneyInputText,
   monthBounds,
   monthOfDay,
   moveMonthCursor,
-  moneyInputMessage,
-  moneyInputText,
   parseMoneyInput,
+  percentsByLargestRemainder,
   shiftMonth,
   validateExpenseDraft,
 } from "./expense-model";
@@ -144,15 +150,6 @@ describe("moneyInputText", () => {
 });
 
 describe("months", () => {
-  it("recognizes only YYYY-MM", () => {
-    expect(isMonthValue("2026-10")).toBe(true);
-    expect(isMonthValue("2026-13")).toBe(false);
-    expect(isMonthValue("2026-00")).toBe(false);
-    expect(isMonthValue("2026-1")).toBe(false);
-    expect(isMonthValue("")).toBe(false);
-    expect(isMonthValue("2026-10-01")).toBe(false);
-  });
-
   it("takes the month of a calendar day", () => {
     expect(monthOfDay("2026-10-13")).toBe("2026-10");
   });
@@ -172,6 +169,12 @@ describe("months", () => {
     expect(monthBounds("2000-02")?.to).toBe("2000-02-29");
     expect(monthBounds("2026-12")?.to).toBe("2026-12-31");
     expect(monthBounds("nope")).toBeNull();
+  });
+
+  it("accepts only YYYY-MM", () => {
+    for (const month of ["2026-13", "2026-00", "2026-1", "", "2026-10-01"]) {
+      expect(monthBounds(month)).toBeNull();
+    }
   });
 
   it("moves to the previous and next month across years", () => {
@@ -384,5 +387,395 @@ describe("EARLIEST_COMPETENCE_REASON", () => {
       `Só a partir de ${formatDate(EARLIEST_EXPENSE_COMPETENCE)}`
     );
     expect(EARLIEST_COMPETENCE_REASON).toBe("Só a partir de 01/01/2000");
+  });
+});
+
+function category(index: number, name: string): ExpenseCategoryReadModel {
+  return {
+    archivedAt: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    groupKey: "other",
+    id: `0199c2d0-0000-7000-8000-00000000c${String(index).padStart(3, "0")}`,
+    name,
+    organizationId: "org",
+    status: "active",
+    systemKey: null,
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    version: 1,
+  };
+}
+
+const CATEGORIES = [
+  "Aluguel",
+  "Embalagem",
+  "Frete",
+  "Imposto",
+  "Marketing",
+  "Software",
+  "Taxas",
+].map((name, index) => category(index, name));
+
+function totalsOf(...amounts: string[]): ExpenseCategoryTotalReadModel[] {
+  return amounts.map((total, index) => ({
+    categoryId: (CATEGORIES[index] as ExpenseCategoryReadModel).id,
+    count: 1,
+    total,
+  }));
+}
+
+function sumCents(amounts: string[]): string {
+  const cents = amounts.reduce(
+    (sum, amount) => sum + BigInt(amount.replace(".", "")),
+    0n
+  );
+  const digits = cents.toString().padStart(3, "0");
+  return `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+describe("percentsByLargestRemainder", () => {
+  it.each([
+    [
+      [1, 1, 1],
+      [34, 33, 33],
+    ],
+    [
+      [1, 1],
+      [50, 50],
+    ],
+    [
+      [200, 100],
+      [67, 33],
+    ],
+    [
+      [5, 995],
+      [1, 99],
+    ],
+    [
+      [0, 0],
+      [0, 0],
+    ],
+  ])("splits %j into %j, adding up to 100", (parts, expected) => {
+    const result = percentsByLargestRemainder(parts.map(BigInt));
+    expect(result).toEqual(expected);
+    if (parts.some((part) => part > 0)) {
+      expect(result.reduce((sum, value) => sum + value, 0)).toBe(100);
+    }
+  });
+});
+
+describe("categoryShareRows", () => {
+  it("lists the categories from the largest down, the longest bar filling the track, the shares adding up to 100", () => {
+    const amounts = ["300.00", "1200.50", "99.99"];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows?.map((row) => row.name)).toEqual([
+      "Embalagem",
+      "Aluguel",
+      "Frete",
+    ]);
+    expect(rows?.map((row) => row.amount)).toEqual([
+      "1200.50",
+      "300.00",
+      "99.99",
+    ]);
+    expect(rows?.[0]?.width).toBe(100);
+    expect(rows?.[1]?.width).toBeCloseTo(24.99, 1);
+    expect(rows?.reduce((sum, row) => sum + row.percent, 0)).toBe(100);
+  });
+
+  it("keeps the five largest and adds the rest up in Outras (N), at the end, with no category to filter by", () => {
+    const amounts = [
+      "500.00",
+      "400.00",
+      "300.00",
+      "200.00",
+      "100.00",
+      "60.00",
+      "40.00",
+    ];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows).toHaveLength(6);
+    expect(rows?.at(-1)).toMatchObject({
+      amount: "100.00",
+      categoryId: null,
+      name: "Outras (2)",
+    });
+    const sum = rows?.reduce(
+      (total, row) => total + BigInt(row.amount.replace(".", "")),
+      0n
+    );
+    expect(sum).toBe(160_000n);
+  });
+
+  it("lets Outras take the whole track when the rest is larger than any category", () => {
+    const amounts = [
+      "100.00",
+      "90.00",
+      "80.00",
+      "70.00",
+      "60.00",
+      "50.00",
+      "50.00",
+    ];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows?.at(-1)?.name).toBe("Outras (2)");
+    expect(rows?.at(-1)?.width).toBe(100);
+    expect(rows?.[0]?.width).toBe(100);
+  });
+
+  it("breaks a tie by name", () => {
+    const rows = categoryShareRows(
+      totalsOf("100.00", "100.00"),
+      CATEGORIES,
+      "200.00"
+    );
+    expect(rows?.map((row) => row.name)).toEqual(["Aluguel", "Embalagem"]);
+  });
+
+  it("writes the ids this screen does not know as one Sem categoria", () => {
+    const rows = categoryShareRows(
+      [
+        ...totalsOf("100.00"),
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f1",
+          count: 1,
+          total: "30.00",
+        },
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f2",
+          count: 1,
+          total: "20.00",
+        },
+      ],
+      CATEGORIES,
+      "150.00"
+    );
+    expect(rows?.at(-1)).toMatchObject({
+      amount: "50.00",
+      categoryId: null,
+      name: "Sem categoria",
+    });
+  });
+
+  it("writes the name the server sent for a category this screen has not read yet, never Sem categoria", () => {
+    const rows = categoryShareRows(
+      [
+        ...totalsOf("100.00"),
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f1",
+          categoryName: "Brindes",
+          count: 1,
+          total: "30.00",
+        },
+        {
+          categoryArchived: true,
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f2",
+          categoryName: "Feira",
+          count: 1,
+          total: "20.00",
+        },
+      ],
+      CATEGORIES,
+      "150.00"
+    );
+    expect(rows?.map((row) => [row.name, row.categoryId])).toEqual([
+      ["Aluguel", CATEGORIES[0]?.id],
+      ["Brindes", null],
+      ["Feira (arquivada)", null],
+    ]);
+    expect(rows?.map((row) => row.name)).not.toContain("Sem categoria");
+  });
+
+  it("writes the name the server sent for a category renamed elsewhere and keeps its filter", () => {
+    const rows = categoryShareRows(
+      [
+        {
+          categoryId: CATEGORIES[0]?.id as string,
+          categoryName: "Nome do servidor",
+          count: 1,
+          total: "100.00",
+        },
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f1",
+          categoryName: "Brindes",
+          count: 1,
+          total: "30.00",
+        },
+      ],
+      CATEGORIES,
+      "130.00"
+    );
+    expect(rows?.[0]).toMatchObject({
+      categoryId: CATEGORIES[0]?.id,
+      name: "Nome do servidor",
+    });
+    expect(rows?.map((row) => row.name)).not.toContain("Aluguel");
+  });
+
+  it("falls back to the local name when the server sent none", () => {
+    const rows = categoryShareRows(
+      [
+        {
+          categoryId: CATEGORIES[0]?.id as string,
+          count: 1,
+          total: "100.00",
+        },
+        {
+          categoryId: CATEGORIES[1]?.id as string,
+          count: 1,
+          total: "30.00",
+        },
+      ],
+      CATEGORIES,
+      "130.00"
+    );
+    expect(rows?.[0]).toMatchObject({
+      categoryId: CATEGORIES[0]?.id,
+      name: "Aluguel",
+    });
+  });
+
+  it("marks a renamed category archived by the server flag, or by the local status when the flag is absent", () => {
+    const archived = CATEGORIES.map((item, index) =>
+      index === 1 ? { ...item, status: "archived" as const } : item
+    );
+    const rows = categoryShareRows(
+      [
+        {
+          categoryArchived: true,
+          categoryId: CATEGORIES[0]?.id as string,
+          categoryName: "Novo A",
+          count: 1,
+          total: "100.00",
+        },
+        {
+          categoryId: CATEGORIES[1]?.id as string,
+          categoryName: "Novo B",
+          count: 1,
+          total: "30.00",
+        },
+      ],
+      archived,
+      "130.00"
+    );
+    expect(rows?.map((row) => row.name)).toEqual([
+      "Novo A (arquivada)",
+      "Novo B (arquivada)",
+    ]);
+  });
+
+  it.each([
+    ["an answer with no split", undefined, "100.00"],
+    ["a single category", totalsOf("100.00"), "100.00"],
+    [
+      "lines that do not add up to the total",
+      totalsOf("100.00", "50.00"),
+      "150.01",
+    ],
+    ["an amount that is not a decimal", totalsOf("100.00", "abc"), "100.00"],
+  ])("leaves the block out for %s", (_name, totals, total) => {
+    expect(categoryShareRows(totals, CATEGORIES, total)).toBeNull();
+  });
+
+  it("stays exact with sums that do not fit a float", () => {
+    const amounts = ["999999999999999999.99", "999999999999999999.99"];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows?.map((row) => row.percent)).toEqual([50, 50]);
+    expect(rows?.[0]?.amount).toBe("999999999999999999.99");
+  });
+});
+
+describe("categoryFieldsDiffer", () => {
+  const aluguel = CATEGORIES[0] as ExpenseCategoryReadModel;
+
+  function entry(
+    categoryId: string,
+    categoryName?: string,
+    categoryArchived?: boolean
+  ): ExpenseCategoryTotalReadModel {
+    return {
+      categoryId,
+      count: 1,
+      total: "10.00",
+      ...(categoryName === undefined ? {} : { categoryName }),
+      ...(categoryArchived === undefined ? {} : { categoryArchived }),
+    };
+  }
+
+  it("is false when the names are the same", () => {
+    expect(
+      categoryFieldsDiffer([entry(aluguel.id, aluguel.name)], CATEGORIES)
+    ).toBe(false);
+  });
+
+  it("is true when the server name of a category read here is another", () => {
+    expect(
+      categoryFieldsDiffer([entry(aluguel.id, "Aluguel do galpão")], CATEGORIES)
+    ).toBe(true);
+  });
+
+  it("is true when the server archived flag of a category read here is another", () => {
+    expect(
+      categoryFieldsDiffer(
+        [entry(aluguel.id, aluguel.name, true)],
+        [{ ...aluguel, status: "active" }]
+      )
+    ).toBe(true);
+    expect(
+      categoryFieldsDiffer(
+        [entry(aluguel.id, aluguel.name, false)],
+        [{ ...aluguel, status: "archived" }]
+      )
+    ).toBe(true);
+  });
+
+  it("is false when the archived flag agrees or the server sent none", () => {
+    expect(
+      categoryFieldsDiffer(
+        [entry(aluguel.id, aluguel.name, true)],
+        [{ ...aluguel, status: "archived" }]
+      )
+    ).toBe(false);
+    expect(
+      categoryFieldsDiffer(
+        [entry(aluguel.id, aluguel.name, false)],
+        [{ ...aluguel, status: "active" }]
+      )
+    ).toBe(false);
+    expect(
+      categoryFieldsDiffer(
+        [entry(aluguel.id, aluguel.name)],
+        [{ ...aluguel, status: "archived" }]
+      )
+    ).toBe(false);
+  });
+
+  it("is false for a category this screen has not read", () => {
+    expect(
+      categoryFieldsDiffer(
+        [entry("00000000-0000-4000-8000-00000000ffff", "Outro nome")],
+        CATEGORIES
+      )
+    ).toBe(false);
+  });
+
+  it("is false when the server sent no name, or no split", () => {
+    expect(categoryFieldsDiffer([entry(aluguel.id)], CATEGORIES)).toBe(false);
+    expect(categoryFieldsDiffer(undefined, CATEGORIES)).toBe(false);
   });
 });

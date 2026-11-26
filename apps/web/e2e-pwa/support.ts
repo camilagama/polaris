@@ -14,7 +14,7 @@ import { createStaticServer } from "../scripts/static-server.mjs";
 export interface BuildOptions {
   /** Built again even if this worker already made it (the same content built later). */
   fresh?: boolean;
-  /** When the build was published (ms, the commit's time); by default one time for the whole run. */
+  /** When the build was published (ms, the commit's time); by default the fixed time `PUBLISHED`. */
   publishedAt?: number;
   /**
    * `POLARIS_SWAP_URGENT=1`: no settling, in at the first safe moment. By default true: the settling counts from when
@@ -23,9 +23,12 @@ export interface BuildOptions {
   urgent?: boolean;
 }
 
-const HOUR = 60 * 60 * 1000;
-/** One time for the whole run: the same variant built twice is the same worker, as the same commit is. */
-const PUBLISHED = Date.now() - 3 * HOUR;
+/**
+ * A fixed commit time: the same variant built twice is the same worker, as the same commit is, and nothing in the
+ * swap reads `publishedAt` against the clock (the settling counts from when the device saw the build), so it only has
+ * to be old and the same in every run.
+ */
+export const PUBLISHED = Date.UTC(2026, 9, 14, 9);
 
 export const test = base.extend<
   { buildVersion: (variant: string, options?: BuildOptions) => void },

@@ -24,13 +24,13 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { FORM_ELEMENT_CLASS, FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { dialogEntries } from "@/ui/dialog-history";
+import { SectionTabContent, SectionTabs } from "@/ui/section-tabs";
 import { navigateInApp } from "../app-shell/address";
 import { tryConnectionNow } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { leaveForReturn } from "../lib/kept-for-return";
-import { isPlainClick } from "../subscription/limit-help";
+import { isPlainClick } from "../lib/plain-click";
 import { UnsentWorkScope, useUnsentWorkScope } from "../lib/unsent-work";
 import {
   PRODUCT_FORM_ID,
@@ -241,30 +241,27 @@ function ProductTabs({
       ? ["dados", "variantes", "imagens"]
       : ["dados", "variantes"];
   return (
-    <Tabs className="gap-4" onValueChange={handleTab} value={tab}>
-      <TabsList
-        activateOnFocus
-        aria-label="Partes do produto"
-        className="h-auto w-full flex-wrap gap-y-4"
-      >
-        {tabs.map((value) => (
-          <TabsTrigger
-            className="h-[calc(var(--spacing-ctl-md)-0.375rem)]"
-            key={value}
-            value={value}
-          >
-            <TabLabel
-              invalid={value === "dados" && dataInvalid}
-              label={TAB_LABELS[value]}
-            />
-          </TabsTrigger>
-        ))}
-      </TabsList>
+    <SectionTabs
+      className="min-w-0 gap-4"
+      label="Partes do produto"
+      onValueChange={handleTab}
+      surface="popover"
+      tabs={tabs.map((value) => ({
+        label: (
+          <TabLabel
+            invalid={value === "dados" && dataInvalid}
+            label={TAB_LABELS[value]}
+          />
+        ),
+        value,
+      }))}
+      value={tab}
+    >
       {/* the data is always in the page: the footer's button submits its form from any tab */}
-      <TabsContent keepMounted value="dados">
+      <SectionTabContent keepMounted value="dados">
         {form}
-      </TabsContent>
-      <TabsContent keepMounted value="variantes">
+      </SectionTabContent>
+      <SectionTabContent keepMounted value="variantes">
         {seen.has("variantes") ? (
           <TabScope onUnsent={onUnsent} tab="variantes">
             <ProductVariantsPanel
@@ -277,9 +274,9 @@ function ProductTabs({
             />
           </TabScope>
         ) : null}
-      </TabsContent>
+      </SectionTabContent>
       {tabs.includes("imagens") ? (
-        <TabsContent keepMounted value="imagens">
+        <SectionTabContent keepMounted value="imagens">
           {seen.has("imagens") ? (
             <TabScope onUnsent={onUnsent} tab="imagens">
               <ProductMediaPanel
@@ -288,9 +285,9 @@ function ProductTabs({
               />
             </TabScope>
           ) : null}
-        </TabsContent>
+        </SectionTabContent>
       ) : null}
-    </Tabs>
+    </SectionTabs>
   );
 }
 

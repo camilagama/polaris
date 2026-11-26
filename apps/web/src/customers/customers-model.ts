@@ -88,12 +88,6 @@ export function hasCustomerContact(draft: CustomerDraft): boolean {
   return Boolean(draft.phone.trim() || draft.email.trim());
 }
 
-export function isCustomerListStatus(
-  value: string
-): value is CustomerListStatus {
-  return value === "active" || value === "archived";
-}
-
 /** What did not happen, without the sentence about the session: the notice of the shell carries that one. */
 function unauthorizedText(action?: CustomerFailure): string {
   switch (action) {
@@ -111,6 +105,9 @@ function unauthorizedText(action?: CustomerFailure): string {
       return "O cliente não foi salvo.";
   }
 }
+
+const DUPLICATE_CHECK_FAILED =
+  "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
 
 export function customerErrorMessage(
   error: unknown,
@@ -153,8 +150,8 @@ export function customerErrorMessage(
   if (code === "NOT_FOUND") {
     return "O cliente não existe mais nesta loja.";
   }
-  if (code === "SERVICE_UNAVAILABLE" && action === "duplicate-check") {
-    return "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
+  if (action === "duplicate-check") {
+    return DUPLICATE_CHECK_FAILED;
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return action === "load"

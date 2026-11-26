@@ -7,8 +7,8 @@ import {
 } from "../bklit/charts/chart-context";
 import { XAxis } from "../bklit/charts/x-axis";
 
-/** The width of one character of a value label (11 px, tabular), to keep the label inside the plot. */
-const LABEL_CHAR = 6.4;
+/** The width of one character of a value label (11 px Geist Mono, 0.6 em), to keep the label inside the plot. */
+const LABEL_CHAR = 6.6;
 
 /** The width a date of the x axis ("17/10" in 12 px) needs with air around it, in pixels. */
 const DATE_SLOT = 55;
@@ -117,7 +117,7 @@ function DayMarks({
               }
               return (
                 <text
-                  className="fill-foreground font-medium text-[0.6875rem] tabular-nums"
+                  className="fill-foreground font-medium font-mono text-[0.6875rem] tabular-nums"
                   data-chart-value-label=""
                   key={`label-${mark.index}`}
                   textAnchor={anchor}

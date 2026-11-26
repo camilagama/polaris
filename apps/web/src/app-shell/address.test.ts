@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isMarkedEntry, pushAddress, replaceAddress } from "./address";
+import {
+  dropNavigationState,
+  isMarkedEntry,
+  pushAddress,
+  readNavigationState,
+  replaceAddress,
+} from "./address";
 
 interface FakeHistory {
   entries: { state: unknown; url: string }[];
   index: number;
   pushState: (state: unknown, title: string, url: string) => void;
-  replaceState: (state: unknown, title: string, url: string) => void;
+  replaceState: (state: unknown, title: string, url?: string) => void;
   readonly state: unknown;
 }
 
@@ -21,7 +27,10 @@ function fakeWindow(start: string) {
       history.index += 1;
     },
     replaceState(state, _title, url) {
-      history.entries[history.index] = { state, url };
+      history.entries[history.index] = {
+        state,
+        url: url ?? history.entries[history.index]?.url ?? start,
+      };
     },
     get state() {
       return history.entries[history.index]?.state;
@@ -88,5 +97,32 @@ describe("pushAddress", () => {
     expect(isMarkedEntry("from-list")).toBe(true);
     history.index = 0;
     expect(isMarkedEntry("from-list")).toBe(false);
+  });
+});
+
+describe("the state a screen leaves for the one it opens", () => {
+  it("is read from the entry and dropped once, keeping the address and the rest of the state", () => {
+    const { history } = fakeWindow("/dashboard");
+    history.pushState(
+      { historyPeriod: { from: "2026-10-01", to: "2026-10-14" }, other: 1 },
+      "",
+      "/sales/history"
+    );
+    expect(readNavigationState("historyPeriod")).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-14",
+    });
+    expect(readNavigationState("resultPeriod")).toBeUndefined();
+    dropNavigationState("historyPeriod");
+    expect(readNavigationState("historyPeriod")).toBeUndefined();
+    expect(history.state).toEqual({ other: 1 });
+    expect(history.entries[history.index]?.url).toBe("/sales/history");
+  });
+
+  it("leaves an entry with no such key as it was", () => {
+    const { history } = fakeWindow("/sales/history");
+    const before = history.entries[history.index];
+    dropNavigationState("historyPeriod");
+    expect(history.entries[history.index]).toBe(before);
   });
 });

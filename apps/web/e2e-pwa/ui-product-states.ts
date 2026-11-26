@@ -2,6 +2,7 @@
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
 import { mediaListBody, solidPng } from "../e2e/media-fixtures";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -17,6 +18,10 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 const PRODUCT_ID = id(21);
+const NOW = new Date("2026-10-15T12:00:00.000Z");
+const DAY = 86_400_000;
+const LONG_NAME =
+  "Cinto de couro legítimo com fivela dourada, tamanho único ajustável";
 
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
@@ -62,19 +67,6 @@ async function openProductsLab(page: Page) {
     .waitFor({ timeout: 20_000 });
   await page.getByRole("heading", { exact: true, name: "Produtos" }).waitFor();
   await page.getByText("Calça jeans").waitFor();
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
 }
 
 async function openVariants(page: Page, name = "Camiseta do teste") {
@@ -201,6 +193,50 @@ export const productStates = {
   /** The list of the seeded catalog. */
   async list(page: Page) {
     await openProductsLab(page);
+    await showScreenAlone(page);
+  },
+
+  /**
+   * The confirmation of "Excluir" of an archived product whose name is the longest of the seeded catalog (67 letters, a
+   * seeded product archived here by the test): the title, the hint and the stacked buttons have to break lines.
+   */
+  async deleteArchived(page: Page) {
+    await page.clock.setFixedTime(NOW);
+    await openProductsLab(page);
+    await page.route("**/rpc/product/archive", (route: Route) =>
+      route.fulfill(
+        rpc({
+          changed: true,
+          product: {
+            archivedAt: NOW.toISOString(),
+            categoryId: id(12),
+            createdAt: new Date(NOW.getTime() - DAY).toISOString(),
+            deletedAt: null,
+            description: null,
+            id: id(24),
+            name: LONG_NAME,
+            organizationId: id(1),
+            status: "archived",
+            updatedAt: NOW.toISOString(),
+            version: 2,
+          },
+        })
+      )
+    );
+    await menuOf(page, LONG_NAME).click();
+    await page.getByRole("menuitem", { name: "Arquivar" }).click();
+    await page.getByRole("tab", { name: "Arquivados" }).click();
+    await menuOf(page, LONG_NAME).click();
+    await page.getByRole("menuitem", { name: "Excluir…" }).click();
+    const dialog = page.getByRole("dialog", {
+      name: `Excluir produto “${LONG_NAME}”?`,
+    });
+    await dialog
+      .getByText("Este produto libera 1 variante do seu plano.")
+      .waitFor();
+    await dialog
+      .getByLabel("Digite o nome do produto para confirmar")
+      .fill(LONG_NAME);
     await showScreenAlone(page);
   },
 

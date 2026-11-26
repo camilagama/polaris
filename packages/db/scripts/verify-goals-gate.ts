@@ -148,8 +148,10 @@ async function run() {
           capability: "goal:manage",
           isolationLevel: "repeatable read",
           requestedOrganizationId: tenant.organizationId,
+          requireLegalAcceptance: false,
         },
-        (tx, identity) => evaluateActiveGoals(tx, identity)
+        async (tx, identity) =>
+          (await evaluateActiveGoals(tx, identity)).progress
       );
     /** What the handler does: evaluate in a snapshot, then settle in a short transaction. */
     const refresh = async (tenant: TenantFixture) => {
@@ -736,7 +738,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

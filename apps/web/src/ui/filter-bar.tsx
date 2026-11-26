@@ -81,6 +81,8 @@ export interface FilterBarProps {
   leading?: ReactNode;
   /** Called with the next list of filters (the order they were added in). */
   onChange: (rules: FilterRule[]) => void;
+  /** What "Limpar tudo" does when the screen holds filters outside the bar that it must clear with the pills; the focus still goes to "Filtrar". Default: `onChange([])`. */
+  onClearAll?: () => void;
   /** The filters there are. */
   value: readonly FilterRule[];
 }
@@ -409,7 +411,7 @@ function DraftContent({
  * (Cancelar, ×, Esc, the step back) drops it. A draft with no value (an empty text, no choice, "Limpar") applies as
  * taking the filter out, as in the Popover. With only the first day of a period marked "Aplicar" is `aria-disabled`
  * (described by the line that asks for the last day), so the day touched is never dropped by applying the old range.
- * In a period a shortcut applies and closes at once, and "Aplicar" shows only after a day was touched or typed, or
+ * In a period a shortcut applies and closes at once, and "Aplicar" shows only after a day was touched, or
  * "Limpar" was pressed: until then there is no draft to confirm.
  */
 function PhoneEditorContent({
@@ -835,6 +837,7 @@ export function FilterBar({
   label,
   leading,
   onChange,
+  onClearAll,
   value,
 }: FilterBarProps) {
   const level = useMotionLevel();
@@ -962,9 +965,13 @@ export function FilterBar({
 
   const clearAll = useCallback(() => {
     closeEditor();
-    onChange([]);
+    if (onClearAll) {
+      onClearAll();
+    } else {
+      onChange([]);
+    }
     focusFilter();
-  }, [closeEditor, focusFilter, onChange]);
+  }, [closeEditor, focusFilter, onChange, onClearAll]);
 
   const pills: {
     field: FilterField;

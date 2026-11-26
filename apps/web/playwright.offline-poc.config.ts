@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import {
   OFFLINE_POC_ORIGIN,
   OFFLINE_POC_PORT,
+  reportersFor,
   reuseExistingServer,
   workersFrom,
 } from "./e2e/run-settings";
@@ -18,6 +19,8 @@ export default defineConfig({
     },
     {
       name: "chromium-mobile-emulated",
+      // files that skip this whole project stay out of its list, so skipped tests do not count as listed and run for the shard guard (reflow-rotas covers touch itself; kill-reopen launches its own desktop Chromium)
+      testIgnore: ["**/reflow-rotas.e2e.ts", "**/offline-kill-reopen.e2e.ts"],
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
     // Windows Playwright WebKit exposes OPFS but cannot open the sync access handle.
@@ -34,7 +37,7 @@ export default defineConfig({
         ]
       : []),
   ],
-  reporter: "list",
+  reporter: reportersFor("offline-poc"),
   retries: inCI ? 1 : 0,
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",

@@ -10,6 +10,7 @@ import {
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { eachRound, lockRow, raceBehindLock } from "./concurrency-support";
+import { rollbackQuietly } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -689,7 +690,7 @@ async function main() {
       );
       assert.equal(Number(ownerlessClaims.rows[0]?.count), 0);
     } finally {
-      await fill.query("ROLLBACK").catch(() => undefined);
+      await rollbackQuietly(fill);
       await fill.end();
     }
     tests.push(
@@ -1891,13 +1892,9 @@ async function main() {
     if (store) {
       await store.close();
     }
-    for (const [role, group] of [
-      [loginRole, runtimeRole],
-      [billingLoginRole, "polaris_billing_runtime"],
-    ] as const) {
+    for (const role of [loginRole, billingLoginRole] as const) {
       if (role) {
         // biome-ignore lint/performance/noAwaitInLoops: Two cleanups, in order.
-        await admin.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await admin.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       }
     }

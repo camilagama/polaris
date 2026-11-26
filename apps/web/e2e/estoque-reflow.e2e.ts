@@ -19,6 +19,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 skipOutsideChromium();
 
+const NOW = new Date("2026-10-14T12:00:00-03:00");
 const TOUCH = 44;
 const ACTIONS = '[data-slot="button-group"] [data-stock-action]';
 
@@ -29,7 +30,7 @@ const BASE = {
   productStatus: "active",
   quantity: 3,
   sku: null,
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: NOW.toISOString(),
   values: [{ optionName: "tamanho", optionValueName: "42" }],
   version: 1,
 };
@@ -89,6 +90,7 @@ async function openStock(page: Page, width: number, fontPixels: number) {
     route.fulfill(rpc({ entries: ENTRIES, nextCursor: null }))
   );
   await serveLabWorker(page);
+  await page.clock.setFixedTime(NOW);
   await page.goto("/offline-screens-lab?screen=stock");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
@@ -139,7 +141,9 @@ function geometry(page: Page) {
         element.getBoundingClientRect();
       return { bottom, height, left, right, top, width };
     };
-    const card = document.querySelector('ul[aria-label="Saldos por variante"]');
+    const card = document.querySelector(
+      "[data-list-block] ul[aria-labelledby]"
+    );
     if (card === null) {
       throw new Error("the list is not on the screen");
     }
@@ -169,7 +173,9 @@ function geometry(page: Page) {
 /** Per row: the box of the name link and of the card it sits in. */
 function nameLinks(page: Page) {
   return page.evaluate(() => {
-    const card = document.querySelector('ul[aria-label="Saldos por variante"]');
+    const card = document.querySelector(
+      "[data-list-block] ul[aria-labelledby]"
+    );
     if (card === null) {
       throw new Error("the list is not on the screen");
     }
@@ -265,7 +271,7 @@ reflowTest(
       ["Dar entrada", "Contar", "Baixar"],
       ["Receber", "Contar", "Baixar"],
     ]);
-    const list = page.getByRole("list", { name: "Saldos por variante" });
+    const list = page.getByRole("list", { name: "Saldos em estoque" });
     await assertNothingClipped(list);
     await assertNoEllipsis(list.locator(`${ACTIONS}, dd`));
     await assertNoPageScroll(page);
@@ -316,7 +322,7 @@ reflowTest(
     expect(columns, "Saldo e Custo médio numa coluna só").toEqual(
       ENTRIES.map(() => 1)
     );
-    const list = page.getByRole("list", { name: "Saldos por variante" });
+    const list = page.getByRole("list", { name: "Saldos em estoque" });
     await assertNoEllipsis(list.locator("dl, dt, dd"));
     await assertNothingClipped(list);
   }
@@ -342,7 +348,7 @@ reflowTest(
     }
     await assertNoPageScroll(page);
     await assertNothingClipped(
-      page.getByRole("list", { name: "Saldos por variante" })
+      page.getByRole("list", { name: "Saldos em estoque" })
     );
   }
 );

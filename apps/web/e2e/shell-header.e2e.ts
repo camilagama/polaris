@@ -56,6 +56,8 @@ const CHIP_TEXTS = [
   "Preparando",
 ];
 
+const WORD_CUTOFF_REM = 19.75;
+
 const LONG_STORE =
   "Loja de roupas, calçados e acessórios do centro da cidade de São José dos Campos";
 const LONG_EMAIL =
@@ -73,7 +75,7 @@ const SHELL_ROUTES = [
   "/dashboard",
   "/expenses",
   "/configuracoes",
-  "/configuracoes?aba=aparelhos",
+  "/conta?aba=aparelhos",
   "/attention",
   "/ajuda",
   "/uma-pagina-que-nao-existe",
@@ -262,6 +264,57 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
       .poll(async () => (await word.boundingBox())?.width ?? 0)
       .toBeLessThanOrEqual(1);
   });
+
+  for (const [width, fontPixels] of [
+    [320, 16],
+    [360, 16],
+    [320, 20],
+    [360, 20],
+    [390, 20],
+    [393, 20],
+  ] as const) {
+    const wordShown = width / fontPixels >= WORD_CUTOFF_REM;
+    test(`${width} px com letra de ${fontPixels} px: nenhum texto do chip é cortado e a palavra Polaris ${wordShown ? "aparece" : "só se lê"}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await serve(page);
+      await openShell(page);
+      await page.evaluate((size) => {
+        document.documentElement.style.fontSize = `${size}px`;
+      }, fontPixels);
+      await settled(page);
+      const home = page.getByRole("link", { exact: true, name: "Polaris" });
+      await expect(home).toHaveCount(1);
+      const word = home.locator("span");
+      for (const text of CHIP_TEXTS) {
+        const label = `${width} px, ${fontPixels} px, chip "${text}"`;
+        // biome-ignore lint/performance/noAwaitInLoops: one state at a time
+        await setText(page, text);
+        const fit = await page
+          .locator("[data-app-header] .sync-status-short")
+          .evaluate((element) => ({
+            client: element.clientWidth,
+            scroll: element.scrollWidth,
+          }));
+        expect(fit.scroll, label).toBeLessThanOrEqual(fit.client);
+        const now = await measure(page);
+        expect(right(now.chip), label).toBeLessThanOrEqual(now.eye?.x ?? 0);
+        expect(now.chip?.height, label).toBeLessThanOrEqual(
+          now.header?.height ?? 0
+        );
+      }
+      if (wordShown) {
+        await expect
+          .poll(async () => (await word.boundingBox())?.width ?? 0)
+          .toBeGreaterThan(8);
+      } else {
+        await expect
+          .poll(async () => (await word.boundingBox())?.width ?? 0)
+          .toBeLessThanOrEqual(1);
+      }
+    });
+  }
 
   test("o chip encolhe com reticências a 320 px e a frase inteira fica no nome acessível", async ({
     page,
@@ -477,6 +530,7 @@ async function expectTwoTaps(page: Page, width: number, label: string) {
   const menu = page.getByRole("menu");
   const items = menu.getByRole("menuitem");
   await expect(items, label).toHaveText([
+    "Minha conta",
     "Ajuda e contato",
     "Termos de Uso (abre em outra aba)",
     "Política de Privacidade (abre em outra aba)",
@@ -595,6 +649,84 @@ test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho
     ).toHaveCount(1);
   });
 
+  /** The center of the drawn eye against the center of its button, in both states. */
+  const iconOffset = (button: Locator) =>
+    button.evaluate((element) => {
+      const icon = element.querySelector("svg");
+      if (!icon) {
+        throw new Error("o botão não tem ícone");
+      }
+      const center = (target: Element) => {
+        const rect = target.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      };
+      const middle = center(element);
+      const drawn = center(icon);
+      return { x: drawn.x - middle.x, y: drawn.y - middle.y };
+    });
+
+  for (const width of [320, 360, 1280]) {
+    test(`AC-A5.1: ${width} px: o centro do olho é o centro do botão, aberto e fechado`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      await openShell(page);
+      for (const pressed of ["false", "true"]) {
+        // biome-ignore lint/performance/noAwaitInLoops: the two states in order
+        const offset = await iconOffset(eye(page));
+        expect(
+          Math.abs(offset.x),
+          `aria-pressed=${pressed}: eixo x`
+        ).toBeLessThanOrEqual(0.5);
+        expect(
+          Math.abs(offset.y),
+          `aria-pressed=${pressed}: eixo y`
+        ).toBeLessThanOrEqual(0.5);
+        if (pressed === "false") {
+          await eye(page).click();
+          await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+        }
+      }
+    });
+  }
+
+  for (const width of [360, 1280]) {
+    test(`AC-A5.2: ${width} px: o olho está a mesma distância dos vizinhos que os outros controles do grupo, e o grupo não tem elemento vazio`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      await openShell(page);
+      const parts = await eye(page).evaluate((element) => {
+        const group = element.parentElement as HTMLElement;
+        const rects = [...group.children].map((child) => {
+          const rect = child.getBoundingClientRect();
+          return {
+            empty: rect.width === 0 || rect.height === 0,
+            x: rect.x,
+            right: rect.right,
+          };
+        });
+        return { gap: getComputedStyle(group).columnGap, rects };
+      });
+      expect(parts.rects.length).toBeGreaterThanOrEqual(2);
+      const box = (await eye(page).boundingBox()) as Box;
+      expect(box.width, "o olho é um quadrado").toBe(box.height);
+      expect([36, 40], "36 px no mouse, 40 no toque").toContain(box.width);
+      expect(parts.rects.some((rect) => rect.empty)).toBe(false);
+      const gaps = parts.rects
+        .slice(1)
+        .map(
+          (rect, index) =>
+            rect.x - (parts.rects[index] as { right: number }).right
+        );
+      for (const gap of gaps) {
+        expect(gap).toBeCloseTo(Number.parseFloat(parts.gap), 1);
+      }
+    });
+  }
+
   test("a ordem do Tab no cabeçalho é o chip, o olho e a conta", async ({
     page,
   }) => {
@@ -652,7 +784,9 @@ test.describe("AC-2.3: teclado, foco e alvos", () => {
     await page.keyboard.press("Enter");
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitemradio").first()).toBeFocused();
+    await expect(
+      menu.getByRole("menuitem", { name: "Minha conta" })
+    ).toBeFocused();
     await settled(page);
     for (const item of await menu
       .locator('[role="menuitem"], [role="menuitemradio"]')

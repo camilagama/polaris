@@ -3268,38 +3268,40 @@ export function createBillingStore(
       const record = await pool.query<{
         access_ends_at: Date | null;
         cancel_at_period_end: boolean;
+        claim_consumed_at: Date | null;
         current_charge_amount: string | null;
         cycle_months: number | null;
         first_charge_amount: string | null;
         first_charge_at: Date | null;
         first_charge_on: string | null;
+        has_record: boolean;
         pending_cycle_months: number | null;
         price_amount: string | null;
         provider: string | null;
         refund_requested_at: Date | null;
         revoked_reason: string | null;
         revoked_through: Date | null;
-        state: string;
+        state: string | null;
         trial_started_at: Date | null;
       }>(
-        // the money as text with its two decimals (money.md), the day as São Paulo's text: no parser in between
-        `SELECT state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, provider, trial_started_at,
-                revoked_through, revoked_reason, to_char(first_charge_on, 'YYYY-MM-DD') AS first_charge_on,
-                first_charge_at, round(first_charge_amount, 2)::text AS first_charge_amount,
-                round(price_amount, 2)::text AS price_amount, refund_requested_at,
-                round(current_charge_amount, 2)::text AS current_charge_amount
-           FROM public.organization_billing WHERE organization_id = $1`,
-        [organizationId]
+        // one statement for the record and the person's trial: the claim is read whether or not the organization has a
+        // record (the left join keeps the row), and it is keyed only by the session's user. The money as text with its
+        // two decimals (money.md), the day as São Paulo's text: no parser in between
+        `SELECT (b.organization_id IS NOT NULL) AS has_record, b.state, b.access_ends_at, b.cancel_at_period_end,
+                b.cycle_months, b.pending_cycle_months, b.provider, b.trial_started_at, b.revoked_through,
+                b.revoked_reason, to_char(b.first_charge_on, 'YYYY-MM-DD') AS first_charge_on, b.first_charge_at,
+                round(b.first_charge_amount, 2)::text AS first_charge_amount,
+                round(b.price_amount, 2)::text AS price_amount, b.refund_requested_at,
+                round(b.current_charge_amount, 2)::text AS current_charge_amount,
+                (SELECT c.consumed_at FROM public.billing_trial_claims c WHERE c.user_id = $2) AS claim_consumed_at
+           FROM (SELECT 1) AS one
+           LEFT JOIN public.organization_billing b ON b.organization_id = $1`,
+        [organizationId, userId]
       );
-      const claim = await pool.query<{ consumed_at: Date | null }>(
-        "SELECT consumed_at FROM public.billing_trial_claims WHERE user_id = $1",
-        [userId]
-      );
-      const [held] = claim.rows;
-      // a claim reserved and not consumed is still the person's to take
-      const personTrialUsed = held !== undefined && held.consumed_at !== null;
       const [row] = record.rows;
-      if (!row) {
+      // a claim reserved and not consumed is still the person's to take
+      const personTrialUsed = Boolean(row?.claim_consumed_at);
+      if (!row?.has_record) {
         return {
           accessEndsAt: null,
           cancelAtPeriodEnd: false,
@@ -3816,9 +3818,14 @@ export function createBillingStore(
       });
     },
     async sweepDue(now = new Date(), limit = 50) {
+      // a trial still inside its slack (`trialAccessEndsAt`, the same day boundary at UTC-3) is not due yet and
+      // must not take, sweep after sweep, the places of the paid periods that are
       const due = await pool.query<{ organization_id: string }>(
         `SELECT organization_id FROM public.organization_billing
           WHERE state IN ('trialing', 'active', 'grace') AND access_ends_at <= $1
+            AND (state <> 'trialing'
+              OR ((access_ends_at AT TIME ZONE INTERVAL '-03:00')::date + 1 + time '06:00')
+                AT TIME ZONE INTERVAL '-03:00' <= $1)
           ORDER BY access_ends_at, organization_id
           LIMIT $2`,
         [now, limit]

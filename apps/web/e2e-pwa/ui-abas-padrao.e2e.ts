@@ -1,0 +1,466 @@
+/// <reference lib="dom" />
+import type { Locator, Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import {
+  assertNoPageScroll,
+  expectReflowFont,
+  openReflowViewport,
+  reflowTest,
+  skipOutsideChromium,
+} from "../e2e/reflow";
+import { expectScreenTabsKeyboard } from "../e2e/tabs-keyboard";
+import { SCREENS, VIEWPORTS } from "./ui-screens";
+
+/**
+ * A tab of a screen is drawn by one piece (`ScreenTabList` and `ScreenTabTrigger`), and the state filter of a list by
+ * another (`SegmentedFilter`): the strip, the tab and the open tab read the same height, font and colors on Despesas,
+ * Resultado, Configurações and the dialog of the product (the filters of Produtos, Clientes, Categorias, the status of
+ * Despesas and the lines of the preview of the import read the same among themselves); the arrows, Home, End and Enter do
+ * the same on all of them; and at 320 px with the browser font at 20 px no tab is cut (the strip scrolls inside its box).
+ */
+skipOutsideChromium();
+
+test.beforeEach(({ browserName }, testInfo) => {
+  test.skip(
+    browserName !== "chromium" || testInfo.project.name !== "chromium-desktop",
+    "each test sets its own viewport"
+  );
+});
+
+interface TabCase {
+  list: string;
+  name: string;
+  screen: string;
+}
+
+const TABS: readonly TabCase[] = [
+  {
+    list: "Lançamentos, recorrentes e categorias",
+    name: "Despesas",
+    screen: "despesas lista",
+  },
+  {
+    list: "Resultado e metas",
+    name: "Resultado",
+    screen: "resultado mês incompleto e gráfico de vendas",
+  },
+  {
+    list: "Partes do produto",
+    name: "diálogo do produto",
+    screen: "produtos edição com erro no nome",
+  },
+];
+
+const SETTINGS: TabCase = {
+  list: "Configurações da loja",
+  name: "Configurações",
+  screen: "assinatura oferta com Pix",
+};
+
+const FILTERS: readonly TabCase[] = [
+  {
+    list: "Estado dos produtos",
+    name: "filtro de Produtos",
+    screen: "produtos lista",
+  },
+  {
+    list: "Estado dos clientes",
+    name: "filtro de Clientes",
+    screen: "clientes lista",
+  },
+  {
+    list: "Estado das categorias",
+    name: "filtro de Categorias",
+    screen: "categorias lista",
+  },
+  {
+    list: "Situação",
+    name: "filtro de Despesas",
+    screen: "despesas lista",
+  },
+  {
+    list: "Linhas do arquivo",
+    name: "prévia da importação",
+    screen: "importar planilha prévia com erro, já existe e sem categoria",
+  },
+];
+
+const openScreen = async (page: Page, name: string) => {
+  const screen = SCREENS.find((candidate) => candidate.name === name);
+  expect(screen, `a tela "${name}" não está em SCREENS`).toBeDefined();
+  await screen?.open(page, page.context());
+};
+
+interface TabLook {
+  active: Record<string, string>;
+  height: number;
+  listHeight: number;
+  inactive: Record<string, string>;
+  list: Record<string, string>;
+  tab: Record<string, string>;
+}
+
+/** The strip is the parent of the tab: the tablist itself, or the row of its group in Configurações (the list there is only the column of rows). */
+const LIST_PROPERTIES = ["backgroundColor", "borderRadius", "paddingTop"];
+const TAB_PROPERTIES = [
+  "borderRadius",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "paddingLeft",
+  "paddingRight",
+];
+const TRANSPARENT = /^rgba\(0, 0, 0, 0\)$|^transparent$/;
+const ACTIVE_PROPERTIES = ["backgroundColor", "boxShadow", "color"];
+
+function lookOf(list: Locator): Promise<TabLook> {
+  return list.evaluate(
+    (element, [listProps, tabProps, activeProps]) => {
+      const pick = (target: Element, names: string[]) => {
+        const style = getComputedStyle(target);
+        return Object.fromEntries(
+          names.map((name) => [
+            name,
+            String(style[name as keyof CSSStyleDeclaration]),
+          ])
+        );
+      };
+      const tabs = [...element.querySelectorAll('[role="tab"]')];
+      const active = tabs.find(
+        (tab) => tab.getAttribute("aria-selected") === "true"
+      ) as Element;
+      const inactive = tabs.find(
+        (tab) => tab.getAttribute("aria-selected") === "false"
+      ) as Element;
+      return {
+        active: pick(active, activeProps as string[]),
+        height: Math.round(active.getBoundingClientRect().height * 100) / 100,
+        inactive: { color: String(getComputedStyle(inactive).color) },
+        listHeight:
+          Math.round(
+            (active.parentElement as Element).getBoundingClientRect().height *
+              100
+          ) / 100,
+        list: pick(active.parentElement as Element, listProps as string[]),
+        tab: pick(active, tabProps as string[]),
+      };
+    },
+    [LIST_PROPERTIES, TAB_PROPERTIES, ACTIVE_PROPERTIES]
+  );
+}
+
+interface Stroke {
+  background: string;
+  bottom: string;
+  height: string;
+  opacity: string;
+  position: string;
+  width: string;
+}
+
+interface LineLook {
+  activeColor: string;
+  activeStroke: Stroke;
+  closedColors: string[];
+  closedStrokes: Stroke[];
+  ink: string;
+  listBottom: number;
+  rule: string;
+  ruleReaches: boolean;
+  tabBottom: number;
+  tabWidth: number;
+}
+
+function lineOf(list: Locator): Promise<LineLook> {
+  return list.evaluate((element) => {
+    const stroke = (tab: Element) => {
+      const style = getComputedStyle(tab, "::after");
+      return {
+        background: style.backgroundColor,
+        bottom: style.bottom,
+        height: style.height,
+        opacity: style.opacity,
+        position: style.position,
+        width: style.width,
+      };
+    };
+    const tabs = [...element.querySelectorAll('[role="tab"]')];
+    const active = tabs.find(
+      (tab) => tab.getAttribute("aria-selected") === "true"
+    ) as Element;
+    const closed = tabs.filter((tab) => tab !== active);
+    const frame = (
+      (element.parentElement as HTMLElement).parentElement as HTMLElement
+    ).getBoundingClientRect();
+    return {
+      activeColor: getComputedStyle(active).color,
+      activeStroke: stroke(active),
+      closedColors: closed.map((tab) => getComputedStyle(tab).color),
+      closedStrokes: closed.map(stroke),
+      ink: getComputedStyle(document.body).color,
+      listBottom: element.getBoundingClientRect().bottom,
+      rule: getComputedStyle(element).borderBottomWidth,
+      ruleReaches: element.getBoundingClientRect().width >= frame.width - 1,
+      tabBottom: active.getBoundingClientRect().bottom,
+      tabWidth: active.getBoundingClientRect().width,
+    };
+  });
+}
+
+/** The open tab has the 2 px stroke in ink over the 1 px rule, the closed ones have none, and the form tells them apart. */
+function expectLine(line: LineLook) {
+  expect(line.rule, "o fio sob a lista").toBe("1px");
+  expect(line.ruleReaches, "o fio vai até o fim da caixa").toBe(true);
+  expect(line.activeStroke.position).toBe("absolute");
+  expect(line.activeStroke.height).toBe("2px");
+  expect(line.activeStroke.bottom, "o traço cobre o fio").toBe("-1px");
+  expect(
+    Math.abs(Number.parseFloat(line.activeStroke.width) - line.tabWidth),
+    "o traço tem a largura da aba"
+  ).toBeLessThanOrEqual(1);
+  expect(line.listBottom - line.tabBottom, "o fio está sob a aba").toBe(1);
+  expect(line.activeStroke.opacity, "a aba aberta tem o traço").toBe("1");
+  expect(line.activeStroke.background, "o traço é a tinta").toBe(line.ink);
+  expect(line.activeColor, "a aba aberta lê em tinta").toBe(line.ink);
+  for (const stroke of line.closedStrokes) {
+    expect(stroke.opacity, "a aba fechada não tem o traço").toBe("0");
+  }
+  for (const color of line.closedColors) {
+    expect(color, "a aba fechada lê em muted-foreground").not.toBe(line.ink);
+  }
+}
+
+async function lookAt(page: Page, { list, screen }: TabCase) {
+  await openScreen(page, screen);
+  const tablist = page.getByRole("tablist", { name: list });
+  await expect(tablist).toBeVisible();
+  return lookOf(tablist);
+}
+
+test.describe("o mesmo desenho a 1280 px com mouse", () => {
+  test.use({ hasTouch: false, viewport: VIEWPORTS["1280"] });
+
+  for (const item of [...TABS.slice(1), SETTINGS]) {
+    test(`a aba de ${item.name} lê o mesmo que a de Despesas: altura, fonte, estado ativo e faixa`, async ({
+      page,
+    }) => {
+      const reference = await lookAt(page, TABS[0] as TabCase);
+      expect(
+        reference.height,
+        "a aba tem a altura do controle"
+      ).toBeGreaterThan(20);
+      expect(await lookAt(page, item)).toEqual(reference);
+    });
+  }
+
+  for (const item of FILTERS.slice(1)) {
+    test(`o filtro de estado de ${item.name} lê o mesmo que o de Produtos`, async ({
+      page,
+    }) => {
+      const reference = await lookAt(page, FILTERS[0] as TabCase);
+      expect(await lookAt(page, item)).toEqual(reference);
+    });
+  }
+
+  test("a aba de tela e o filtro de lista têm a lista da mesma altura e a mesma fonte, e só o filtro tem a faixa", async ({
+    page,
+  }) => {
+    const tab = await lookAt(page, TABS[0] as TabCase);
+    const filter = await lookAt(page, FILTERS[0] as TabCase);
+    expect(filter.listHeight, "a lista tem a altura do controle").toBe(
+      tab.listHeight
+    );
+    expect(filter.tab.fontSize).toBe(tab.tab.fontSize);
+    expect(filter.tab.fontWeight).toBe(tab.tab.fontWeight);
+    expect(filter.tab.fontFamily).toBe(tab.tab.fontFamily);
+    expect(filter.list.backgroundColor, "o filtro é a faixa").not.toBe(
+      tab.list.backgroundColor
+    );
+    expect(
+      filter.active.backgroundColor,
+      "o filtro enche a aba aberta"
+    ).not.toBe(tab.active.backgroundColor);
+    expect(tab.list.backgroundColor, "a aba de tela não tem faixa").toMatch(
+      TRANSPARENT
+    );
+    expect(tab.active.backgroundColor).toMatch(TRANSPARENT);
+    expect(tab.active.boxShadow).toBe("none");
+  });
+
+  for (const item of [...TABS, SETTINGS]) {
+    test(`a aba aberta de ${item.name} tem o traço de 2 px em tinta sobre o fio de 1 px, e as fechadas não`, async ({
+      page,
+    }) => {
+      await openScreen(page, item.screen);
+      const tablist = page.getByRole("tablist", { name: item.list });
+      await expect(tablist).toBeVisible();
+      expectLine(await lineOf(tablist));
+    });
+  }
+
+  for (const item of [...TABS, SETTINGS]) {
+    test(`teclado em ${item.name}: setas movem o foco, Home e End vão às pontas, Enter e Espaço abrem`, async ({
+      page,
+    }) => {
+      await openScreen(page, item.screen);
+      const tablist = page.getByRole("tablist", { name: item.list });
+      await expect(tablist).toBeVisible();
+      const names = await tablist.getByRole("tab").allInnerTexts();
+      await tablist.getByRole("tab").first().click();
+      await expectScreenTabsKeyboard(
+        page,
+        item.list,
+        names.map((text) => text.replace(/\s+/g, " ").trim())
+      );
+    });
+  }
+});
+
+test.describe("o traço no celular, a 360 px com toque", () => {
+  test.use({ hasTouch: true, viewport: VIEWPORTS["360"] });
+
+  for (const item of TABS) {
+    test(`a aba aberta de ${item.name} tem o traço e o toque de 44 px`, async ({
+      page,
+    }) => {
+      await openScreen(page, item.screen);
+      const tablist = page.getByRole("tablist", { name: item.list });
+      await expect(tablist).toBeVisible();
+      expectLine(await lineOf(tablist));
+      const active = tablist.getByRole("tab", { selected: true });
+      const area = await active.evaluate((tab) => {
+        const before = getComputedStyle(tab, "::before");
+        return {
+          height:
+            tab.getBoundingClientRect().height +
+            Math.abs(Number.parseFloat(before.top)) +
+            Math.abs(Number.parseFloat(before.bottom)),
+        };
+      });
+      expect(area.height).toBeGreaterThanOrEqual(44);
+    });
+  }
+});
+
+for (const item of [...TABS, ...FILTERS]) {
+  test.describe(`${item.name} a 320 px com a letra do navegador em 20 px`, () => {
+    reflowTest(`nenhuma aba de ${item.name} é cortada`, async ({ page }) => {
+      await openReflowViewport(page);
+      await openScreen(page, item.screen);
+      await expectReflowFont(page);
+      const tablist = page.getByRole("tablist", { name: item.list });
+      await expect(tablist).toBeVisible();
+      const cut = await tablist
+        .getByRole("tab")
+        .evaluateAll((tabs) =>
+          tabs
+            .filter((tab) => tab.scrollWidth > tab.clientWidth + 1)
+            .map((tab) => tab.textContent)
+        );
+      expect(cut, "abas com o texto cortado").toEqual([]);
+      const strip = await tablist.evaluate((element) => {
+        const box = (
+          element.parentElement as HTMLElement
+        ).getBoundingClientRect();
+        return { right: box.right, window: innerWidth };
+      });
+      expect(
+        strip.right,
+        "a faixa rola dentro da própria caixa, não alarga a tela"
+      ).toBeLessThanOrEqual(strip.window);
+      await assertNoPageScroll(page);
+    });
+  });
+}
+
+const DIALOG_TABS = [...TABS, ...FILTERS].filter((item) =>
+  ["diálogo do produto", "prévia da importação"].includes(item.name)
+);
+
+const FADE_CASES = [
+  { fontPixels: 20, name: "diálogo do produto", width: 320 },
+  { fontPixels: 16, name: "prévia da importação", width: 320 },
+  { fontPixels: 16, name: "prévia da importação", width: 360 },
+] as const;
+
+const TOLERANCE = 2;
+
+/** The rgb of any CSS color the page can parse (oklch included), read back through a canvas pixel. */
+function rgbOfColors(
+  page: Page,
+  colors: readonly string[]
+): Promise<number[][]> {
+  return page.evaluate((list) => {
+    const context = document.createElement("canvas").getContext("2d", {
+      willReadFrequently: true,
+    }) as CanvasRenderingContext2D;
+    return list.map((color) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    });
+  }, colors);
+}
+
+for (const { fontPixels, name, width } of FADE_CASES) {
+  const item = DIALOG_TABS.find(
+    (candidate) => candidate.name === name
+  ) as TabCase;
+  test.describe(`o esmaecido das abas do ${name} a ${width} px, no escuro`, () => {
+    test.use({ colorScheme: "dark", hasTouch: false });
+
+    for (const side of ["start", "end"] as const) {
+      test(`a ponta ${side === "start" ? "da esquerda" : "da direita"} começa na cor do fundo do diálogo`, async ({
+        page,
+      }) => {
+        await openReflowViewport(page, { fontPixels, width });
+        await openScreen(page, item.screen);
+        const tablist = page.getByRole("tablist", { name: item.list });
+        await expect(tablist).toBeVisible();
+        const scroller = tablist.locator("xpath=..");
+        const frame = scroller.locator("xpath=..");
+        await expect
+          .poll(() =>
+            scroller.evaluate(
+              (element) => element.scrollWidth - element.clientWidth
+            )
+          )
+          .toBeGreaterThan(1);
+        const edge = frame.locator(`[data-tabs-edge='${side}']`);
+        const scrollTo = (to: "start" | "end") =>
+          scroller.evaluate((element, target) => {
+            element.scrollLeft = target === "start" ? 0 : element.scrollWidth;
+          }, to);
+        await scrollTo("end");
+        await expect(frame.locator("[data-tabs-edge='start']")).toHaveCount(1);
+        if (side === "end") {
+          await scrollTo("start");
+        }
+        await expect(edge).toHaveCount(1);
+        const [fade, dialog] = await Promise.all([
+          edge.evaluate((element) =>
+            getComputedStyle(element).getPropertyValue("--tw-gradient-from")
+          ),
+          page
+            .getByRole("dialog")
+            .evaluate((element) => getComputedStyle(element).backgroundColor),
+        ]);
+        expect(fade, "o esmaecido lê a cor de partida").not.toBe("");
+        expect(dialog, "o diálogo lê a cor de fundo").not.toBe("");
+        const [fadeRgb = [], dialogRgb = []] = await rgbOfColors(page, [
+          fade,
+          dialog,
+        ]);
+        expect(fadeRgb).toHaveLength(3);
+        for (const [index, channel] of fadeRgb.entries()) {
+          expect(
+            Math.abs(channel - (dialogRgb[index] ?? Number.NaN)),
+            `canal ${index}: esmaecido ${fadeRgb}, diálogo ${dialogRgb}`
+          ).toBeLessThanOrEqual(TOLERANCE);
+        }
+      });
+    }
+  });
+}

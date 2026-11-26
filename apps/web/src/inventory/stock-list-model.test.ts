@@ -8,11 +8,14 @@ import {
 import {
   canLoadMoreStock,
   defaultStockFilters,
+  framedListState,
   initialStockListState,
+  readStockLinkFilters,
+  readStockLinkSearch,
   STOCK_PAGE_SIZE,
-  stockBalanceUpdated,
   stockAttentionLinks,
   stockAttentionRequest,
+  stockBalanceUpdated,
   stockCountText,
   stockCoverIds,
   stockEmptyMessage,
@@ -25,8 +28,6 @@ import {
   stockMoreLoaded,
   stockMoreStarted,
   stockMoreView,
-  readStockLinkFilters,
-  readStockLinkSearch,
   stockRowActions,
   stockRows,
   type VariantCount,
@@ -63,10 +64,13 @@ function entry(
   };
 }
 
+const KEY = "filtro-a";
+const OTHER_KEY = "filtro-b";
+
 const ready = (
   entries: InventoryBalanceEntryReadModel[],
   nextCursor: string | null = null
-) => stockLoaded(initialStockListState(), { entries, nextCursor });
+) => stockLoaded(initialStockListState(), { entries, nextCursor }, KEY, null);
 
 describe("stockListRequest", () => {
   it("asks only for what is needed in one read", () => {
@@ -259,31 +263,92 @@ describe("list state", () => {
     expect(state.entries).toHaveLength(2);
   });
 
-  it("keeps a showing list on a failed refresh and reports it", () => {
+  it("a failed read for the same filter keeps the list, hides the button and flags it as possibly old", () => {
     const state = stockLoadFailed(
-      stockLoading(ready([entry(1)])),
-      new TypeError("offline")
+      stockLoading(ready([entry(1)], "c")),
+      new TypeError("offline"),
+      KEY
     );
     expect(state.status).toBe("ready");
     expect(state.entries).toHaveLength(1);
-    expect(state.moreError).toContain("Não foi possível carregar");
+    expect(stockMoreView(state, KEY)).toMatchObject({
+      error: null,
+      refreshFailed: true,
+      refreshing: false,
+      visible: false,
+    });
+    expect(canLoadMoreStock(state, KEY)).toBe(false);
+  });
+
+  it("a failed read for another filter drops the old rows and shows the list error", () => {
+    const state = stockLoadFailed(
+      stockLoading(ready([entry(1)], "c")),
+      new TypeError("offline"),
+      OTHER_KEY
+    );
+    expect(state.status).toBe("error");
+    expect(state.entries).toEqual([]);
+    expect(state.nextCursor).toBeNull();
+    expect(stockMoreView(state, OTHER_KEY).visible).toBe(false);
+  });
+
+  it("hides the button while the first page is read again and when the filter in force is another one", () => {
+    const state = stockLoading(ready([entry(1)], "c"));
+    expect(stockMoreView(state, KEY)).toMatchObject({
+      refreshing: true,
+      visible: false,
+    });
+    const idle = ready([entry(1)], "c");
+    expect(canLoadMoreStock(idle, OTHER_KEY)).toBe(false);
+    expect(stockMoreView(idle, OTHER_KEY).visible).toBe(false);
+    expect(stockMoreStarted(idle, OTHER_KEY)).toBe(idle);
+  });
+
+  it("a first page for another filter replaces rows, key and cursor together", () => {
+    const state = stockLoaded(
+      stockLoading(ready([entry(1), entry(2)], "cursor-1")),
+      { entries: [entry(9)], nextCursor: "cursor-9" },
+      OTHER_KEY,
+      null
+    );
+    expect(state.entries.map((item) => item.variantId)).toEqual([variantId(9)]);
+    expect(state.nextCursor).toBe("cursor-9");
+    expect(canLoadMoreStock(state, KEY)).toBe(false);
+    expect(canLoadMoreStock(state, OTHER_KEY)).toBe(true);
+  });
+
+  it("rereading the first page drops the next page in flight and keeps the list", () => {
+    const inFlight = stockMoreStarted(
+      ready([entry(1), entry(2)], "cursor-1"),
+      KEY
+    );
+    expect(inFlight.loadingMore).toBe(true);
+
+    const state = stockLoading(inFlight);
+    expect(state.loadingMore).toBe(false);
+    expect(state.status).toBe("ready");
+    expect(state.entries).toEqual(inFlight.entries);
+    expect(state.nextCursor).toBe("cursor-1");
+    expect(canLoadMoreStock(state, KEY)).toBe(false);
   });
 
   it("turns a failed first load into an error that says only what failed (the notice says the rest)", () => {
-    const state = stockLoadFailed(initialStockListState(), {
-      code: "UNAUTHORIZED",
-    });
+    const state = stockLoadFailed(
+      initialStockListState(),
+      { code: "UNAUTHORIZED" },
+      KEY
+    );
     expect(state.status).toBe("error");
     expect(state.error).toBe("Não foi possível carregar o estoque.");
   });
 
   it("pages with a cursor and never repeats a variant", () => {
     const first = ready([entry(1), entry(2)], "cursor-1");
-    expect(canLoadMoreStock(first)).toBe(true);
-    const started = stockMoreStarted(first);
+    expect(canLoadMoreStock(first, KEY)).toBe(true);
+    const started = stockMoreStarted(first, KEY);
     expect(started.loadingMore).toBe(true);
-    expect(canLoadMoreStock(started)).toBe(false);
-    expect(stockMoreStarted(started)).toBe(started);
+    expect(canLoadMoreStock(started, KEY)).toBe(false);
+    expect(stockMoreStarted(started, KEY)).toBe(started);
 
     const next = stockMoreLoaded(started, {
       entries: [entry(2), entry(3)],
@@ -295,13 +360,14 @@ describe("list state", () => {
       variantId(3),
     ]);
     expect(next.loadingMore).toBe(false);
-    expect(canLoadMoreStock(next)).toBe(false);
+    expect(canLoadMoreStock(next, KEY)).toBe(false);
   });
 
   it("reports a failed page without losing the list", () => {
-    const state = stockMoreFailed(stockMoreStarted(ready([entry(1)], "c")), {
-      code: "FORBIDDEN",
-    });
+    const state = stockMoreFailed(
+      stockMoreStarted(ready([entry(1)], "c"), KEY),
+      { code: "FORBIDDEN" }
+    );
     expect(state.entries).toHaveLength(1);
     expect(state.loadingMore).toBe(false);
     expect(state.moreError).toContain("acesso");
@@ -409,12 +475,12 @@ describe("stockRows", () => {
 
 describe("views", () => {
   it("covers loading, error, empty and ready", () => {
-    expect(
-      stockListView(initialStockListState(), defaultStockFilters).kind
-    ).toBe("loading");
+    expect(stockListView(initialStockListState(), defaultStockFilters)).toEqual(
+      { kind: "loading" }
+    );
     expect(
       stockListView(
-        stockLoadFailed(initialStockListState(), new Error("x")),
+        stockLoadFailed(initialStockListState(), new Error("x"), KEY),
         defaultStockFilters
       ).kind
     ).toBe("error");
@@ -425,6 +491,18 @@ describe("views", () => {
     expect(stockListView(ready([entry(1)]), defaultStockFilters).kind).toBe(
       "ready"
     );
+  });
+
+  it("frames the list in every state but the error and the empty catalog", () => {
+    const frameOf = (state: Parameters<typeof stockListView>[0], query = "") =>
+      framedListState(stockListView(state, { ...defaultStockFilters, query }));
+    expect(frameOf(initialStockListState())).toBe("loading");
+    expect(frameOf(ready([entry(1)]))).toBe("rows");
+    expect(frameOf(ready([]), "zzz")).toBe("filtered-empty");
+    expect(frameOf(ready([]))).toBeNull();
+    expect(
+      frameOf(stockLoadFailed(initialStockListState(), new Error("x"), KEY))
+    ).toBeNull();
   });
 
   it("explains an empty result by the filter that caused it", () => {
@@ -440,6 +518,23 @@ describe("views", () => {
     expect(
       stockListView(ready([]), { ...defaultStockFilters, query: "x" })
     ).toMatchObject({ kind: "empty", showCatalogLink: false });
+  });
+
+  it("keeps the empty search on screen, not the empty catalog, while the cleared search waits to be read", () => {
+    const searched = { ...defaultStockFilters, query: "zzz" };
+    const state = stockLoaded(
+      initialStockListState(),
+      { entries: [], nextCursor: null },
+      KEY,
+      searched
+    );
+    const view = stockListView(state, defaultStockFilters);
+    expect(view).toMatchObject({
+      kind: "empty",
+      message: "Nenhuma variante encontrada para “zzz”.",
+      showCatalogLink: false,
+    });
+    expect(framedListState(view)).toBe("filtered-empty");
   });
 
   it("says why the list without a cost is empty, online and without connection", () => {
@@ -480,16 +575,16 @@ describe("views", () => {
 
   it("describes the load-more control and the count", () => {
     const withMore = ready([entry(1)], "c");
-    expect(stockMoreView(withMore)).toMatchObject({
+    expect(stockMoreView(withMore, KEY)).toMatchObject({
       busy: false,
       label: "Carregar mais",
       visible: true,
     });
-    expect(stockMoreView(stockMoreStarted(withMore))).toMatchObject({
+    expect(stockMoreView(stockMoreStarted(withMore, KEY), KEY)).toMatchObject({
       busy: true,
       label: "Carregando…",
     });
-    expect(stockMoreView(ready([entry(1)])).visible).toBe(false);
+    expect(stockMoreView(ready([entry(1)]), KEY).visible).toBe(false);
     expect(stockCountText(ready([entry(1)]))).toBe("1 variante");
     expect(
       stockCountText(ready([entry(1), entry(2), entry(3), entry(4)]))

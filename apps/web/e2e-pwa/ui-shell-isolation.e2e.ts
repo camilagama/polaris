@@ -2,7 +2,12 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { mediaListBody, solidPng } from "../e2e/media-fixtures";
-import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
+import {
+  DETAIL_SALE_ID,
+  fixSaleDetailClock,
+  saleDetailAnswers,
+} from "./sale-detail-fixture";
+import { openSaleAction } from "./sale-detail-fixture";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import { serveHome } from "./ui-home-states";
@@ -10,6 +15,7 @@ import { resultAnswers } from "./ui-result-states";
 import { addSheet, rulesOutsideTailwindLayers } from "./ui-shell-isolation";
 import { serveStockRows } from "./ui-stock-states";
 import { WORKER_MARK } from "./worker-mark";
+import { chooseProfileAction } from "../e2e/payment-profile-actions";
 
 /**
  * The screens inside the real shell and the pages outside it (since batch 6): every style rule on the page
@@ -102,7 +108,7 @@ const ENTRY_PAGES = [
 const CHANGE_PASSWORD = {
   name: "Trocar senha no shell",
   open: (page: Page) =>
-    openInShell(page, "/conta/seguranca", () =>
+    openInShell(page, "/conta", () =>
       expect(page.getByLabel("Senha atual")).toBeVisible()
     ),
 };
@@ -522,12 +528,13 @@ const HISTORY = {
 };
 
 /** The real route `/sales/detail`, the API answered here: the receipt, a return made and the three panels in cards. */
-const openSaleDetail = (
+const openSaleDetail = async (
   page: Page,
   withReturn: boolean,
   then: (page: Page) => Promise<void> = async () => undefined
-) =>
-  openInShell(
+) => {
+  await fixSaleDetailClock(page);
+  return openInShell(
     page,
     `/sales/detail?saleId=${DETAIL_SALE_ID}`,
     async () => {
@@ -539,6 +546,7 @@ const openSaleDetail = (
     },
     saleDetailAnswers({ withReturn })
   );
+};
 
 const SALE_DETAIL_SCREENS = [
   {
@@ -551,12 +559,16 @@ const SALE_DETAIL_SCREENS = [
       ),
   },
   {
-    // the return and the cancellation open: the table with its fields, the choice lists and the notes
+    // the return and then the cancellation open, each in its dialog: the table with its fields, the choice lists and the notes
     name: "Detalhe da venda no shell: devolução e cancelamento abertos",
     open: (page: Page) =>
       openSaleDetail(page, false, async () => {
-        await page.getByRole("button", { name: "Registrar devolução" }).click();
-        await page.getByRole("button", { name: "Cancelar venda" }).click();
+        await openSaleAction(page, "Registrar devolução");
+        await expect(
+          page.getByRole("button", { name: "Revisar devolução" })
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+        await openSaleAction(page, "Cancelar venda");
         await expect(
           page.getByRole("button", { name: "Revisar cancelamento" })
         ).toBeVisible();
@@ -620,9 +632,7 @@ const PAYMENT_SCREENS = [
     name: "Formas de receber no shell: edição",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
-        await page
-          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-          .click();
+        await chooseProfileAction(page, "Editar", "Maquininha da loja");
         await expect(page.getByLabel("Nome do perfil")).toBeFocused();
       }),
   },
@@ -630,9 +640,7 @@ const PAYMENT_SCREENS = [
     name: "Formas de receber no shell: percentual inválido",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
-        await page
-          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-          .click();
+        await chooseProfileAction(page, "Editar", "Maquininha da loja");
         await page
           .getByLabel("Percentual efetivo sobre o total devido")
           .fill("150");
@@ -898,7 +906,11 @@ const SCREENS = [
         "/devices",
         async () => {
           await expect(
-            page.getByRole("heading", { level: 2, name: "Aparelhos" })
+            page.getByRole("heading", {
+              exact: true,
+              level: 2,
+              name: "Aparelhos",
+            })
           ).toBeVisible();
           await expect(page.getByText("Celular da Ana")).toBeVisible();
         },

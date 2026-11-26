@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatPrice,
   hasContact,
   noPriceLabel,
   priceParts,
@@ -65,9 +66,28 @@ describe("the question a visitor sends", () => {
 });
 
 describe("the price pieces", () => {
-  it("splits the symbol from the amount, and says nothing about what is not a price", () => {
-    expect(priceParts("1234.5")).toEqual({ amount: "1.234,50", symbol: "R$" });
+  it.each([
+    ["1234.5", "1.234", ",50"],
+    ["1234.50", "1.234", ",50"],
+    ["49.9", "49", ",90"],
+    ["1234567", "1.234.567", ",00"],
+    ["0.05", "0", ",05"],
+  ])("splits %s into symbol, whole and cents", (price, whole, cents) => {
+    expect(priceParts(price)).toEqual({ cents, symbol: "R$", whole });
+  });
+
+  it("glued back, the pieces are the text formatPrice reads", () => {
+    for (const price of ["49.90", "1234.50", "7", "1000000.01"]) {
+      const parts = priceParts(price);
+      expect(`${parts?.symbol} ${parts?.whole}${parts?.cents}`).toBe(
+        formatPrice(price)
+      );
+    }
+  });
+
+  it("says nothing about what is not a price", () => {
     expect(priceParts("abc")).toBeNull();
+    expect(priceParts("")).toBeNull();
   });
 });
 

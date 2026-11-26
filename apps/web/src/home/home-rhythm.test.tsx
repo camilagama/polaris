@@ -21,7 +21,7 @@ vi.mock("@/ui/charts/on-demand", async (importOriginal) => ({
   useHeatmapFailed: () => heatmap.failed,
 }));
 
-const { RhythmBlock } = await import("./home-rhythm");
+const { mapHeight, mapLayout, RhythmBlock } = await import("./home-rhythm");
 
 // Friday `23/10/2026`: the 26 weeks go from Sunday `26/04` to today, the 181st day shown (index 180)
 const TODAY = "2026-10-23";
@@ -105,10 +105,10 @@ function textBetweenTags(markup: string) {
   return text;
 }
 
-/** The text of the paragraph that carries `attribute` (null when there is none). */
-function textOf(html: string, attribute: string) {
-  const match = html.match(new RegExp(`<p[^>]*${attribute}[^>]*>(.*?)</p>`));
-  return match?.[1] === undefined ? null : textBetweenTags(match[1]);
+/** The name the screen reader gives the map (the summary). */
+function ariaLabelOfSummary(html: string) {
+  const label = html.match(SUMMARY_LABEL)?.[1] ?? "";
+  return label.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
 }
 
 beforeEach(() => {
@@ -117,13 +117,33 @@ beforeEach(() => {
 });
 
 describe("Ritmo de vendas at rest", () => {
-  it("says what only the rhythm knows over the map, not the day of today", () => {
+  it("shows no sentence under the map and no 'Últimas N semanas': the weeks and the best weekday are in the summary", () => {
     const html = render({ saturdays: true });
     expect(html).not.toContain("data-rhythm-reading");
-    expect(textOf(html, "data-rhythm-insight")).toBe(
+    expect(html).not.toContain("data-rhythm-insight");
+    const text = textBetweenTags(html.replace(TABLE, ""));
+    expect(text).not.toContain("Últimas");
+    expect(text).not.toContain("melhor dia da semana");
+    expect(text).not.toContain("23/10 · R$");
+    expect(ariaLabelOfSummary(html)).toContain(
+      "Vendas por dia nas últimas 26 semanas"
+    );
+    expect(ariaLabelOfSummary(html)).toContain(
       "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00."
     );
-    expect(textBetweenTags(html)).not.toContain("23/10 · R$");
+  });
+
+  it("puts the legend in the line of the title, after the (i), and no line under the map", () => {
+    const html = render({ saturdays: true });
+    const header = html.match(HEADER)?.[0] ?? "";
+    expect(header).toContain('data-rhythm-legend=""');
+    expect(textBetweenTags(header)).toBe("Ritmo de vendasMenosMais");
+    expect(header.indexOf("Sobre Ritmo de vendas")).toBeLessThan(
+      header.indexOf("data-rhythm-legend")
+    );
+    expect(
+      html.slice(html.indexOf("</div>", html.indexOf("<input")))
+    ).not.toContain("data-rhythm-legend");
   });
 
   it("is the map alone: no chart of the mean by weekday and no line that changes with the day read", () => {
@@ -133,12 +153,12 @@ describe("Ritmo de vendas at rest", () => {
     expect(textBetweenTags(html)).not.toContain("Média por dia da semana");
   });
 
-  it("keeps the few-weeks warning in the line of the insight, not in a line of its own", () => {
+  it("keeps the few-weeks warning in the summary, not in a line of its own", () => {
     const html = render();
-    expect(textOf(html, "data-rhythm-insight")).toBe(
-      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 1 dia com venda nas últimas 13 semanas."
+    expect(ariaLabelOfSummary(html)).toContain(
+      "Poucas semanas de vendas ainda: o mapa enche conforme você vende."
     );
-    expect(html.match(/data-rhythm-insight/g)).toHaveLength(1);
+    expect(html).not.toContain("data-rhythm-insight");
   });
 
   it("puts the keyboard control and the finger on today, which the control says though the line does not", () => {
@@ -177,11 +197,11 @@ describe("Ritmo de vendas at rest", () => {
   it("masks the amount of the weekday insight with the values hidden, and the value of today in the control", () => {
     hiddenValues.hidden = true;
     const html = render({ saturdays: true });
-    const insight = textOf(html, "data-rhythm-insight") ?? "";
-    expect(insight).toBe(
-      "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ ••••valor escondido."
+    const summary = ariaLabelOfSummary(html);
+    expect(summary).toContain(
+      "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de valor escondido."
     );
-    expect(insight).not.toMatch(MONEY_WITH_DIGIT);
+    expect(summary).not.toMatch(MONEY_WITH_DIGIT);
     expect(html).not.toContain("100,00");
     const range = html.match(RANGE)?.[0] ?? "";
     expect(range).toContain("valor escondido");
@@ -194,11 +214,29 @@ const ROWS = /<tr[ >]/g;
 const HIDDEN_WRAPPER =
   /<div class="[^"]*overflow-hidden[^"]*" data-chart-data-table="hidden">/;
 const CAPTION =
-  /<caption[^>]*>Vendas por dia, do mais novo ao mais antigo\. Meses anteriores atualizados até ontem\.<\/caption>/;
+  /<caption[^>]*>Vendas por dia nas últimas 26 semanas, do mais novo ao mais antigo\. Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R\$ 100,00\. Meses anteriores atualizados até ontem\.<\/caption>/;
+const HEADER =
+  /<div[^>]*data-slot="card-frame-header"[^>]*>[\s\S]*?<\/div><div[^>]*data-slot="card-frame-panel"/;
+const SUMMARY_LABEL = /<div[^>]*aria-details="[^"]*"[^>]*aria-label="([^"]*)"/;
 const HEADERS = /<th[^>]*scope="col"/g;
 const ATTRIBUTES = /(?:aria-label|aria-valuetext|title)="[^"]*"/g;
 const HEAD = /<thead[^>]*>[\s\S]*<\/thead>/;
 const NEWEST_ROW = /<tbody[^>]*><tr[^>]*>([\s\S]*?)<\/tr>/;
+
+describe("the skeleton of the Ritmo", () => {
+  it("keeps the height of the block read: 199 px on a phone and 203 px from 768 px, in rem", () => {
+    const html = renderToStaticMarkup(
+      <RhythmBlock
+        figures={{} as unknown as HomeFigures}
+        onRetry={NO_RETRY}
+        source={{ status: "loading" }}
+      />
+    );
+    expect(html).toContain("min-h-[12.4375rem]");
+    expect(html).toContain("md:min-h-[12.6875rem]");
+    expect(html).not.toContain("max-[21.25rem]:min-h");
+  });
+});
 
 describe("the legend of the Ritmo", () => {
   it("is there with the map", () => {
@@ -210,8 +248,6 @@ describe("the legend of the Ritmo", () => {
     const html = render();
     expect(html).not.toContain("data-rhythm-legend");
     expect(html).not.toContain("Menos");
-    expect(html).toContain("min-h-20");
-    expect(html).toContain("md:min-h-13.5");
   });
 });
 
@@ -264,7 +300,7 @@ describe("the numbers of the Ritmo, for assistive technology", () => {
     const everywhere = `${text} ${attributes}`;
     for (const said of [
       "Ritmo de vendas",
-      "Últimas 26 semanas",
+      "Vendas por dia nas últimas 26 semanas, do mais novo ao mais antigo.",
       "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00.",
       "Menos",
       "Mais",
@@ -322,5 +358,65 @@ describe("no 'Ver os números' comes back", () => {
       "home/home-rhythm.tsx",
       "ui/charts/area-chart.tsx",
     ]);
+  });
+});
+
+describe("o tamanho do mapa", () => {
+  it("fora do par é 12 + 3 e tantas semanas quantas cabem, de 13 a 26", () => {
+    for (const width of [0, 280, 320, 412, 600, 900]) {
+      const layout = mapLayout(width);
+      expect(layout.cell).toBe(12);
+      expect(layout.gap).toBe(3);
+    }
+    expect(mapLayout(0).weeks).toBe(26);
+    expect(mapLayout(412).weeks).toBe(26);
+    expect(mapLayout(900).weeks).toBe(26);
+    expect(mapLayout(320).weeks).toBe(Math.floor((320 - 22) / 15));
+    expect(mapLayout(100).weeks).toBe(13);
+  });
+
+  it("no par a célula é o maior inteiro de 12 a 20 px com que as 26 semanas cabem, e o vão é um quarto dela", () => {
+    const sizes = new Map<number, { cell: number; gap: number }>();
+    for (let width = 412; width <= 800; width += 1) {
+      const layout = mapLayout(width, true);
+      expect(layout.weeks).toBe(26);
+      expect(Number.isInteger(layout.cell)).toBe(true);
+      expect(layout.cell).toBeGreaterThanOrEqual(12);
+      expect(layout.cell).toBeLessThanOrEqual(20);
+      expect(layout.gap).toBe(Math.round(layout.cell / 4));
+      const taken = 26 * (layout.cell + layout.gap) + 22;
+      expect(taken).toBeLessThanOrEqual(width);
+      if (layout.cell < 20) {
+        expect(
+          26 * (layout.cell + 1 + Math.round((layout.cell + 1) / 4)) + 22
+        ).toBeGreaterThan(width);
+      }
+      sizes.set(layout.cell, layout);
+    }
+    expect([...sizes.keys()]).toEqual([12, 13, 14, 15, 16, 17, 18, 19, 20]);
+    expect(mapLayout(516, true)).toEqual({ cell: 15, gap: 4, weeks: 26 });
+    expect(mapLayout(542, true)).toEqual({ cell: 16, gap: 4, weeks: 26 });
+    expect(mapLayout(680, true)).toEqual({ cell: 20, gap: 5, weeks: 26 });
+    expect(mapLayout(800, true)).toEqual({ cell: 20, gap: 5, weeks: 26 });
+  });
+
+  it("no par ocupa pelo menos 85 % da largura do cartão enquanto cabe uma célula a mais (de 412 a 672 px)", () => {
+    for (let width = 412; width <= 672; width += 1) {
+      const layout = mapLayout(width, true);
+      expect(
+        (26 * (layout.cell + layout.gap) + 22) / width
+      ).toBeGreaterThanOrEqual(0.85);
+    }
+  });
+
+  it("no par sem largura medida ou estreito demais cai no 12 + 3", () => {
+    expect(mapLayout(0, true)).toEqual(mapLayout(0));
+    expect(mapLayout(300, true)).toEqual(mapLayout(300));
+  });
+
+  it("a altura é o topo mais sete linhas de célula e vão", () => {
+    expect(mapHeight(mapLayout(0))).toBe(123);
+    expect(mapHeight({ cell: 16, gap: 4 })).toBe(158);
+    expect(mapHeight({ cell: 20, gap: 5 })).toBe(193);
   });
 });

@@ -418,13 +418,15 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     data: [
       "activation_notices (os avisos das dicas para começar: loja, pessoa, passo, datas de registro, de vencimento, da primeira e da última tentativa, de envio ou de falha e o código curto da falha ou do motivo de não envio; sem e-mail, sem nome e sem texto)",
       "email_opt_outs (quem pediu para não receber os e-mails de legítimo interesse, e quando)",
-      "activation_email_suppressions (o HMAC-SHA256 do endereço depois de um bounce ou de uma reclamação, o motivo e a data; nunca o endereço)",
+      "activation_email_suppressions (o HMAC-SHA256 do endereço depois de um bounce ou de uma reclamação, o motivo, a data e o identificador da chave; nunca o endereço)",
+      "activation_series_stops (a parada da série depois de uma reclamação: o instante e o motivo, sem pessoa nem endereço) e activation_series_stop_releases (a liberação: o instante, o login da conexão e a nota de 10 a 200 caracteres, sem endereço)",
+      "activation_email_events (o identificador opaco da entrega de cada bounce ou reclamação recebida, o tipo e o instante)",
     ],
     period: { kind: "undecided" },
     proposed:
-      "O aviso: 12 meses contados de `recorded_at`, só o aviso já encerrado (enviado, falhou ou pulado); sai antes com a loja no purge, pela membership em cascata (já implementado; a conta só sai depois das memberships, então o aviso já saiu). A preferência: enquanto a conta existe, e sai com ela. A supressão: bounce e reclamação, 12 meses da gravação (decisão do Arrascaeta; o usuário decide só se quiser mais); não sai com a conta. Nenhum job existe: a classe só vira aprovada com o job, que pula a loja sob legal hold (ADR 0079, ADR 0106, D11).",
+      "O aviso: 12 meses contados de `recorded_at`, só o aviso já encerrado (enviado, falhou ou pulado); sai antes com a loja no purge, pela membership em cascata (já implementado; a conta só sai depois das memberships, então o aviso já saiu). A preferência: enquanto a conta existe, e sai com ela. A supressão: bounce e reclamação, 12 meses da gravação (decisão do Arrascaeta); não sai com a conta; a conferência ignora a linha vencida e uma nova gravação do mesmo endereço a renova. A parada e a liberação: sem purga, são o estado e o registro de quem decidiu soltar a série. A caixa de entrada: sem purga, porque o identificador da entrega não é dado pessoal e a linha impede que um reenvio antigo do mesmo evento pare a série de novo depois da liberação. Nenhum job existe: a classe só vira aprovada com o job, que pula a loja sob legal hold (ADR 0079, ADR 0106, D11).",
     review: { state: "pendente_juridica" },
-    rule: 'Cada e-mail das dicas para começar (até 3 por pessoa, só na primeira loja dela) vira uma linha, com ou sem envio, uma por pessoa e passo. Nenhuma tabela guarda endereço, nome, IP, texto livre ou valor, e o banco recusa "@" nos textos; a supressão guarda só o HMAC do endereço, com chave que o banco não tem, e vale mesmo depois de apagada a conta. Fica fora da exportação do tenant; nenhum papel do tenant a lê.',
+    rule: 'Cada e-mail das dicas para começar (até 3 por pessoa, só na primeira loja dela) vira uma linha, com ou sem envio, uma por pessoa e passo. Nenhuma tabela guarda endereço, nome, IP, texto livre ou valor, e o banco recusa "@" nos textos; a supressão guarda só o HMAC do endereço, com chave que o banco não tem, e vale mesmo depois de apagada a conta. Fica fora da exportação do tenant; nenhum papel do tenant a lê, e o papel de cobrança só a alcança por funções do dono da série.',
     sources: ["ADR 0079", "ADR 0106"],
     status: "proposta",
   },

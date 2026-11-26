@@ -6,13 +6,15 @@ import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
-import { CardDescription } from "@/ui/card";
 import { FieldDescription } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { stockEntryHref } from "../inventory/stock-entry-link";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { focusLater } from "../lib/focus";
+import { KEPT_PRICE_NOTICE } from "./last-prices-model";
+import { SaleCountLabel } from "./sale-count-label";
+import type { SaleCount } from "./sale-count-text";
 import { QuantityStepper, TextField } from "./sale-fields";
 import {
   type EvaluationContext,
@@ -298,6 +300,8 @@ function ChosenItemFields({
   stockWarning,
   summaryLine,
 }: ChosenItemFieldsProps) {
+  const keptNoteId =
+    priceHint === KEPT_PRICE_NOTICE ? `${prefix}-price-note` : undefined;
   return (
     <>
       {stockWarning ? (
@@ -309,8 +313,9 @@ function ChosenItemFields({
           {stockWarning}
         </p>
       ) : null}
+      {/* 18.25 rem: a price of five digits with cents (99999,99) only fits beside Quantidade from 17.94 rem of item; below that the fields stack */}
       <div className="@container">
-        <div className="grid @[16.25rem]:grid-cols-[min-content_minmax(0,1fr)] @[27rem]:grid-cols-[min-content_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @max-[16.25rem]:[&>:first-child]:justify-self-start">
+        <div className="grid @[18.25rem]:grid-cols-[min-content_minmax(0,1fr)] @[27rem]:grid-cols-[min-content_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @max-[18.25rem]:[&>:first-child]:justify-self-start">
           <QuantityStepper
             error={errors[itemFieldKey(item.draftId, "quantity")]}
             id={`${prefix}-quantity`}
@@ -323,6 +328,7 @@ function ChosenItemFields({
           />
           <TextField
             addon="R$"
+            describedById={keptNoteId}
             error={errors[itemFieldKey(item.draftId, "chargedUnitPrice")]}
             id={`${prefix}-charged`}
             inputMode="decimal"
@@ -334,7 +340,7 @@ function ChosenItemFields({
           />
           <TextField
             addon="R$"
-            className="@[16.25rem]:col-span-2 @[27rem]:col-span-1"
+            className="@[18.25rem]:col-span-2 @[27rem]:col-span-1"
             error={errors[itemFieldKey(item.draftId, "listedUnitPrice")]}
             id={`${prefix}-listed`}
             inputMode="decimal"
@@ -349,6 +355,7 @@ function ChosenItemFields({
       <div className="flex items-baseline justify-between gap-3">
         <FieldDescription
           className="min-w-0"
+          id={keptNoteId}
           role={priceHint ? "note" : undefined}
         >
           {priceHint ?? "Preços por unidade."}
@@ -369,15 +376,20 @@ function ChosenItemFields({
 }
 
 /**
- * "N itens" under "Itens": N counts only the lines with a variant chosen, never the empty line "Adicionar item" opens.
- * The line is always in the DOM (a no-break space while empty) so that the first choice does not push the item below
- * it down.
+ * "N linhas · M unidades" beside "Itens": the counts cover only the lines with a variant chosen, never the empty line
+ * "Adicionar item" opens. Nothing is drawn while no variant is chosen, so the panel starts at its first field.
  */
-export function ItemsCount({ chosen }: { chosen: number }) {
+export function ItemsCount({ count }: { count: SaleCount }) {
+  if (count.lines === 0) {
+    return null;
+  }
   return (
-    <CardDescription>
-      {chosen > 0 ? `${chosen} ${chosen === 1 ? "item" : "itens"}` : "\u00a0"}
-    </CardDescription>
+    <div
+      className="text-muted-foreground text-support max-md:mr-auto"
+      data-slot="items-count"
+    >
+      <SaleCountLabel count={count} />
+    </div>
   );
 }
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { createDatabase } from "../src/client";
 import { isLocalGateHost } from "./gate-hosts";
 import {
@@ -43,6 +44,7 @@ const ACTIVATION_FUNNEL_ANSWERED_READS = 3 + 30;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const failureLine =
   /FAIL|Error|expected|Expected|Received|✗|×|Tests |Test Files/;
+const seedLine = /Running tests with seed/;
 const lineBreak = /\r?\n/;
 const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 
@@ -91,7 +93,10 @@ function runVitest(environment: Record<string, string>): Promise<RunResult> {
       clearTimeout(timer);
       resolve({
         code: code ?? 1,
-        digest: lines.filter((line) => failureLine.test(line)).slice(-30),
+        digest: [
+          ...lines.filter((line) => seedLine.test(line)).slice(0, 1),
+          ...lines.filter((line) => failureLine.test(line)).slice(-30),
+        ],
       });
     });
   });
@@ -115,7 +120,7 @@ async function run() {
   );
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
 
   try {
@@ -141,7 +146,7 @@ async function run() {
       await owner.pool.query(
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
-      logins.push([role, group]);
+      logins.push(role);
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
@@ -478,19 +483,23 @@ async function run() {
       "SELECT event_type FROM public.platform_audit_events WHERE event_type LIKE 'billing.%' AND organization_id = $1 ORDER BY created_at, id",
       [orgA.organizationId]
     );
-    assert.deepEqual(
-      billingEvents.rows.map((row) => row.event_type),
+    const flowEvents = [
+      "billing.entitlement_grant_requested",
+      "billing.entitlement_granted",
       // the repeat of the command ID is recorded too (request, then the outcome), though it is the same grant
-      [
-        "billing.entitlement_grant_requested",
-        "billing.entitlement_granted",
-        "billing.entitlement_grant_requested",
-        "billing.entitlement_granted",
-        "billing.entitlement_revoke_requested",
-        "billing.entitlement_revoked",
-        // ending another store's grant through this case: the request is recorded and nothing is ended (no outcome)
-        "billing.entitlement_revoke_requested",
-      ]
+      "billing.entitlement_grant_requested",
+      "billing.entitlement_granted",
+      "billing.entitlement_revoke_requested",
+      "billing.entitlement_revoked",
+    ];
+    // ending another store's grant through this case: the request is recorded and nothing is ended (no outcome). It
+    // is a test of its own, so it comes whole before or after the flow, whichever the random order ran first
+    const strayRevokeRequest = "billing.entitlement_revoke_requested";
+    const recordedEvents = billingEvents.rows.map((row) => row.event_type);
+    assert.ok(
+      isDeepStrictEqual(recordedEvents, [...flowEvents, strayRevokeRequest]) ||
+        isDeepStrictEqual(recordedEvents, [strayRevokeRequest, ...flowEvents]),
+      `the billing events are the flow and one stray revoke request, in one block each: ${recordedEvents.join(", ")}`
     );
     tests.push(
       "the billing command is recorded before and after (the repeat too), is one grant per command ID, attributed to the operator, and ended; a grant of another store is not ended through this case"
@@ -548,12 +557,9 @@ async function run() {
     );
   } finally {
     try {
-      for (const [role, group] of logins) {
+      for (const role of logins) {
         // one role that fails to go must not leave the others, or the pool open
         // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-        await owner.pool
-          .query(`REVOKE "${group}" FROM "${role}"`)
-          .catch(() => undefined);
         await owner.pool
           .query(`DROP ROLE IF EXISTS "${role}"`)
           .catch(() => undefined);

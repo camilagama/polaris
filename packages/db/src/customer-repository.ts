@@ -13,7 +13,17 @@ import {
 } from "@polaris/domain/customers/customer";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { recordDeletionLedgerEntry } from "./deletion-ledger";
+import {
+  discountShareCents,
+  discountSplitColumns,
+  givenBackCents,
+  itemCentsColumns,
+} from "./return-given-back-sql";
 import { customers } from "./schema/customer";
+import { saleAdjustments, saleItems, sales } from "./schema/sale";
+import { saleCancellations } from "./schema/sale-cancellation";
+import { saleCustomerLinks } from "./schema/sale-customer-link";
+import { saleReturnItems } from "./schema/sale-return";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import {
   TenantAuthorizationError,
@@ -93,6 +103,161 @@ const customerColumns = {
   version: customers.version,
 };
 
+/**
+ * What a customer bought, in the same statement that reads the customer. A purchase is a confirmed sale that was not
+ * cancelled, that still has a unit that was not returned, and whose current attribution (the highest version of its
+ * links, so a removed customer counts nothing) is the customer. The date is the commercial day of the sale in the
+ * store.
+ */
+function purchaseConditions(organizationId: string, customerId?: string) {
+  return and(
+    eq(saleCustomerLinks.organizationId, organizationId),
+    customerId === undefined
+      ? isNotNull(saleCustomerLinks.customerId)
+      : eq(saleCustomerLinks.customerId, customerId),
+    sql`${saleCustomerLinks.version} = (
+      SELECT max(latest.version) FROM ${saleCustomerLinks} AS latest
+      WHERE latest.organization_id = ${saleCustomerLinks.organizationId}
+        AND latest.sale_id = ${saleCustomerLinks.saleId}
+    )`,
+    sql`NOT EXISTS (
+      SELECT 1 FROM ${saleCancellations}
+      WHERE ${saleCancellations.organizationId} = ${sales.organizationId}
+        AND ${saleCancellations.saleId} = ${sales.id}
+    )`,
+    sql`EXISTS (
+      SELECT 1 FROM ${saleItems} AS kept_item
+      WHERE kept_item.organization_id = ${sales.organizationId}
+        AND kept_item.sale_id = ${sales.id}
+        AND kept_item.quantity > coalesce((
+          SELECT sum(returned_item.returned_quantity)
+          FROM ${saleReturnItems} AS returned_item
+          WHERE returned_item.organization_id = kept_item.organization_id
+            AND returned_item.sale_id = kept_item.sale_id
+            AND returned_item.item_position = kept_item.position
+        ), 0)
+    )`
+  );
+}
+
+/**
+ * What the returns of one sale gave back, in reais: each returned item gives back its charged price times the units
+ * returned minus its share of the sale's discounts (largest remainder in whole cents, half up per item), as
+ * `periodSummaryQuery` does for the Resultado. Surcharges, freight and the payment surcharge are not given back.
+ */
+function returnsGivenBack() {
+  return sql`(
+    WITH line AS (
+      SELECT item.position, item.quantity,
+        ${itemCentsColumns(sql`item`)}
+      FROM ${saleItems} AS item
+      WHERE item.organization_id = ${sales.organizationId}
+        AND item.sale_id = ${sales.id}
+    ),
+    discount AS (
+      SELECT sum(adjustment.amount * 100) AS cents
+      FROM ${saleAdjustments} AS adjustment
+      WHERE adjustment.organization_id = ${sales.organizationId}
+        AND adjustment.sale_id = ${sales.id}
+        AND adjustment.kind = 'discount'
+    ),
+    gross AS (SELECT sum(line.value_cents) AS cents FROM line),
+    allocation AS (
+      SELECT split.position,
+        ${discountShareCents} AS cents
+      FROM (
+        SELECT line.position,
+          ${discountSplitColumns(sql`discount.cents`)}
+        FROM line, discount, gross
+        WHERE gross.cents <> 0 AND discount.cents <> 0
+      ) AS split
+    ),
+    returned AS (
+      SELECT returned_item.item_position AS position, sum(returned_item.returned_quantity) AS quantity
+      FROM ${saleReturnItems} AS returned_item
+      WHERE returned_item.organization_id = ${sales.organizationId}
+        AND returned_item.sale_id = ${sales.id}
+      GROUP BY returned_item.item_position
+    )
+    SELECT coalesce(sum(${givenBackCents}), 0) / 100
+    FROM returned
+    JOIN line ON line.position = returned.position
+    LEFT JOIN allocation ON allocation.position = returned.position
+  )`;
+}
+
+/** The list asks only for the last day: no sum is computed for the customers of a whole store. */
+function lastPurchaseStats(
+  transaction: TenantRequestTransaction,
+  organizationId: string
+) {
+  return transaction
+    .select({
+      customerId: saleCustomerLinks.customerId,
+      lastPurchaseOn: sql<string | null>`max(${sales.occurredOn})::text`.as(
+        "last_purchase_on"
+      ),
+    })
+    .from(saleCustomerLinks)
+    .innerJoin(
+      sales,
+      and(
+        eq(sales.organizationId, saleCustomerLinks.organizationId),
+        eq(sales.id, saleCustomerLinks.saleId)
+      )
+    )
+    .where(purchaseConditions(organizationId))
+    .groupBy(saleCustomerLinks.customerId)
+    .as("purchase_stats");
+}
+
+/**
+ * The count, the last day and the net total of one customer: the total due of each sale as the sale history shows it
+ * (items, plus surcharge, freight and payment surcharge, minus discount) minus what its returns gave back.
+ */
+function purchaseSummaryStats(
+  transaction: TenantRequestTransaction,
+  organizationId: string,
+  customerId: string
+) {
+  const itemsTotal = sql`(
+    SELECT coalesce(sum(item.charged_unit_price * item.quantity), 0)
+    FROM ${saleItems} AS item
+    WHERE item.organization_id = ${sales.organizationId}
+      AND item.sale_id = ${sales.id}
+  )`;
+  const adjustmentsTotal = sql`(
+    SELECT coalesce(sum(CASE adjustment.kind WHEN 'discount' THEN -adjustment.amount ELSE adjustment.amount END), 0)
+    FROM ${saleAdjustments} AS adjustment
+    WHERE adjustment.organization_id = ${sales.organizationId}
+      AND adjustment.sale_id = ${sales.id}
+      AND adjustment.kind IN ('discount', 'freight', 'payment_surcharge', 'surcharge')
+  )`;
+  return transaction
+    .select({
+      customerId: saleCustomerLinks.customerId,
+      lastPurchaseOn: sql<string | null>`max(${sales.occurredOn})::text`.as(
+        "last_purchase_on"
+      ),
+      purchaseCount: sql<number>`count(*)::int`.as("purchase_count"),
+      totalSpent:
+        sql<string>`round(sum(${itemsTotal} + ${adjustmentsTotal} - ${returnsGivenBack()}), 2)::text`.as(
+          "total_spent"
+        ),
+    })
+    .from(saleCustomerLinks)
+    .innerJoin(
+      sales,
+      and(
+        eq(sales.organizationId, saleCustomerLinks.organizationId),
+        eq(sales.id, saleCustomerLinks.saleId)
+      )
+    )
+    .where(purchaseConditions(organizationId, customerId))
+    .groupBy(saleCustomerLinks.customerId)
+    .as("purchase_stats");
+}
+
 export async function listCustomers(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
@@ -112,11 +277,57 @@ export async function listCustomers(
       break;
   }
 
-  return await transaction
-    .select(customerColumns)
+  const stats = lastPurchaseStats(transaction, identity.organizationId);
+  const rows = await transaction
+    .select({ ...customerColumns, lastPurchaseOn: stats.lastPurchaseOn })
     .from(customers)
+    .leftJoin(stats, eq(stats.customerId, customers.id))
     .where(and(...conditions))
     .orderBy(asc(customers.name), asc(customers.id));
+  return rows.map((row) => ({
+    ...row,
+    lastPurchaseOn: row.lastPurchaseOn ?? null,
+  }));
+}
+
+export async function getCustomer(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  customerId: string
+) {
+  const stats = purchaseSummaryStats(
+    transaction,
+    identity.organizationId,
+    customerId
+  );
+  const [row] = await transaction
+    .select({
+      ...customerColumns,
+      lastPurchaseOn: stats.lastPurchaseOn,
+      purchaseCount: stats.purchaseCount,
+      totalSpent: stats.totalSpent,
+    })
+    .from(customers)
+    .leftJoin(stats, eq(stats.customerId, customers.id))
+    .where(
+      and(
+        eq(customers.organizationId, identity.organizationId),
+        eq(customers.id, customerId)
+      )
+    )
+    .limit(1);
+  if (!row) {
+    throw new CustomerNotFoundError();
+  }
+  const { lastPurchaseOn, purchaseCount, totalSpent, ...customer } = row;
+  return {
+    ...customer,
+    summary: {
+      lastPurchaseOn: lastPurchaseOn ?? null,
+      purchaseCount: purchaseCount ?? 0,
+      totalSpent: totalSpent ?? "0",
+    },
+  };
 }
 
 export async function findPossibleCustomerDuplicates(

@@ -1,12 +1,17 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
-import { createDatabase } from "@polaris/db/client";
+import { createAuthDatabase, createDatabase } from "@polaris/db/client";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { configureLogging } from "@polaris/observability/logger";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
-import { queryAsFunctionOwner } from "../../../packages/db/scripts/gate-roles";
+import {
+  type GateReleasable,
+  inRolledBackTransaction,
+  queryAsFunctionOwner,
+  rollbackAndRelease,
+} from "../../../packages/db/scripts/gate-roles";
 import {
   disposableHostPattern,
   gateBranchPattern,
@@ -38,11 +43,6 @@ const passwordPepper = randomBytes(32).toString("base64");
 const RECORD = "public.record_auth_access(text,text,inet,text)";
 const PASSWORD = "Long passphrase for the access log gate 2026!";
 const SESSION_COOKIE = /better-auth\.session_token=/;
-
-interface LockClient {
-  query: (text: string) => Promise<unknown>;
-  release: () => void;
-}
 
 interface Captured {
   fields: Record<string, unknown>;
@@ -103,13 +103,13 @@ async function run() {
   // GRANT and REVOKE on the function are its owner role's, whatever the gate user is
   const asRecordOwner = (statement: string) =>
     queryAsFunctionOwner(owner.pool, RECORD, statement);
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
   const userIds: string[] = [];
   let revoked = false;
-  let lockClient: LockClient | undefined;
+  let lockClient: GateReleasable | undefined;
   let primaryFailure = false;
   const logs = captureLogs();
 
@@ -139,7 +139,7 @@ async function run() {
       `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
     );
     await owner.pool.query(`GRANT polaris_auth_runtime TO "${role}"`);
-    logins.push([role, "polaris_auth_runtime"]);
+    logins.push(role);
     const authUrl = temporaryRuntimeUrl(adminUrl, role, password);
 
     const verificationEmails: { token: string; url: string }[] = [];
@@ -152,7 +152,7 @@ async function run() {
     };
     // one Better Auth, as the handler builds one per request: its own pool of one connection, the authentication role
     const newAuth = (requestId: string) => {
-      const database = createDatabase(authUrl, { maxConnections: 1 });
+      const database = createAuthDatabase(authUrl, { maxConnections: 1 });
       const auth = createBetterAuth({
         baseURL,
         database: database.db,
@@ -461,40 +461,41 @@ async function run() {
     );
 
     // ------------------------------------------------- the table locked: the login waits 300 ms at most
-    lockClient = await owner.pool.connect();
-    await lockClient.query("BEGIN");
-    await lockClient.query(
-      "LOCK TABLE public.auth_access_log IN ACCESS EXCLUSIVE MODE"
-    );
-    const slowBefore = logs.captured.length;
-    const started = Date.now();
-    const slow = await call(requestOf(8), "/api/auth/sign-in/email", {
-      ...json({ email, password: PASSWORD }),
-      ip: ipOf(8),
+    const locker = await owner.pool.connect();
+    lockClient = locker;
+    await inRolledBackTransaction(locker, async () => {
+      await locker.query(
+        "LOCK TABLE public.auth_access_log IN ACCESS EXCLUSIVE MODE"
+      );
+      const slowBefore = logs.captured.length;
+      const started = Date.now();
+      const slow = await call(requestOf(8), "/api/auth/sign-in/email", {
+        ...json({ email, password: PASSWORD }),
+        ip: ipOf(8),
+      });
+      const elapsed = Date.now() - started;
+      assert.equal(
+        slow.status,
+        200,
+        "the login answers 200 with the table locked"
+      );
+      assert.match(
+        slow.headers
+          .getSetCookie()
+          .map((value) => value.split(";")[0])
+          .join("; "),
+        SESSION_COOKIE
+      );
+      const waited = logs.captured
+        .slice(slowBefore)
+        .filter((entry) => entry.text.includes("auth_access_log_write_failed"));
+      assert.ok(waited.length >= 1);
+      assert.equal(waited[0]?.fields.reason, "timeout");
+      assert.equal(waited[0]?.fields.requestId, requestOf(8));
+      // the login's own cost (hashing, the database) plus 300 ms: far from a lock that never ends
+      assert.ok(elapsed < 5000, `the login waited ${elapsed} ms`);
     });
-    const elapsed = Date.now() - started;
-    assert.equal(
-      slow.status,
-      200,
-      "the login answers 200 with the table locked"
-    );
-    assert.match(
-      slow.headers
-        .getSetCookie()
-        .map((value) => value.split(";")[0])
-        .join("; "),
-      SESSION_COOKIE
-    );
-    const waited = logs.captured
-      .slice(slowBefore)
-      .filter((entry) => entry.text.includes("auth_access_log_write_failed"));
-    assert.ok(waited.length >= 1);
-    assert.equal(waited[0]?.fields.reason, "timeout");
-    assert.equal(waited[0]?.fields.requestId, requestOf(8));
-    // the login's own cost (hashing, the database) plus 300 ms: far from a lock that never ends
-    assert.ok(elapsed < 5000, `the login waited ${elapsed} ms`);
-    await lockClient.query("ROLLBACK");
-    lockClient.release();
+    locker.release();
     lockClient = undefined;
     // the statement was already on the server, waiting for the lock: it may still land once the lock is gone (a late
     // record is better than none), and never twice
@@ -530,8 +531,7 @@ async function run() {
   } finally {
     logs.restore();
     if (lockClient) {
-      await lockClient.query("ROLLBACK").catch(() => undefined);
-      lockClient.release();
+      await rollbackAndRelease(lockClient);
     }
     for (const close of closers.reverse()) {
       await close().catch(() => undefined);
@@ -560,8 +560,7 @@ async function run() {
     for (const id of userIds) {
       await cleanup("user", 'DELETE FROM public."user" WHERE id = $1', [id]);
     }
-    for (const [role, group] of logins) {
-      await cleanup("revoke", `REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await cleanup("role", `DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

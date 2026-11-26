@@ -157,6 +157,13 @@ async function currentPayloads() {
     newProductId: () => uuid(303),
     newVariantId: () => uuid(304),
   });
+  // a sale paid in two parts, each with its own profile choice (no sale-level profile)
+  await createOfflineSale({
+    ...common(),
+    lines: [{ quantity: 2, variantId }],
+    payments: SPLIT_PARTS,
+    reader: writer,
+  });
   const { commands } = await outbox.snapshot();
   return commands.map((command) => ({
     baseVersion: command.baseVersion,
@@ -164,6 +171,21 @@ async function currentPayloads() {
     type: command.type,
   }));
 }
+
+const SPLIT_PARTS = [
+  {
+    amount: "30.00",
+    method: "pix",
+    paymentProfile: null,
+  },
+  {
+    amount: "70.00",
+    installmentPlan: "issuer",
+    installments: 3,
+    method: "credit_card",
+    paymentProfile: { expectedVersion: 3, id: uuid(601) },
+  },
+] as const;
 
 describe("old app versions", () => {
   it("the payloads the client emits today are the ones committed, so a change is deliberate", async () => {

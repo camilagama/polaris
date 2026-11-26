@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { FieldLegend, FieldSet } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
+import { InsetBlock } from "@/ui/inset-block";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { useHoldSwap } from "../lib/unsent-work";
@@ -215,7 +216,7 @@ export function StockCommandPanel({
   useHoldSwap(isStockDraftChanged(state));
   const inFlight = useRef<boolean>(false);
   const statusRef: RefObject<HTMLDivElement | null> = useRef(null);
-  const panelRef: RefObject<HTMLElement | null> = useRef(null);
+  const panelRef: RefObject<HTMLDivElement | null> = useRef(null);
   const prefix = `stock-${target.variantId}-${action}`;
   const focus = useCallback(
     (field: StockFieldName | null) => {
@@ -426,9 +427,10 @@ export function StockCommandPanel({
 
   if (submission.phase === "success") {
     return (
-      <section
+      <InsetBlock
         aria-labelledby={`${prefix}-title`}
-        className="grid gap-3 rounded-lg border bg-card p-3 md:p-4"
+        className="grid gap-3"
+        role="region"
       >
         <div
           className="focus-ring grid gap-1 rounded-sm"
@@ -461,15 +463,16 @@ export function StockCommandPanel({
             Fechar
           </Button>
         </div>
-      </section>
+      </InsetBlock>
     );
   }
 
   return (
-    <section
+    <InsetBlock
       aria-labelledby={`${prefix}-title`}
-      className="focus-ring grid gap-3 rounded-lg border bg-card p-3 md:p-4"
+      className="focus-ring grid gap-3"
       ref={panelRef}
+      role="region"
       tabIndex={-1}
     >
       <div className="grid gap-0.5">
@@ -557,6 +560,6 @@ export function StockCommandPanel({
           submitting={submitting}
         />
       </form>
-    </section>
+    </InsetBlock>
   );
 }

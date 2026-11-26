@@ -1,5 +1,7 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import TargetIcon from "lucide-react/dist/esm/icons/target";
+import { createPortal } from "react-dom";
 import {
   useCallback,
   useEffect,
@@ -8,8 +10,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { Block } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import { EmptyState } from "@/ui/empty-state";
 import { RefreshButton } from "@/ui/refresh-button";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
@@ -31,6 +33,8 @@ import { type GoalOutcome, useGoalCommands } from "./use-goal-commands";
 import type { GoalsState } from "./use-goals";
 
 interface GoalsPanelProps {
+  /** The title line's slot for "Atualizar metas" and "Nova meta": null while the Metas tab is not the open one. */
+  actionsHost: HTMLElement | null;
   /** The read of the goals, owned by the screen so that the tab can say how many are in progress (AC-13, AC-15). */
   goals: { reload: () => Promise<void>; state: GoalsState };
   /** The store's current month (YYYY-MM): a new goal starts as that whole month. The tab does not follow the period of the Resultado (AC-15). */
@@ -41,8 +45,6 @@ interface GoalsPanelProps {
   /** The organization's today, YYYY-MM-DD. */
   today: string;
 }
-
-const HEADING_ID = "goals-heading";
 
 const returnKey = (organizationId: string) => `goals:${organizationId}`;
 
@@ -60,12 +62,12 @@ interface GoalListProps {
   today: string;
 }
 
-/** The label over a group of cards. */
+/** The label over a group of cards: the panel has no title of its own (the tab names it), so these are its `h2`. */
 function GroupLabel({ children, id }: { children: string; id: string }) {
   return (
-    <h3 className="mt-1 font-medium text-muted-foreground text-support" id={id}>
+    <h2 className="mt-1 font-medium text-muted-foreground text-support" id={id}>
       {children}
-    </h3>
+    </h2>
   );
 }
 
@@ -92,15 +94,14 @@ function GoalList({
         />
       ) : null}
       {state.isLoading && goals.length === 0 ? (
-        <Card>
-          <CardContent>
-            <ListNote loading>Carregando as metas…</ListNote>
-          </CardContent>
-        </Card>
+        <Block variant="plain">
+          <ListNote loading>Carregando as metas…</ListNote>
+        </Block>
       ) : null}
       {!state.isLoading && goals.length === 0 && state.error === null ? (
         <EmptyState
           afterRead
+          icon={TargetIcon}
           support="Acompanhe as vendas líquidas, o resultado estimado ou o número de vendas de um período."
           title="Nenhuma meta ainda"
         />
@@ -173,6 +174,7 @@ function GoalLimitHelp({
 
 /** Goals of the organization: what to reach in a period, and how far along it is. Always open: hiding them saves nothing. */
 export function GoalsPanel({
+  actionsHost,
   goals: { reload, state },
   month,
   organizationId,
@@ -181,11 +183,12 @@ export function GoalsPanel({
 }: GoalsPanelProps) {
   const { busy, cancel, clearFeedback, create, feedback, update } =
     useGoalCommands(organizationId, reload);
-  // the address the Início links to, read once: `?meta=nova` opens the form, `?meta=lista` goes to the goals
+  // the address the Início links to, read once: `?meta=nova` opens the form, the older `?meta=lista` goes to the goals
   const [link] = useState(() => readGoalsLink(window.location.search));
   // the form is a dialog: opened by the button, or by the address the Início links to
   const [creating, setCreating] = useState(link === "new");
   const newButtonRef = useRef<HTMLButtonElement>(null);
+  const regionRef = useRef<HTMLElement>(null);
 
   // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only (and kept while
   // "Conhecer o Pro" opens the Assinatura with no load of the page, for "voltar")
@@ -228,9 +231,9 @@ export function GoalsPanel({
     clearFeedback();
     setCreating(true);
   }, [clearFeedback]);
-  // the focus goes back to what opened the form (the button, or the heading when the address did)
+  // the focus goes back to what opened the form (the button in the title line, or the region when that line is not drawn)
   const finalFocus = useCallback(
-    () => newButtonRef.current ?? document.getElementById(HEADING_ID) ?? true,
+    () => newButtonRef.current ?? regionRef.current ?? true,
     []
   );
   // before the dialog's own effects: on a phone the form opened by `?meta=nova` pushes its entry over this address, and
@@ -248,9 +251,8 @@ export function GoalsPanel({
     }
     if (link === "list") {
       focusLater(() => {
-        const heading = document.getElementById(HEADING_ID);
-        heading?.scrollIntoView({ block: "start" });
-        heading?.focus({ preventScroll: true });
+        regionRef.current?.scrollIntoView({ block: "start" });
+        regionRef.current?.focus({ preventScroll: true });
       });
     }
   }, [link]);
@@ -271,47 +273,51 @@ export function GoalsPanel({
     },
     [closeForm, create, showLimitHelp]
   );
-  // the dialog closes, and after a cancel that went through the card is gone: the focus goes to the heading
+  // the dialog closes, and after a cancel that went through the card is gone: the focus goes to the region
   const handleCancel = useCallback(
     async (goal: GoalReadModel) => {
       const outcome = await cancel(goal);
-      // the dialog closes with any answer, and what happened is said right under the heading
-      focusLater(() => document.getElementById(HEADING_ID)?.focus());
+      // the dialog closes with any answer, and what happened is said right under the note
+      focusLater(() => regionRef.current?.focus());
       return outcome;
     },
     [cancel]
   );
 
   return (
-    <section aria-labelledby={HEADING_ID} className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="grid gap-0.5">
-          <h2 className="text-section" id={HEADING_ID} tabIndex={-1}>
-            Metas
-          </h2>
-          <p className="text-muted-foreground text-support">
-            Também estimativas. Uma meta concluída continua concluída.
-          </p>
-        </div>
-        <div className="ml-auto flex gap-2">
-          <RefreshButton
-            busy={state.isLoading}
-            disabled={state.isLoading || busy !== null}
-            object="metas"
-            onClick={handleRetry}
-          />
-          <Button
-            disabled={busy !== null}
-            onClick={handleNew}
-            ref={newButtonRef}
-            size="sm"
-            type="button"
-          >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Nova meta
-          </Button>
-        </div>
-      </div>
+    <section
+      aria-label="Metas"
+      className="focus-ring grid gap-3"
+      ref={regionRef}
+      tabIndex={-1}
+    >
+      {actionsHost
+        ? createPortal(
+            <>
+              <RefreshButton
+                busy={state.isLoading}
+                className="shrink-0"
+                disabled={state.isLoading || busy !== null}
+                object="metas"
+                onClick={handleRetry}
+              />
+              <Button
+                className="flex-1 max-md:h-ctl-lg min-[47.5rem]:flex-none"
+                disabled={busy !== null}
+                onClick={handleNew}
+                ref={newButtonRef}
+                type="button"
+              >
+                <PlusIcon aria-hidden="true" data-icon="inline-start" />
+                Nova meta
+              </Button>
+            </>,
+            actionsHost
+          )
+        : null}
+      <p className="text-muted-foreground text-support">
+        Também estimativas. Uma meta concluída continua concluída.
+      </p>
       {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
       <ActionNotice
         errorExtra={limitExtra}

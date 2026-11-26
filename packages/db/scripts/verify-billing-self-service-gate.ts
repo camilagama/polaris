@@ -15,7 +15,7 @@ import {
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { CURRENT_CHARGE_RECONCILE_SQL } from "./current-charge-reconcile-sql";
-import { withGateRole } from "./gate-roles";
+import { inRolledBackTransaction, withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -135,7 +135,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 4 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   let store: BillingStore | undefined;
 
@@ -166,7 +166,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const tenantUrl = await login(runtimeRole, "polaris_self_tenant");
@@ -202,14 +202,11 @@ async function run() {
       role: string,
       operation: (client: Client) => Promise<T>
     ): Promise<T> =>
-      as(adminUrl, async (client) => {
-        await client.query("BEGIN");
-        try {
-          return await withGateRole(client, role, () => operation(client));
-        } finally {
-          await client.query("ROLLBACK");
-        }
-      });
+      as(adminUrl, (client) =>
+        inRolledBackTransaction(client, () =>
+          withGateRole(client, role, () => operation(client))
+        )
+      );
 
     store = createBillingStore(billingUrl);
     const billing = store;
@@ -2560,8 +2557,7 @@ async function run() {
     );
   } finally {
     await store?.close().catch(() => undefined);
-    for (const [role, group] of logins) {
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

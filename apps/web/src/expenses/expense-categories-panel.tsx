@@ -3,7 +3,7 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { Checkbox } from "@/ui/checkbox";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
@@ -20,9 +20,14 @@ import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import type { ExpenseCategoriesState } from "./use-expense-categories";
 import { useFormDialog } from "./use-form-dialog";
 
+export type CategoryChange = "create" | "update";
+
 interface ExpenseCategoriesPanelProps {
   onReload: () => Promise<void>;
-  onUpsert: (category: ExpenseCategoryReadModel) => void;
+  onUpsert: (
+    category: ExpenseCategoryReadModel,
+    change: CategoryChange
+  ) => void;
   organizationId: string;
   state: ExpenseCategoriesState;
 }
@@ -115,7 +120,8 @@ function useCategoryCommands({
               group,
               name,
               organizationId,
-            })
+            }),
+            "create"
           );
           return "Categoria criada.";
         })
@@ -133,7 +139,7 @@ function useCategoryCommands({
             name,
             organizationId,
           });
-          onUpsert(result.category);
+          onUpsert(result.category, "update");
           return "Categoria renomeada.";
         })
       ),
@@ -156,7 +162,7 @@ function useCategoryCommands({
             const result = archiving
               ? await orpcClient.expense.archiveCategory(input)
               : await orpcClient.expense.restoreCategory(input);
-            onUpsert(result.category);
+            onUpsert(result.category, "update");
             return archiving ? "Categoria arquivada." : "Categoria restaurada.";
           }
         )
@@ -228,78 +234,76 @@ export function ExpenseCategoriesPanel({
   );
 
   return (
-    <Card>
-      <CardContent className="grid gap-4">
-        {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
-        <ActionNotice feedback={form.open ? null : feedback} />
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <Field className="min-h-ctl-md w-auto" orientation="horizontal">
-            <Checkbox
-              checked={showArchived}
-              id="expense-categories-archived"
-              onCheckedChange={setShowArchived}
-            />
-            <FieldLabel htmlFor="expense-categories-archived">
-              Mostrar categorias arquivadas
-            </FieldLabel>
-          </Field>
-          <Button
-            data-category-new=""
+    <Block variant="plain">
+      {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
+      <ActionNotice feedback={form.open ? null : feedback} />
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+          <Checkbox
+            checked={showArchived}
+            id="expense-categories-archived"
+            onCheckedChange={setShowArchived}
+          />
+          <FieldLabel htmlFor="expense-categories-archived">
+            Mostrar categorias arquivadas
+          </FieldLabel>
+        </Field>
+        <Button
+          data-category-new=""
+          disabled={busy !== null}
+          onClick={handleNew}
+          type="button"
+          variant="outline"
+        >
+          <PlusIcon aria-hidden="true" data-icon="inline-start" />
+          Nova categoria
+        </Button>
+      </div>
+      <Dialog disablePointerDismissal {...form.dialog}>
+        <DialogContent finalFocus={form.finalFocus} layout="form">
+          <ExpenseCategoryForm
             disabled={busy !== null}
-            onClick={handleNew}
-            type="button"
-            variant="outline"
+            editing={editing}
+            feedback={feedback?.kind === "error" ? feedback : null}
+            key={form.formKey}
+            keptDraft={form.keptDraft}
+            onCancel={closeForm}
+            onDraftChange={form.onDraftChange}
+            onSave={handleSave}
+          />
+        </DialogContent>
+      </Dialog>
+      <div aria-busy={state.isLoading} className="grid gap-4">
+        {state.isLoading && state.categories.length === 0 ? (
+          <ListNote loading>Carregando categorias…</ListNote>
+        ) : null}
+        {sections.map((section) => (
+          <section
+            aria-labelledby={`expense-group-${section.key}`}
+            className="grid gap-1"
+            key={section.key}
           >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Nova categoria
-          </Button>
-        </div>
-        <Dialog disablePointerDismissal {...form.dialog}>
-          <DialogContent finalFocus={form.finalFocus} layout="form">
-            <ExpenseCategoryForm
-              disabled={busy !== null}
-              editing={editing}
-              feedback={feedback?.kind === "error" ? feedback : null}
-              key={form.formKey}
-              keptDraft={form.keptDraft}
-              onCancel={closeForm}
-              onDraftChange={form.onDraftChange}
-              onSave={handleSave}
-            />
-          </DialogContent>
-        </Dialog>
-        <div aria-busy={state.isLoading} className="grid gap-4">
-          {state.isLoading && state.categories.length === 0 ? (
-            <ListNote loading>Carregando categorias…</ListNote>
-          ) : null}
-          {sections.map((section) => (
-            <section
-              aria-labelledby={`expense-group-${section.key}`}
-              className="grid gap-1"
-              key={section.key}
+            <h3
+              className="font-medium text-muted-foreground text-support"
+              id={`expense-group-${section.key}`}
             >
-              <h3
-                className="font-medium text-muted-foreground text-support"
-                id={`expense-group-${section.key}`}
-              >
-                {section.label}
-              </h3>
-              <ul className="divide-y border-t">
-                {section.items.map((category) => (
-                  <li key={category.id}>
-                    <CategoryRow
-                      busyKey={busy}
-                      category={category}
-                      onRename={openForm}
-                      onToggle={toggle}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+              {section.label}
+            </h3>
+            <ul className="divide-y border-t">
+              {section.items.map((category) => (
+                <li key={category.id}>
+                  <CategoryRow
+                    busyKey={busy}
+                    category={category}
+                    onRename={openForm}
+                    onToggle={toggle}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </Block>
   );
 }

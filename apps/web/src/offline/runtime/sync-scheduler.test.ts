@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RuntimeSnapshot } from "./offline-runtime";
-import { startSyncScheduler, TICK_MS } from "./sync-scheduler";
+import { type RuntimeSnapshot, SESSION_RECHECK_MS } from "./offline-runtime";
+import { MAX_TICK_MS, startSyncScheduler, TICK_MS } from "./sync-scheduler";
 
 async function flush() {
   for (let i = 0; i < 30; i += 1) {
@@ -33,6 +33,10 @@ function setup(options: Options = {}) {
     fresh: false,
     leader: true,
     online: true,
+    /** What `counts` of the snapshot says is waiting in the local queue. */
+    pending: 0,
+    /** What `lastPullWasIdle` answers: the last full sync was answered and found nothing. */
+    idle: false,
     /** The runtime keeps quiet about a transient failure (a Worker killed for CPU) for its first 60 s. */
     quiet: false,
     reason: null as string | null,
@@ -60,11 +64,23 @@ function setup(options: Options = {}) {
   });
   const connectionChanged = vi.fn();
   const isFresh = vi.fn((_maxAgeMs: number) => Promise.resolve(state.fresh));
+  const snapshotListeners = new Set<() => void>();
   const runtime = {
     connectionChanged,
-    getSnapshot: () => ({ reason: state.reason }) as RuntimeSnapshot,
-    retriesQuietly: () => state.quiet,
+    getSnapshot: () =>
+      ({
+        counts: { pending: state.pending, rejected: 0, sending: 0 },
+        reason: state.reason,
+      }) as RuntimeSnapshot,
     isFresh,
+    lastPullWasIdle: () => state.idle,
+    retriesQuietly: () => state.quiet,
+    subscribe: (listener: () => void) => {
+      snapshotListeners.add(listener);
+      return () => {
+        snapshotListeners.delete(listener);
+      };
+    },
     syncNow,
   };
   // connection
@@ -136,8 +152,14 @@ function setup(options: Options = {}) {
         listener();
       }
     },
+    queueChanged: () => {
+      for (const listener of [...snapshotListeners]) {
+        listener();
+      }
+    },
     runs,
     scheduler,
+    snapshotListeners,
     /** The connection says it changed (the scheduler reads `isOnline`). */
     setOnline: (online: boolean) => {
       state.online = online;
@@ -193,6 +215,175 @@ describe("the 60 s tick and the return to the page", () => {
     const t = setup();
     await t.scheduler.syncNow();
     expect(t.syncNow).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the interval grows while there is no work", () => {
+  const idle = () => {
+    const t = setup();
+    t.state.idle = true;
+    return t;
+  };
+
+  async function tickAfter(t: ReturnType<typeof setup>, ms: number) {
+    const before = t.syncNow.mock.calls.length;
+    await t.advance(ms - 1);
+    expect(t.syncNow).toHaveBeenCalledTimes(before);
+    await t.advance(1);
+    expect(t.syncNow).toHaveBeenCalledTimes(before + 1);
+  }
+
+  it("goes 60, 120, 240, 480 and 600 and stays at 600 s while nothing happens", async () => {
+    const t = idle();
+
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 120_000);
+    await tickAfter(t, 240_000);
+    await tickAfter(t, 480_000);
+    await tickAfter(t, MAX_TICK_MS);
+    await tickAfter(t, MAX_TICK_MS);
+    expect(MAX_TICK_MS).toBe(600_000);
+  });
+
+  it("an idle visible tab pulls 8 times in the first hour and 146 in 24 h, and the session rule rereads on 6 of the 8 and 144 of the 146", async () => {
+    const t = idle();
+    let confirmedAt = 0;
+    let pulls = 0;
+    let rereads = 0;
+    const hour = { pulls: 0, rereads: 0 };
+    for (let minute = 1; minute <= 24 * 60; minute += 1) {
+      const before = t.syncNow.mock.calls.length;
+      // biome-ignore lint/performance/noAwaitInLoops: the clock moves one minute at a time, in order
+      await t.advance(60_000);
+      if (t.syncNow.mock.calls.length > before) {
+        pulls += 1;
+        if (t.now() - confirmedAt >= SESSION_RECHECK_MS) {
+          rereads += 1;
+          confirmedAt = t.now();
+        }
+      }
+      if (minute === 60) {
+        hour.pulls = pulls;
+        hour.rereads = rereads;
+      }
+    }
+
+    expect(hour).toEqual({ pulls: 8, rereads: 6 });
+    expect({ pulls, rereads }).toEqual({ pulls: 146, rereads: 144 });
+  });
+
+  it("a pull with changes brings the interval back to 60 s", async () => {
+    const t = idle();
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 120_000);
+
+    t.state.idle = false;
+    await tickAfter(t, 240_000);
+    await tickAfter(t, 60_000);
+
+    t.state.idle = true;
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 120_000);
+  });
+
+  it("a queued command keeps the interval at 60 s", async () => {
+    const t = idle();
+    t.state.pending = 1;
+
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 60_000);
+  });
+
+  it("a command queued while the interval is long brings the next tick to 60 s from then", async () => {
+    const t = idle();
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 120_000);
+    await t.advance(100_000);
+
+    t.state.pending = 1;
+    t.queueChanged();
+    await tickAfter(t, 60_000);
+  });
+
+  it.each([
+    [
+      "the return to the page",
+      (t: ReturnType<typeof setup>) => t.returnToFront(),
+    ],
+    [
+      "the explicit try",
+      (t: ReturnType<typeof setup>) => fire(t.scheduler.syncNow()),
+    ],
+    [
+      "the connection coming back",
+      (t: ReturnType<typeof setup>) => {
+        t.setOnline(false);
+        t.setOnline(true);
+      },
+    ],
+  ])("%s brings the interval back to 60 s", async (_name, comeBack) => {
+    const t = idle();
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 120_000);
+    comeBack(t);
+    await t.advance(1500);
+    const before = t.syncNow.mock.calls.length;
+    await t.advance(TICK_MS - 1500 - 1);
+    expect(t.syncNow).toHaveBeenCalledTimes(before);
+    await t.advance(1);
+    expect(t.syncNow).toHaveBeenCalledTimes(before + 1);
+  });
+
+  it("a failed sync does not stretch the interval", async () => {
+    const t = idle();
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 120_000);
+
+    t.state.reason = "sync_failed";
+    await tickAfter(t, 240_000);
+    expect(t.liveDelays()).toContain(TICK_MS);
+    expect(t.liveDelays()).not.toContain(480_000);
+    expect(t.liveDelays()).not.toContain(MAX_TICK_MS);
+  });
+
+  it("a sync that got no answer or was cut is no idle pull: the interval stays at 60 s", async () => {
+    const t = idle();
+    await tickAfter(t, 60_000);
+    t.state.idle = false;
+    t.state.reason = null;
+
+    await tickAfter(t, 120_000);
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 60_000);
+  });
+
+  it("a hidden page does not pull and does not stretch the interval; it pulls at once on the return", async () => {
+    const t = idle();
+    t.state.visible = false;
+
+    await t.advance(10 * TICK_MS);
+    expect(t.syncNow).not.toHaveBeenCalled();
+    expect(t.liveDelays()).toEqual([TICK_MS]);
+
+    t.state.visible = true;
+    t.returnToFront();
+    await flush();
+    expect(t.syncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("the interval does not change when to send: a queued command goes out through the runtime, not the tick", async () => {
+    const t = idle();
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 120_000);
+    t.state.pending = 1;
+    t.queueChanged();
+    expect(t.syncNow).toHaveBeenCalledTimes(2);
+  });
+
+  it("stop drops the listener of the queue", () => {
+    const t = idle();
+    t.scheduler.stop();
+    expect(t.snapshotListeners.size).toBe(0);
   });
 });
 

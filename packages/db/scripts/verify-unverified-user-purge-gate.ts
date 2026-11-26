@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  replaceFunctionAsOwner,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -82,7 +86,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 4 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
@@ -207,7 +211,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       const url = temporaryRuntimeUrl(adminUrl, role, password);
       return async () => {
         const client = new Client({
@@ -848,8 +852,7 @@ async function run() {
           .replaceAll(from, to)
           .replaceAll(from.replaceAll("candidate.", "doomed."), to);
         assert.notEqual(mutated, original, `${label}: it changes the function`);
-        await mutationClient.query("BEGIN");
-        try {
+        await inRolledBackTransaction(mutationClient, async () => {
           await writeMutant(mutationClient, mutated);
           await assert.rejects(
             () =>
@@ -865,9 +868,7 @@ async function run() {
                 : error instanceof assert.AssertionError,
             `the probe catches the function without the condition: ${label}`
           );
-        } finally {
-          await mutationClient.query("ROLLBACK");
-        }
+        });
         assert.equal(
           await definitionOf(mutationClient),
           original,
@@ -892,15 +893,12 @@ async function run() {
           !mutated.includes("email_verified"),
           "e-mail verified: taken out of both queries"
         );
-        await client.query("BEGIN");
-        try {
+        await inRolledBackTransaction(client, async () => {
           await writeMutant(client, mutated);
           await probe(client, "mutant-e-mailverified-policy", client, () =>
             purgeAsRuntime(client)
           );
-        } finally {
-          await client.query("ROLLBACK");
-        }
+        });
         assert.equal(await definitionOf(client), original);
       } finally {
         client.release();
@@ -961,8 +959,7 @@ async function run() {
     await cleanup("user", 'DELETE FROM public."user" WHERE id LIKE $1', [
       `gate-unv-%-${suffix}`,
     ]);
-    for (const [role, group] of logins) {
-      await cleanup("revoke", `REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await cleanup("role", `DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

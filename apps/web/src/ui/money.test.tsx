@@ -11,7 +11,9 @@ vi.mock("@/lib/hidden-values", async (importOriginal) => ({
 
 const { MoneyText } = await import("./hidden-values");
 const { HeroValue } = await import("./kpi-card");
-const { Money } = await import("./money");
+const { maskedAmountWidthEm, Money, splitAmountWidthEm } = await import(
+  "./money"
+);
 
 const SIZES = [undefined, "sm", "md", "lg", "xl"] as const;
 const DIGIT = /\d/;
@@ -19,6 +21,7 @@ const CURRENCY_CLASS = /data-money-currency=""/;
 const CURRENCY_TAG = /<span class="([^"]*)" data-money-currency="">/;
 const BOX_CLASS = /<span[^>]*class="([^"]*whitespace-nowrap[^"]*)"/;
 const OTHER_TEXT_SIZE = /\btext-(?!\[0\.56em\])/;
+const BOX_MONO = /<span[^>]*class="[^"]*\bfont-mono\b[^"]*\btabular-nums\b/;
 const NAME_ATTRIBUTES = /\b(?:aria-label|title|alt)=/;
 
 /** What a reader gets from the markup: its text, with no tags. */
@@ -102,6 +105,20 @@ describe("Money, with the values showing", () => {
     );
   });
 
+  it("sets every amount in Geist Mono, of any size and of none, with the values showing, hidden or unknown", () => {
+    for (const hidden of [false, true]) {
+      state.hidden = hidden;
+      for (const size of SIZES) {
+        for (const text of ["R$ 1.234,50", null]) {
+          const markup = renderToStaticMarkup(
+            <Money size={size} text={text} />
+          );
+          expect(markup).toMatch(BOX_MONO);
+        }
+      }
+    }
+  });
+
   it("splits a signed amount of lg and xl with each sign, and writes a text that is not an amount as it is", () => {
     for (const sign of ["+", "-", "−"]) {
       const markup = renderToStaticMarkup(
@@ -119,6 +136,71 @@ describe("Money, with the values showing", () => {
     const markup = renderToStaticMarkup(<Money size="lg" text={null} />);
     expect(textOf(markup)).toBe("—sem valor");
     expect(markup).toContain('class="sr-only"');
+  });
+});
+
+const FAMILY_MONO = /\bfont-mono\b/;
+const EM_OF_SPAN =
+  /class="[^"]*text-\[([\d.]+)em\][^"]*" data-money-(?:currency|cents)/g;
+
+describe("Money, the display in Geist Mono", () => {
+  it("sets every size in the mono face and takes the tracking away only from lg and xl", () => {
+    for (const size of ["lg", "xl"] as const) {
+      const markup = renderToStaticMarkup(
+        <Money size={size} text="R$ 1.234,50" />
+      );
+      expect(markup).toMatch(FAMILY_MONO);
+      expect(markup).toContain("tracking-normal");
+    }
+    for (const size of [undefined, "sm", "md"] as const) {
+      const markup = renderToStaticMarkup(
+        <Money size={size} text="R$ 1.234,50" />
+      );
+      expect(markup).toMatch(FAMILY_MONO);
+      expect(markup).not.toContain("tracking-normal");
+    }
+  });
+
+  it("does not let a caller's negative tracking squeeze the cells of the display", () => {
+    const markup = renderToStaticMarkup(
+      <Money
+        className="font-semibold tracking-[-0.035em]"
+        size="lg"
+        text="R$ 1.234,50"
+      />
+    );
+    expect(markup).toContain("tracking-normal");
+    expect(markup).not.toContain("tracking-[-0.035em]");
+  });
+
+  it("keeps the same face and box when the values are hidden", () => {
+    state.hidden = true;
+    try {
+      const markup = renderToStaticMarkup(
+        <Money size="xl" text="R$ 1.234,50" />
+      );
+      expect(markup).toMatch(FAMILY_MONO);
+      expect(markup).toContain("data-masked-money");
+    } finally {
+      state.hidden = false;
+    }
+  });
+
+  it("knows the width of a split amount from the em of its small parts, the same the markup says", () => {
+    const emOf = (written: string) =>
+      [...written.matchAll(EM_OF_SPAN)].map((match) => Number(match[1]));
+    const markup = renderToStaticMarkup(
+      <Money size="lg" text="R$ 99.640,35" />
+    );
+    const [currency, cents] = emOf(markup);
+    const expected = (1 * 6 + 3 * (currency ?? 0) + 3 * (cents ?? 0)) * 0.6;
+    expect(splitAmountWidthEm("R$ 99.640,35")).toBeCloseTo(expected, 10);
+    expect(splitAmountWidthEm("-R$ 99.640,35")).toBeCloseTo(expected + 0.6, 10);
+    expect(splitAmountWidthEm("R$ 12")).toBeCloseTo(5 * 0.6, 10);
+  });
+
+  it("knows the width of the mask: the small R$ and four dots", () => {
+    expect(maskedAmountWidthEm()).toBeCloseTo((3 * 0.56 + 4) * 0.6, 10);
   });
 });
 

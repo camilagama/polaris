@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { GapSeries } from "../ui/charts/chart-gaps";
 import { knownRuns } from "../ui/charts/chart-data";
+import { GapSeries } from "../ui/charts/chart-gaps";
 import { NumbersTable, periodHelp, ResultChart } from "./result-chart";
 import { addDays } from "./result-period";
 import { resultSeries, supportParts } from "./result-series";
@@ -37,6 +37,39 @@ vi.mock("../ui/bklit/charts/chart-context", async (importOriginal) => ({
   },
   useYScale: () => (value: number) => 100 - value * 5,
 }));
+
+// the drawing is lazy and the markup of the server has only its placeholder: the props the screen hands it (the summary
+// for a screen reader and the legend of the hatch) are copied into attributes of an element beside the real one
+const hiddenValues = vi.hoisted(() => ({ hidden: false }));
+
+vi.mock("../lib/hidden-values", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/hidden-values")>()),
+  useHiddenValues: () => [hiddenValues.hidden, () => undefined],
+}));
+
+vi.mock("../ui/charts/on-demand", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../ui/charts/on-demand")>();
+  return {
+    ...original,
+    OnDemandAreaChart: (
+      props: Parameters<typeof original.OnDemandAreaChart>[0]
+    ) => (
+      <>
+        <original.OnDemandAreaChart {...props} />
+        <i
+          data-drawing-label={props.label}
+          data-first-note={props.readingNote?.(0) ?? ""}
+          data-notes={props.data
+            .map((_, index) => props.readingNote?.(index) ?? "")
+            .join("|")}
+          data-hatch-legend={props.secondary?.unknown?.legend ?? ""}
+          data-hatch-text={props.secondary?.unknown?.text ?? ""}
+        />
+      </>
+    ),
+  };
+});
 
 const ZONE = "America/Sao_Paulo";
 // October 2026 read on the 25th at noon of the store
@@ -131,6 +164,8 @@ function support(summary: StoredPeriodSummary): string {
   );
   return [count, tail].filter((part) => part !== null).join(" ");
 }
+const DRAWING_LABEL = /data-drawing-label="([^"]*)"/;
+const drawingLabel = (markup: string) => markup.match(DRAWING_LABEL)?.[1] ?? "";
 const COSTS_TOTAL = /<dt[^>]*>Custos<\/dt>/;
 const THIRD_ROW = /<tr[^>]*>(?:(?!<\/tr>).)*03\/10\/2026.*?<\/tr>/s;
 const EQUALITY = "A diferença entre as duas linhas";
@@ -174,6 +209,264 @@ describe("the sentence of support of the chart, in its five cases (AC-11)", () =
   });
 });
 
+/** October with the days of `unknown` lacking only the fee: no item line has an unknown cost, some fee is unknown. */
+function onlyFee(unknown: readonly number[]): StoredPeriodSummary {
+  const summary = october(unknown);
+  return {
+    ...summary,
+    quality: {
+      ...summary.quality,
+      itemLinesWithUnknownCost: 0,
+      processingFeesUnknown: 2,
+    },
+  };
+}
+
+describe("when only the fee is missing, the chart says the fee and not the cost (RES-T2)", () => {
+  const said = (summary: StoredPeriodSummary) =>
+    text(chart(summary).match(THIRD_ROW)?.[0] ?? "");
+
+  it("says it in the table, in the cost and in the result of an unknown day", () => {
+    const row = said(onlyFee([3]));
+    expect(row.match(/sem taxa informada/g)).toHaveLength(2);
+    expect(row).not.toContain("sem custo informado");
+  });
+
+  it("says it in the summary of the drawing and in the legend of the hatch", () => {
+    const markup = chart(onlyFee([3, 12, 21]));
+    expect(drawingLabel(markup)).toContain("3 de 25 dias sem taxa informada");
+    expect(drawingLabel(markup)).not.toContain("sem custo informado");
+    expect(markup).toContain('data-hatch-legend="dia sem taxa informada"');
+    expect(markup).toContain('data-hatch-text="sem taxa informada"');
+  });
+
+  it("keeps the words of the cost in the summary and in the hatch when a cost is what is missing", () => {
+    const markup = chart(october([3, 12, 21]));
+    expect(drawingLabel(markup)).toContain("3 de 25 dias sem custo informado");
+    expect(markup).toContain('data-hatch-legend="dia sem custo informado"');
+  });
+
+  it("writes the year in the reading of a month of last year", () => {
+    const base = onlyFee([]);
+    const markup = chart({
+      ...base,
+      daily: [
+        {
+          costs: null,
+          date: "2025-12-01",
+          days: 31,
+          netSales: "50.00",
+          operatingExpenses: "0.00",
+          operatingResult: null,
+          salesCount: 1,
+          to: "2025-12-31",
+          unknownDays: 31,
+        },
+      ],
+      generatedAt: "2026-02-10T15:00:00.000Z",
+      granularity: "month",
+      period: { from: "2025-12-01", to: "2025-12-31" },
+    } as StoredPeriodSummary);
+    expect(markup).toContain(
+      'data-first-note="dezembro de 2025: 31 de 31 dias sem taxa informada · melhor mês"'
+    );
+  });
+
+  it("names the best day in the reading of that day only, and no day when nothing sold", () => {
+    const notes = (markup: string) =>
+      (markup.match(NOTES_ATTRIBUTE)?.[1] ?? "").split("|");
+    const sold = notes(chart(october([])));
+    expect(sold.filter((note) => note.includes("melhor dia"))).toEqual([
+      "melhor dia",
+    ]);
+    expect(sold[0]).toBe("melhor dia");
+    const quiet = october([]);
+    const nothing = notes(
+      chart({
+        ...quiet,
+        daily: quiet.daily?.map((day) => ({ ...day, netSales: "0.00" })) ?? [],
+      })
+    );
+    expect(nothing.some((note) => note.includes("melhor"))).toBe(false);
+  });
+
+  it("keeps the mark of the best day when the amounts are hidden, and hides the amount of the note", () => {
+    const base = october([]);
+    const withExpense = {
+      ...base,
+      daily: base.daily?.map((day, index) =>
+        index === 0 ? { ...day, operatingExpenses: "18.00" } : day
+      ),
+    } as StoredPeriodSummary;
+    const first = (markup: string) =>
+      markup.match(FIRST_NOTE_ATTRIBUTE)?.[1] ?? "";
+    expect(first(chart(withExpense))).toBe(
+      "inclui R$ 18,00 de despesas do período · melhor dia"
+    );
+    hiddenValues.hidden = true;
+    try {
+      expect(first(chart(withExpense))).toBe(
+        "inclui R$ •••• de despesas do período · melhor dia"
+      );
+    } finally {
+      hiddenValues.hidden = false;
+    }
+  });
+
+  it("marks the best day on a copy that has no costs per day", () => {
+    const base = october([]);
+    const noCosts = {
+      ...base,
+      daily: base.daily?.map(({ costs: _costs, ...day }) => day),
+    } as StoredPeriodSummary;
+    const notes = (markup: string) =>
+      (markup.match(NOTES_ATTRIBUTE)?.[1] ?? "").split("|");
+    const marked = notes(chart(noCosts));
+    expect(marked[0]).toBe("melhor dia");
+    expect(marked.filter((note) => note !== "")).toEqual(["melhor dia"]);
+  });
+
+  it("names the month in the summary of the drawing of a period by month", () => {
+    const base = onlyFee([]);
+    const month = (
+      date: string,
+      to: string,
+      days: number,
+      unknown: number
+    ) => ({
+      costs: unknown > 0 ? null : "10.00",
+      date,
+      days,
+      netSales: "50.00",
+      operatingExpenses: "0.00",
+      operatingResult: unknown > 0 ? null : "40.00",
+      salesCount: 1,
+      to,
+      unknownDays: unknown,
+    });
+    const markup = chart({
+      ...base,
+      daily: [
+        month("2026-09-01", "2026-09-30", 30, 0),
+        month("2026-11-01", "2026-11-07", 7, 1),
+      ],
+      generatedAt: "2026-11-07T15:00:00.000Z",
+      granularity: "month",
+      period: { from: "2026-09-01", to: "2026-11-07" },
+    } as StoredPeriodSummary);
+    expect(drawingLabel(markup)).toContain(
+      "novembro: 1 de 7 dias sem taxa informada"
+    );
+    expect(drawingLabel(markup)).not.toContain("sem custo informado");
+    expect(markup).toContain(
+      'data-hatch-legend="mês com dia sem taxa informada"'
+    );
+  });
+
+  it("keeps the cost when an item line has no cost, even if a fee is unknown too", () => {
+    const both = onlyFee([3]);
+    const row = said({
+      ...both,
+      quality: { ...both.quality, itemLinesWithUnknownCost: 1 },
+    });
+    expect(row.match(/sem custo informado/g)).toHaveLength(2);
+    expect(row).not.toContain("sem taxa informada");
+  });
+
+  it("keeps the cost when no count explains the unknown day", () => {
+    const none = october([3]);
+    const row = said({
+      ...none,
+      quality: { ...none.quality, itemLinesWithUnknownCost: 0 },
+    });
+    expect(row.match(/sem custo informado/g)).toHaveLength(2);
+  });
+});
+
+describe("the chart without the series of costs (costsSent false)", () => {
+  const withoutCosts = () => {
+    const base = october([]);
+    return {
+      ...base,
+      daily: base.daily?.map(
+        ({ costs: _costs, operatingResult: _result, ...day }) => day
+      ),
+    } as StoredPeriodSummary;
+  };
+
+  it("says the costs per day are not available, in place of the cost line", () => {
+    const markup = text(chart(withoutCosts()));
+    expect(markup).toContain("Os custos por dia não estão disponíveis agora.");
+    expect(markup).not.toContain("Esta cópia guardada");
+  });
+
+  it("says the copy has no costs per day when the read comes from the cache", () => {
+    const markup = text(
+      renderToStaticMarkup(
+        <ResultChart source="cache" summary={withoutCosts()} timezone={ZONE} />
+      )
+    );
+    expect(markup).toContain("Esta cópia guardada não tem os custos por dia.");
+    expect(markup).not.toContain("não estão disponíveis agora");
+  });
+
+  it("writes no note when every day sends its cost", () => {
+    const markup = text(chart(october([])));
+    expect(markup).not.toContain("Os custos por dia não estão disponíveis");
+    expect(markup).not.toContain("Esta cópia guardada");
+  });
+
+  describe("a series that sends the cost on some days only", () => {
+    const partial = () => {
+      const base = october([]);
+      return {
+        ...base,
+        daily: base.daily?.map((day, index) => {
+          if (index >= 10) {
+            return day;
+          }
+          const { costs: _costs, operatingResult: _result, ...rest } = day;
+          return rest;
+        }),
+      } as StoredPeriodSummary;
+    };
+
+    it("is not a series of costs: the note stands in for the line, as for a copy with none", () => {
+      const markup = chart(partial());
+      expect(text(markup)).toContain(
+        "Os custos por dia não estão disponíveis agora."
+      );
+      expect(markup).toContain('data-hatch-legend=""');
+      expect(markup).not.toContain('data-chart-legend=""');
+      expect(markup).not.toMatch(COSTS_TOTAL);
+      expect(markup).not.toContain("estimativa incompleta");
+      expect(drawingLabel(markup)).not.toContain("e custos");
+      expect(markup).not.toContain("Resultado do dia");
+    });
+
+    it("says the copy has no costs per day when the read comes from the cache", () => {
+      const markup = text(
+        renderToStaticMarkup(
+          <ResultChart source="cache" summary={partial()} timezone={ZONE} />
+        )
+      );
+      expect(markup).toContain(
+        "Esta cópia guardada não tem os custos por dia."
+      );
+    });
+
+    it("differs from days the server sent as unknown (null): those keep the line, the hatch and no note", () => {
+      const markup = chart(october([3, 12]));
+      expect(text(markup)).not.toContain(
+        "Os custos por dia não estão disponíveis"
+      );
+      expect(markup).toContain('data-chart-legend=""');
+      expect(markup).toContain('data-chart-legend-unknown=""');
+      expect(markup).toContain('data-hatch-legend="dia sem custo informado"');
+    });
+  });
+});
+
 describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
   it("keeps the badge and writes no total of the costs: never a partial sum", () => {
     const markup = chart(october([3, 12, 21]));
@@ -191,31 +484,66 @@ describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
   });
 });
 
+const NOTE_LINE = /<div class="[^"]*min-h-5\.5[^"]*"[^>]*>/g;
+const FIRST_NOTE_ATTRIBUTE = /data-first-note="([^"]*)"/;
+const NOTES_ATTRIBUTE = /data-notes="([^"]*)"/;
+const BEST_DAY_FOR_READERS = /<p class="sr-only">[^<]*Melhor dia/;
+const BEST_DAY_LINE = /<p class="[^"]*min-h-\[1\.125rem\]/;
+const TITLE_HEADING = /<h2 class="text-section" id="dashboard-chart-title"/;
+const ANY_HEIGHT_RESERVE = /min-h-/;
+const NOTE_RESERVE_TOKEN = /(?<![\w:-])min-h-5\.5(?![\w.])/;
+const BADGE = /<span[^>]*data-slot="badge"[^>]*>.*?<\/span>/s;
+const ANY_BRACKET_RESERVE = /min-h-\[/;
+
 describe("the room the card keeps for its lines (lugar reservado)", () => {
-  it("keeps the line of the note and the line of the best day in the box, whatever the state", () => {
+  it("keeps the line of the note in the box, whatever the state, and writes the best day only for the screen reader", () => {
     const complete = chart(october([]));
     const incomplete = chart(october([3]));
-    const lines = (markup: string) =>
-      markup.match(/<p class="[^"]*min-h-\[1\.125rem\][^"]*"[^>]*>/g) ?? [];
-    expect(lines(complete)).toHaveLength(lines(incomplete).length);
-    expect(lines(complete).length).toBeGreaterThanOrEqual(2);
+    const lines = (markup: string) => markup.match(NOTE_LINE) ?? [];
+    expect(lines(complete)).toHaveLength(1);
+    expect(lines(incomplete)).toHaveLength(1);
+    expect(complete).toMatch(BEST_DAY_FOR_READERS);
+    expect(complete).not.toMatch(BEST_DAY_LINE);
   });
 
-  it("holds the same row in the box that stands in for the drawing while its chunk loads", () => {
+  it("has the header of every block: the title and its (i) in the one row of the BlockHeader", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain('data-slot="block-header"');
+    expect(markup).toMatch(TITLE_HEADING);
+  });
+
+  it("keeps no row above the drawing: the legend sits in the header and the box that stands in for the drawing is the plot's", () => {
     const markup = chart(october([3]));
     expect(markup).toContain("data-chart-loading");
-    const rows =
-      markup.match(
-        /<div aria-hidden="true" class="[^"]*min-h-\[8\.5rem\][^"]*"/g
-      ) ?? [];
-    expect(rows).toHaveLength(1);
-    expect(markup).not.toContain("min-h-[calc(5*1.125rem)]");
+    const drawingAt = markup.indexOf("data-chart-loading");
+    const panelAt = markup.indexOf('data-slot="card-frame-panel"');
+    expect(markup.slice(0, panelAt)).not.toMatch(ANY_BRACKET_RESERVE);
+    const panelAbove = markup.slice(panelAt, drawingAt).replace(BADGE, "");
+    expect(panelAbove.match(new RegExp(NOTE_RESERVE_TOKEN, "g"))).toHaveLength(
+      1
+    );
+    expect(panelAbove.replace(NOTE_RESERVE_TOKEN, "")).not.toMatch(
+      ANY_HEIGHT_RESERVE
+    );
+    expect(markup).toContain("height:240px");
+    const header = markup.slice(
+      markup.indexOf('data-slot="block-header"'),
+      markup.indexOf('data-slot="card-frame-panel"')
+    );
+    expect(header).toContain("data-chart-legend");
+    expect(header).toContain("Custos (CMV, taxas e despesas)");
+    expect(header).toContain("dia sem custo informado");
+    expect(markup.match(/data-chart-legend=""/g)).toHaveLength(1);
+  });
+
+  it("draws the costs in the grey of the comparison and the sales in the green of the entity", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain('stroke="var(--chart-sales)"');
+    expect(markup).toContain('stroke="var(--chart-context)"');
   });
 
   it("reserves with min-h only: nothing is cut with max-h or a line clamp", () => {
-    const markup = chart(october([3]));
-    expect(markup).toContain("min-h-[");
-    expect(markup).not.toMatch(CUTS_TEXT);
+    expect(chart(october([3]))).not.toMatch(CUTS_TEXT);
   });
 });
 
@@ -391,7 +719,7 @@ describe("the (i) of the title and the caveat said once (AC-7.2 to AC-7.4)", () 
     });
   }
 
-  it("the seal of the estimate stays beside the title of an incomplete chart", () => {
+  it("the seal of the estimate stays on the note line of an incomplete chart", () => {
     expect(text(chart(october([3])))).toContain("estimativa incompleta");
     expect(text(chart(october([])))).not.toContain("estimativa incompleta");
   });
@@ -412,10 +740,17 @@ describe("the (i) of the title and the caveat said once (AC-7.2 to AC-7.4)", () 
             resultSeries(summary.daily ?? [], "2026-10-25"),
             summary.chain
           );
-          const count =
-            unknown > 0 ? "366 de 366 dias sem custo informado." : null;
-          for (const help of [periodHelp({ count, range, source }), tail]) {
-            expect(help?.length ?? 0).toBeLessThanOrEqual(160);
+          const counts =
+            unknown > 0
+              ? [
+                  "366 de 366 dias sem custo informado.",
+                  "Setembro de 2025: 31 de 31 dias sem taxa informada.",
+                ]
+              : [null];
+          for (const count of counts) {
+            for (const help of [periodHelp({ count, range, source }), tail]) {
+              expect(help?.length ?? 0).toBeLessThanOrEqual(160);
+            }
           }
         }
       }

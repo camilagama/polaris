@@ -17,9 +17,10 @@ import {
   readOperationalSelection,
   selectOperationalVariants,
 } from "../src/operational-selection-repository";
-import { createProduct, deleteProduct } from "../src/product-repository";
+import { createProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -492,7 +493,7 @@ async function run() {
     const dropped = final[0] as string;
     const droppedProduct = await productOf(o1, dropped);
     await as(o1, "product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: droppedProduct.version,
         id: droppedProduct.id,
         requestId: randomUUID(),
@@ -532,7 +533,7 @@ async function run() {
     await inSequence(toDelete.length, async (index) => {
       const product = await productOf(o1, toDelete[index] as string);
       await as(o1, "product:update", (tx, identity) =>
-        deleteProduct(tx, identity, {
+        archiveThenDeleteProduct(tx, identity, {
           expectedVersion: product.version,
           id: product.id,
           requestId: randomUUID(),
@@ -881,6 +882,41 @@ async function run() {
       "the billing writer stores the end of the lapsed access as the episode start (the window is the same before and after the sweep), keeps it through a trial checkout, and clears it when Pro access returns"
     );
 
+    // a trial whose stored end passed an hour ago is still inside its grace for the first charge
+    const trialGrace = await createTenantFixture(admin.pool, "opsel grace");
+    await plainProducts(trialGrace, 51);
+    const [graceVariant] = await variantIds(trialGrace);
+    await admin.pool.query(
+      "UPDATE public.organization_billing SET state = 'trialing', trial_started_at = now() - interval '14 days', access_ends_at = now() - interval '1 hour', over_limit_since = NULL WHERE organization_id = $1",
+      [trialGrace.organizationId]
+    );
+    const graceModel = await model(trialGrace);
+    assert.equal(
+      graceModel.phase,
+      "unrestricted",
+      "a trial in its grace holds Pro: nothing is restricted"
+    );
+    assert.equal(graceModel.windowEndsAt, null);
+    await expectSelectionRefusal(
+      () => choose(trialGrace, [graceVariant as string]),
+      "nothing_to_select",
+      "there is nothing to choose on a trial in its grace"
+    );
+    await receive(trialGrace, graceVariant as string);
+    assert.equal(
+      (
+        await admin.pool.query<{ since: Date | null }>(
+          "SELECT over_limit_since AS since FROM public.organization_billing WHERE organization_id = $1",
+          [trialGrace.organizationId]
+        )
+      ).rows[0]?.since,
+      null,
+      "no episode starts while the trial is in its grace"
+    );
+    tests.push(
+      "a trial whose stored end passed an hour ago still holds Pro: nothing is restricted, a stock receipt passes, there is nothing to choose and no episode starts"
+    );
+
     // ------------------------------------------------------------- privileges and RLS
     for (const statement of [
       "UPDATE public.organization_billing SET over_limit_since = now()",
@@ -966,13 +1002,9 @@ async function run() {
     if (runtime) {
       await runtime.pool.end();
     }
-    for (const [role, group] of [
-      [loginRole, runtimeRole],
-      [billingLoginRole, "polaris_billing_runtime"],
-    ] as const) {
+    for (const role of [loginRole, billingLoginRole] as const) {
       if (role) {
         // biome-ignore lint/performance/noAwaitInLoops: Two cleanups, in order.
-        await admin.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await admin.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       }
     }

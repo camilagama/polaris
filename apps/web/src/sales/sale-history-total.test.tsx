@@ -1,7 +1,7 @@
 import type { SaleListEntryReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ListTotalFooter } from "../catalog/screen-parts";
+import { ListTotalFooter } from "@/ui/list-total-footer";
 import { SaleHistoryList } from "./sale-history-list";
 import { historyRows, historyTotal } from "./sale-history-model";
 
@@ -86,7 +86,9 @@ describe("o rodapé do Histórico", () => {
           list: "ready",
           listError: null,
           loadingMore: false,
+          listKey: "k",
           moreError: null,
+          refresh: "idle",
           sales,
         })}
       />
@@ -104,5 +106,78 @@ describe("o rodapé do Histórico", () => {
     const html = renderToStaticMarkup(footer([sale(1)]));
     expect(html).toContain('data-list-total-note=""');
     expect(html).toContain("min-h-5");
+  });
+
+  it("o rótulo é propriedade: sem ela é 'Total na tela' e sem (i), como em Despesas", () => {
+    const html = renderToStaticMarkup(
+      <ListTotalFooter count="2 despesas" note="" value="R$ 10,00" />
+    );
+    expect(html).toContain("Total na tela");
+    expect(html).not.toContain('data-slot="help-tip"');
+    expect(html).not.toContain('role="status"');
+  });
+
+  it("com o rótulo do período, o (i) fica preso à última palavra, dentro do mesmo parágrafo do rótulo", () => {
+    const html = renderToStaticMarkup(
+      <ListTotalFooter
+        count="3 vendas"
+        help={{ about: "Vendas líquidas do período", text: "texto do (i)" }}
+        label="Vendas líquidas do período"
+        value="R$ 123,40"
+      />
+    );
+    expect(html).toContain("Vendas líquidas do ");
+    expect(html).toContain("whitespace-nowrap");
+    expect(html).toContain("Sobre Vendas líquidas do período");
+    expect(html).not.toContain("Total na tela");
+    const nowrap = html.slice(html.indexOf('<span class="whitespace-nowrap">'));
+    expect(nowrap.indexOf("período")).toBeLessThan(
+      nowrap.indexOf('data-slot="help-tip"')
+    );
+  });
+
+  it("lendo, o valor é um esqueleto e nenhum valor em reais aparece", () => {
+    const html = renderToStaticMarkup(
+      <ListTotalFooter
+        count=""
+        label="Vendas líquidas do período"
+        value={null}
+        valueLoading
+      />
+    );
+    expect(html).toContain("data-list-total-skeleton");
+    expect(html).not.toContain("R$");
+  });
+
+  it("a frase do rodapé é um status na linha de nota, acima da nota das canceladas", () => {
+    const html = renderToStaticMarkup(
+      <ListTotalFooter
+        count="1 venda"
+        note="1 cancelada fica fora da soma."
+        notice="Sem conexão: total das vendas guardadas neste aparelho."
+        value="R$ 10,00"
+      />
+    );
+    expect(html.match(/data-list-total-note/g)).toHaveLength(1);
+    expect(html.indexOf('role="status"')).toBeLessThan(
+      html.indexOf("1 cancelada fica fora da soma.")
+    );
+    expect(html).toContain("Sem conexão: total das vendas guardadas");
+  });
+
+  it("a região de status existe vazia sem aviso e traz o texto quando há aviso", () => {
+    const markup = (notice: string) =>
+      renderToStaticMarkup(
+        <ListTotalFooter
+          count="1 venda"
+          note=""
+          notice={notice}
+          value="R$ 10,00"
+        />
+      );
+    expect(markup("")).toContain('<p role="status"></p>');
+    expect(markup("Não foi possível ler o total do período agora.")).toContain(
+      '<p role="status">Não foi possível ler o total do período agora.</p>'
+    );
   });
 });

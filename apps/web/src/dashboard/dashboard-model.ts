@@ -25,11 +25,6 @@ export const EMPTY_VALUE = "—";
 
 const percentTextPattern = /^(-?)(\d+)(?:\.(\d+))?$/;
 
-/** An exact BRL text ("-12.30") as "-R$ 12,30", or the dash for no value. */
-export function formatMoneyOrDash(value: string | null): string {
-  return value === null ? EMPTY_VALUE : formatBrlAmount(value);
-}
-
 /** A percent text with two places ("72.50") as "72,50%", or the dash for no value. */
 export function formatPercentOrDash(value: string | null): string {
   if (value === null) {
@@ -239,6 +234,12 @@ const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
 /** What a card of the estimated result says when no cost of the goods is known (the Resultado and the Início). */
 export const NO_KNOWN_COST_RESULT = "Sem custo informado: não dá para estimar.";
 
+/** Said by the sales and ticket cards, and by the range control, when the day read has no sale yet in a period that has. */
+export const NO_SALES_UNTIL_DAY = "Sem vendas";
+
+/** Said under the Ticket médio when the period has sales and the server sent no ticket: it does not deny the sales. */
+export const TICKET_UNAVAILABLE = "Ticket indisponível agora";
+
 /** The subtotals that follow from the cost of goods: with no cost known they are the sales, not an estimate. */
 const COST_SUBTOTALS: ReadonlySet<keyof PeriodChain> = new Set([
   "grossProfit",
@@ -260,7 +261,7 @@ interface ChainLine {
 }
 
 /** The chain in the order it is read: each "=" row follows from the rows above it. */
-const CHAIN_LINES: readonly ChainLine[] = [
+export const CHAIN_LINES: readonly ChainLine[] = [
   { id: "grossSales", kind: "line", label: "Vendas brutas" },
   { id: "discounts", kind: "line", label: "(−) Descontos" },
   { id: "returns", kind: "line", label: "(−) Devoluções" },

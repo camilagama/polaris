@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
@@ -24,6 +24,10 @@ interface SaleHistory {
   filters: HistoryFilters;
   loadMore: () => void;
   reload: () => void;
+  /** Changes whenever the list is read again on purpose, so what is read beside it can follow. */
+  reloadVersion: number;
+  /** The filter the list is being read for; the rows on screen are "load more"-able only when read for the same one. */
+  listKey: string;
   setFilters: (changes: Partial<HistoryFilters>) => void;
   state: HistoryState;
 }
@@ -38,14 +42,20 @@ interface SaleHistory {
  */
 export function useSaleHistory(
   organizationId: string,
-  local: LocalWorkspace | null = null
+  local: LocalWorkspace | null = null,
+  initialFilters: HistoryFilters = emptyHistoryFilters
 ): SaleHistory {
-  const [filters, setFiltersState] = useState(emptyHistoryFilters);
+  const [filters, setFiltersState] = useState(initialFilters);
   const [state, setState] = useState(initialHistoryState);
   const [reloadVersion, setReloadVersion] = useState(0);
   const latest = useRef(0);
   const localWriter = local?.stores.writer;
   const localVersion = local?.dataVersion ?? -1;
+  const offline = localWriter !== undefined && localVersion >= 0;
+  const listKey = useMemo(
+    () => JSON.stringify([organizationId, offline, filters]),
+    [filters, offline, organizationId]
+  );
 
   useEffect(() => {
     latest.current += 1;
@@ -57,13 +67,13 @@ export function useSaleHistory(
         .then((rows) => {
           if (request === latest.current) {
             setState((current) =>
-              historyLoaded(current, filterLocalSales(rows, filters))
+              historyLoaded(current, filterLocalSales(rows, filters), listKey)
             );
           }
         })
         .catch((error: unknown) => {
           if (request === latest.current) {
-            setState((current) => historyLoadFailed(current, error));
+            setState((current) => historyLoadFailed(current, error, listKey));
           }
         });
       return () => {
@@ -77,26 +87,33 @@ export function useSaleHistory(
     )
       .then((page) => {
         if (request === latest.current) {
-          setState((current) => historyLoaded(current, page));
+          setState((current) => historyLoaded(current, page, listKey));
         }
       })
       .catch((error: unknown) => {
         if (request === latest.current) {
-          setState((current) => historyLoadFailed(current, error));
+          setState((current) => historyLoadFailed(current, error, listKey));
         }
       });
     return () => {
       latest.current += 1;
     };
-  }, [filters, localVersion, localWriter, organizationId, reloadVersion]);
+  }, [
+    filters,
+    listKey,
+    localVersion,
+    localWriter,
+    organizationId,
+    reloadVersion,
+  ]);
 
   const loadMore = useCallback(() => {
-    if (!canLoadMore(state)) {
+    if (!canLoadMore(state, listKey)) {
       return;
     }
     latest.current += 1;
     const request = latest.current;
-    setState(loadMoreStarted);
+    setState((current) => loadMoreStarted(current, listKey));
     readWithRetry(
       () =>
         orpcClient.sale.list(
@@ -114,7 +131,7 @@ export function useSaleHistory(
           setState((current) => moreLoadFailed(current, error));
         }
       });
-  }, [filters, organizationId, state]);
+  }, [filters, listKey, organizationId, state]);
 
   const reload = useCallback(
     () => setReloadVersion((version) => version + 1),
@@ -126,5 +143,13 @@ export function useSaleHistory(
     []
   );
 
-  return { filters, loadMore, reload, setFilters, state };
+  return {
+    filters,
+    listKey,
+    loadMore,
+    reload,
+    reloadVersion,
+    setFilters,
+    state,
+  };
 }

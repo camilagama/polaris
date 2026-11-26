@@ -4,23 +4,36 @@ import { fileURLToPath } from "node:url";
 import type { Client } from "pg";
 import { isLocalGateHost } from "./gate-hosts";
 import {
+  CI_SUITE,
   checkCiOwnerSetup,
+  ciJobSuites,
+  copyDatabaseName,
+  type DatabaseAclEntry,
+  databaseAclStatements,
+  drainQueue,
   type GateRun,
+  gateWorkers,
   inheritedEnvironment,
+  type PlannedRun,
+  planGateRuns,
   runMarkers,
-  runsOf,
   runThenCleanUp,
   type SuperuserNeed,
+  urlForDatabase,
 } from "./gate-runs";
 import { connectToGateTarget, validateGateTarget } from "./gate-target";
 
 /**
- * Runs the PostgreSQL gates one after another against ONE disposable database.
+ * Runs the PostgreSQL gates against disposable databases, never two at the same time on the same database.
  *
- * Gates inject failures through triggers on shared tables, so two gates must
- * never run at the same time on the same database; this runner is the single
- * sequential entry point (`bun run gates:all`, or `bun scripts/run-gates.ts
- * <names...>`).
+ * Gates inject failures through triggers on shared tables, so two gates must never run at the same time on the same
+ * database; this runner is the single entry point (`bun run gates:all`, or `bun scripts/run-gates.ts <names...>`).
+ * Against the local Postgres of the job, it copies the migrated database (`CREATE DATABASE … TEMPLATE`) once per worker
+ * (4, or POLARIS_GATE_WORKERS) and the workers take the gates that touch only their own database from one queue; then
+ * the gates of SERIAL_GATES (gate-runs.ts), which touch the roles of the cluster or depend on the gates before them, run
+ * one at a time in the migrated database itself, in the order of the list below. There, "the gates before" a serial
+ * gate are the serial gates before it: the parallel ones write in the copies. Against Neon every gate runs in the one
+ * database, in order.
  *
  * Environment (read here, never printed):
  *   POLARIS_GATE_DATABASE_URL  direct (non-pooled) owner URL of the disposable database
@@ -46,6 +59,8 @@ const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 
 interface Context {
   branch: string;
+  /** Set in a copy of the migrated database: the gate gets the copy's URL in place of the inherited one. */
+  copy: boolean;
   database: string;
   host: string;
   runtimeLogin: string;
@@ -97,6 +112,8 @@ const gates: Gate[] = [
   ["goals", "verify-goals-gate.ts"],
   // opening the Início writes nothing but the settling of an ended goal (AC-23), measured by pg_stat_user_tables
   ["home-writes", "verify-home-writes-gate.ts"],
+  // lives in apps/web: the Início's derivation from one wide stock list equals its four filtered reads (home-inventory.ts)
+  ["home-inventory", "../../../apps/web/scripts/verify-home-inventory-gate.ts"],
   ["billing-catalog", "verify-billing-catalog-gate.ts"],
   ["entitlements", "verify-entitlements-gate.ts"],
   ["billing-lifecycle", "verify-billing-lifecycle-gate.ts"],
@@ -182,6 +199,8 @@ const gates: Gate[] = [
   ["account-key", "verify-account-key-gate.ts"],
   // size ceilings of the catalog in code points, the domain numbers (0107): option value 80, SKU 64
   ["catalog-size-ceilings", "verify-catalog-size-ceilings-gate.ts"],
+  // deleting a product: only an archived one, the hourly cap per store, the database's clock, READ COMMITTED, the race for the last place
+  ["product-delete", "verify-product-delete-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   // the cover of a product (the image of lowest position): the reads, one sync change per image command, the plan
@@ -245,6 +264,28 @@ gates.push(
     }),
     name: "media-upload",
     script: "verify-media-upload-gate.ts",
+  },
+  // the media tables' schema: FORCE RLS, the runtime's column grants, the link triggers and the tombstone guard
+  {
+    env: (context) => ({
+      POLARIS_MEDIA_GATE_CONFIRM_DISPOSABLE: "polaris-pr33-media-schema-gate",
+      POLARIS_MEDIA_GATE_DATABASE_URL: context.url,
+      POLARIS_MEDIA_GATE_EXPECTED_HOSTNAME: context.host,
+      POLARIS_MEDIA_GATE_RUNTIME_DATABASE_URL: context.runtimeUrl,
+    }),
+    name: "media-schema",
+    script: "verify-media-gate.ts",
+  },
+  // the cleanup claim of the stored objects: the definer's owner and grants, and the lock against a concurrent insert
+  {
+    env: (context) => ({
+      POLARIS_MEDIA_DERIVATIVES_GATE_BRANCH: context.branch,
+      POLARIS_MEDIA_DERIVATIVES_GATE_DATABASE_URL: context.url,
+      POLARIS_MEDIA_DERIVATIVES_GATE_EXPECTED_HOSTNAME: context.host,
+      POLARIS_MEDIA_DERIVATIVES_GATE_TENANT_DATABASE_URL: context.runtimeUrl,
+    }),
+    name: "media-derivatives",
+    script: "verify-media-derivatives-gate.ts",
   },
   {
     env: (context) => ({
@@ -393,6 +434,7 @@ const suites: Record<string, string[]> = {
     "period-summary-sql",
     "goals",
     "home-writes",
+    "home-inventory",
     "billing-catalog",
     "entitlements",
     "billing-lifecycle",
@@ -443,6 +485,7 @@ const suites: Record<string, string[]> = {
     "auth-tables-row-security",
     "account-key",
     "catalog-size-ceilings",
+    "product-delete",
     "offline-lease",
     "sync-log",
     "product-cover",
@@ -459,6 +502,8 @@ const suites: Record<string, string[]> = {
     "inventory",
     "customers",
     "media-upload",
+    "media-schema",
+    "media-derivatives",
     "tenant-context",
     "rls",
     "migrations-without-superuser",
@@ -488,6 +533,8 @@ const suites: Record<string, string[]> = {
     "gate2-runtime",
     "inventory",
     "media-upload",
+    "media-schema",
+    "media-derivatives",
     "media-commands",
     "review-hardening",
   ],
@@ -570,6 +617,10 @@ const suites: Record<string, string[]> = {
   ],
 };
 
+// The jobs of the CI: `ci-database` is `ci` without the gates that run in a job of their own (CI_SEPARATE_JOBS), and each
+// of those has its own suite; `ci` itself stays the whole list, for one job or for a run by hand
+Object.assign(suites, ciJobSuites(suites[CI_SUITE] as string[]));
+
 function withVerifyFull(url: string): string {
   const parsed = new URL(url);
   parsed.searchParams.set("sslmode", "verify-full");
@@ -586,9 +637,9 @@ function runGate(
   run: GateRun
 ): Promise<{
   code: number;
+  lines: string[];
   notes: string[];
   seconds: number;
-  tail: string[];
 }> {
   return new Promise((resolve) => {
     const started = Date.now();
@@ -608,6 +659,12 @@ function runGate(
               POLARIS_GATE_DATABASE_URL: superuserUrl,
             }
           : gate.env(context)),
+        ...(context.copy
+          ? {
+              DATABASE_URL: context.url,
+              POLARIS_GATE_DATABASE_URL: context.url,
+            }
+          : {}),
         POLARIS_GATE_BRANCH: context.branch,
         POLARIS_GATE_DATABASE: context.database,
         POLARIS_GATE_RUNTIME_LOGIN: context.runtimeLogin,
@@ -620,22 +677,23 @@ function runGate(
             notes.push(redact(line.slice(notePrefix.length)));
           }
           lines.push(redact(line));
-          if (lines.length > 400) {
-            lines.shift();
-          }
         }
       }
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
+    // a gate that cannot start is a failed gate, with the reason in its output
+    child.on("error", (error) => {
+      lines.push(redact(`the gate did not start: ${String(error)}`));
+    });
     const timer = setTimeout(() => child.kill(), 30 * 60_000);
     child.on("close", (code) => {
       clearTimeout(timer);
       resolve({
         code: code ?? 1,
+        lines,
         notes,
         seconds: Math.round((Date.now() - started) / 1000),
-        tail: lines.slice(-14),
       });
     });
   });
@@ -693,23 +751,27 @@ async function superuserTarget(input: {
   return url;
 }
 
+/**
+ * Runs one gate and prints its block in one write, so the blocks of parallel gates never interleave: the gate, the
+ * database it ran in, the result, its notes and, when it failed, its whole output.
+ */
 async function runAndReport(
   gate: Gate,
   context: Context,
   run: GateRun
 ): Promise<GateResult> {
+  console.log(`>>> ${run.label} [${context.database}]`);
   const result = await runGate(gate, context, run);
   const status = result.code === 0 ? "passed" : "failed";
-  console.log(`    ${status} in ${result.seconds}s`);
-  for (const note of result.notes) {
-    console.log(`    note: ${note}`);
-  }
-  if (result.code !== 0) {
-    for (const line of result.tail) {
-      console.log(`    | ${line.slice(0, 220)}`);
-    }
-  }
+  const block = [
+    `=== ${run.label} [${context.database}]`,
+    `    ${status} in ${result.seconds}s`,
+    ...result.notes.map((note) => `    note: ${note}`),
+    ...(result.code === 0 ? [] : result.lines.map((line) => `    | ${line}`)),
+  ];
+  console.log(block.join("\n"));
   return {
+    database: context.database,
     gate: run.label,
     ...(result.notes.length > 0 ? { notes: result.notes } : {}),
     seconds: result.seconds,
@@ -718,10 +780,163 @@ async function runAndReport(
 }
 
 interface GateResult {
+  database: string;
   gate: string;
   notes?: string[];
   seconds: number;
   status: string;
+}
+
+function quotedIdentifier(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
+const DATABASE_SQL = `SELECT shobj_description(d.oid, 'pg_database') AS comment,
+       d.datacl IS NULL AS default_acl,
+       EXISTS (SELECT 1 FROM pg_db_role_setting AS s WHERE s.setdatabase = d.oid) AS has_settings
+  FROM pg_database AS d WHERE d.datname = $1`;
+
+// the owner of each database as "owner", so the copy (owned by the runner) compares with its template
+const DATABASE_ACL_SQL = `SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' WHEN a.grantee = d.datdba THEN 'owner'
+            ELSE pg_get_userbyid(a.grantee) END AS grantee,
+       CASE WHEN a.grantor = d.datdba THEN 'owner' ELSE pg_get_userbyid(a.grantor) END AS grantor,
+       a.privilege_type, a.is_grantable
+  FROM pg_database AS d CROSS JOIN LATERAL aclexplode(d.datacl) AS a
+ WHERE d.datname = $1
+ ORDER BY 1, 2, 3, 4`;
+
+interface DatabaseRow {
+  comment: string | null;
+  default_acl: boolean;
+  has_settings: boolean;
+}
+
+async function readDatabase(
+  admin: Client,
+  name: string
+): Promise<{ acl: DatabaseAclEntry[] | null; row: DatabaseRow }> {
+  const [row] = (await admin.query<DatabaseRow>(DATABASE_SQL, [name])).rows;
+  if (!row) {
+    throw new Error(`The database ${name} does not exist.`);
+  }
+  const acl = (await admin.query<DatabaseAclEntry>(DATABASE_ACL_SQL, [name]))
+    .rows;
+  return { acl: row.default_acl ? null : acl, row };
+}
+
+/**
+ * Copies the migrated database for a worker: the contents through `CREATE DATABASE … TEMPLATE`, then what the copy
+ * does not take from its template (the database's ACL and comment), checked against the template afterwards. A
+ * database-level setting (`ALTER DATABASE … SET`) is not copied either, so a template with one stops the run.
+ */
+async function createCopy(
+  admin: Client,
+  template: string,
+  copy: string
+): Promise<void> {
+  const source = await readDatabase(admin, template);
+  if (source.row.has_settings) {
+    throw new Error(
+      `The database ${template} has settings of its own (ALTER DATABASE … SET), which a copy would lose: run with POLARIS_GATE_WORKERS=1.`
+    );
+  }
+  await admin.query(
+    `DROP DATABASE IF EXISTS ${quotedIdentifier(copy)} WITH (FORCE)`
+  );
+  await admin.query(
+    `CREATE DATABASE ${quotedIdentifier(copy)} TEMPLATE ${quotedIdentifier(template)}`
+  );
+  const owner = (
+    await admin.query<{ owner: string }>("SELECT current_user AS owner")
+  ).rows[0]?.owner;
+  if (!owner) {
+    throw new Error("The runner could not read its own user.");
+  }
+  const acl = source.acl?.map((entry) => ({
+    ...entry,
+    grantee: entry.grantee === "owner" ? owner : entry.grantee,
+  }));
+  for (const statement of databaseAclStatements(copy, owner, acl ?? null)) {
+    // biome-ignore lint/performance/noAwaitInLoops: one session, one statement after another
+    await admin.query(statement);
+  }
+  if (source.row.comment !== null) {
+    await admin.query(
+      `COMMENT ON DATABASE ${quotedIdentifier(copy)} IS ${admin.escapeLiteral(source.row.comment)}`
+    );
+  }
+  const target = await readDatabase(admin, copy);
+  if (
+    JSON.stringify(target.acl) !== JSON.stringify(source.acl) ||
+    target.row.comment !== source.row.comment
+  ) {
+    throw new Error(
+      `The copy ${copy} does not have the privileges or the comment of ${template}.`
+    );
+  }
+}
+
+async function runParallel(
+  admin: Client,
+  context: Context,
+  runs: PlannedRun<Gate>[],
+  workers: number
+): Promise<GateResult[]> {
+  const copies = Array.from(
+    { length: Math.min(workers, runs.length) },
+    (_, index) => copyDatabaseName(context.database, index + 1)
+  );
+  const created: string[] = [];
+  return await runThenCleanUp(
+    async () => {
+      for (const copy of copies) {
+        // listed before the CREATE, so a copy whose ACL or comment fails afterwards is dropped too
+        created.push(copy);
+        // biome-ignore lint/performance/noAwaitInLoops: a template is copied only while nothing else is connected to it
+        await createCopy(admin, context.database, copy);
+      }
+      console.log(
+        `--- ${runs.length} runs in parallel, in ${copies.length} copies of ${context.database}: ${copies.join(", ")}`
+      );
+      return await drainQueue(runs, copies.length, ({ gate, run }, worker) => {
+        const database = copies[worker - 1] as string;
+        return runAndReport(
+          gate,
+          {
+            ...context,
+            copy: true,
+            database,
+            runtimeUrl: urlForDatabase(context.runtimeUrl, database),
+            superuserUrl: undefined,
+            url: urlForDatabase(context.url, database),
+          },
+          run
+        );
+      });
+    },
+    async () => {
+      const failures: unknown[] = [];
+      for (const copy of created) {
+        // biome-ignore lint/performance/noAwaitInLoops: one session, one statement after another
+        await admin
+          .query(
+            `DROP DATABASE IF EXISTS ${quotedIdentifier(copy)} WITH (FORCE)`
+          )
+          .catch((error: unknown) => failures.push(error));
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures,
+          `${failures.length} copies of the database were not dropped: ${failures.map(String).join("; ")}`
+        );
+      }
+    },
+    (cleanupError) => {
+      console.error(
+        `Dropping the copies of the database also failed: ${redact(String(cleanupError))}`
+      );
+    }
+  );
 }
 
 async function main() {
@@ -755,6 +970,12 @@ async function main() {
     );
   }
 
+  console.log(
+    `--- ${selected.length} gates selected (${process.argv.slice(2).join(" ") || "all"}): ${selected.map((gate) => gate.name).join(" ")}`
+  );
+
+  const workers = gateWorkers(process.env, isLocalCi);
+
   if (named.has("concurrency") && !process.env.POLARIS_CONCURRENCY_REPEAT) {
     process.env.POLARIS_CONCURRENCY_REPEAT = DEFAULT_CONCURRENCY_REPEAT;
   }
@@ -787,6 +1008,7 @@ async function main() {
       runtime.password = password;
       const context: Context = {
         branch,
+        copy: false,
         database,
         host: parsed.hostname,
         runtimeLogin: login,
@@ -797,21 +1019,25 @@ async function main() {
         url: isLocalCi ? url : withVerifyFull(url),
       };
 
-      const runs = selected.flatMap((gate) =>
-        runsOf(gate.name, gate.superuser, Boolean(superuserUrl)).map((run) => ({
-          gate,
-          run,
-        }))
-      );
-      for (const { gate, run } of runs) {
-        console.log(`=== ${run.label}`);
+      const plan = planGateRuns(selected, Boolean(superuserUrl), workers);
+      if (plan.parallel.length > 0) {
+        results.push(
+          ...(await runParallel(admin, context, plan.parallel, workers))
+        );
+      }
+      if (plan.serial.length > 0) {
+        console.log(
+          `--- ${plan.serial.length} runs one at a time, in ${database}`
+        );
+      }
+      for (const { gate, run } of plan.serial) {
         // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
         results.push(await runAndReport(gate, context, run));
       }
     },
     async () => {
       try {
-        await admin.query(`REVOKE polaris_pr11_runtime FROM "${login}"`);
+        // DROP ROLE already removes the membership in the runtime role, so no REVOKE comes first
         await admin.query(`DROP ROLE IF EXISTS "${login}"`);
       } finally {
         await admin.end();

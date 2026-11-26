@@ -357,6 +357,9 @@ function soldDaysCount(count: number): string {
 
 /** The count always names its window: the map and the weekday means do not span the same weeks. */
 function soldDaysText(count: number, weeks: number): string {
+  if (count === 0) {
+    return `Nenhum dia com venda nas últimas ${weeks} semanas`;
+  }
   return `${soldDaysCount(count)} nas últimas ${weeks} semanas`;
 }
 
@@ -366,14 +369,33 @@ function soldDaysText(count: number, weeks: number): string {
  */
 export const PAST_UNTIL_YESTERDAY = "Meses anteriores atualizados até ontem.";
 
-/** The name of the map for a screen reader: what it shows, in words; the numbers are in the table. */
+/**
+ * The name of the map for a screen reader: what it shows, in words; the numbers are in the table. With few weeks of
+ * sales the count of the weekday window rides on the count of the map, so "dias com venda" is said once.
+ */
 export function rhythmSummary(view: RhythmView): string {
   const head = `Vendas por dia nas últimas ${view.weeks} semanas`;
   const best = view.best === null ? null : view.cells[view.best];
   if (!best?.netSales) {
     return `${head}: nenhum dia com venda.`;
   }
-  return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} A tabela dia a dia está no fim deste bloco.`;
+  const insight = rhythmInsight(view);
+  const windowSold = view.weekdays.soldDays;
+  const windowCount =
+    windowSold === 0 ? "nenhum" : `sendo ${formatQuantity(windowSold)}`;
+  const inWeekdayWindow =
+    insight.kind === "few" && view.weeks > WEEKDAY_WINDOW_WEEKS
+      ? `, ${windowCount} nas últimas ${WEEKDAY_WINDOW_WEEKS} semanas`
+      : "";
+  return `${head}: ${soldDaysCount(view.soldDays)}${inWeekdayWindow}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${insight.text} ${PAST_UNTIL_YESTERDAY} A tabela dia a dia está no fim deste bloco.`;
+}
+
+/** The sentence about the weekdays, in one piece, for the summary and the caption of the table. */
+export function rhythmInsightText(view: RhythmView): string {
+  const insight = rhythmInsight(view);
+  return insight.kind === "few"
+    ? `${insight.text} ${insight.detail}`
+    : insight.text;
 }
 
 /** The ranges of the four levels, for the (i) of the block and the legend title: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */

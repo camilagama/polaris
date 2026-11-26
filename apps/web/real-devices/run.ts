@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Local } from "browserstack-local";
 import { remote } from "webdriverio";
+import { appCommit, UNKNOWN_APP_COMMIT } from "./app-commit";
 import {
   credentials,
   markSession,
@@ -64,6 +65,14 @@ function localBinary() {
     );
   }
   return binaryPath;
+}
+
+function gitInWebRoot(args: string[]) {
+  return execFileSync("git", args, {
+    cwd: webRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
 }
 
 function build() {
@@ -242,8 +251,10 @@ for (const event of ["uncaughtException", "unhandledRejection"] as const) {
 }
 
 const devices: DeviceReport[] = [];
+let app = UNKNOWN_APP_COMMIT;
 try {
   console.log("Gate 5 em aparelhos reais: construindo o app…");
+  app = appCommit(gitInWebRoot);
   build();
   servers.push(
     await serveBuild(join(webRoot, "dist/offline-poc"), LAB_PORT, certificate)
@@ -280,6 +291,8 @@ if (process.exitCode === 1) {
 }
 
 const report: RunReport = {
+  appDirty: app.dirty,
+  appSha: app.sha,
   devices,
   finishedAt: new Date().toISOString(),
   partial: IS_PARTIAL,

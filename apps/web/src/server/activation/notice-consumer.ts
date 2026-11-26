@@ -2,6 +2,8 @@ import type { ActivationNoticeRecipientClient } from "@polaris/db/activation-not
 import type {
   ActivationNoticeStep,
   ActivationNoticeStore,
+  ActivationSuppressionKey,
+  ActivationSuppressionKeys,
 } from "@polaris/db/activation-notice-store";
 import {
   type ActivationNoticeSkipReason,
@@ -19,6 +21,16 @@ import {
   createResendClosureNoticeSender,
 } from "../privacy/closure-notice-email";
 import { PermanentHandlerError } from "../queue/consumer";
+import { svixKeyOf } from "./resend-signature";
+import {
+  type ActivationSuppressionSecrets,
+  activationSuppressionHmac,
+  activationSuppressionKeyId,
+  activationSuppressionSecretsOf,
+  MIN_SECRET_LENGTH,
+  OTHER_SECRETS,
+  type SecretBindings,
+} from "./suppression";
 import {
   createUnsubscribeToken,
   type UnsubscribeSecrets,
@@ -65,93 +77,33 @@ export function activationNoticeIdempotencyKey(noticeId: string): string {
   return `activation-notice/${noticeId}`;
 }
 
-const SUPPRESSION_HMAC_PREFIX = "activation-suppression:v1:";
-const MIN_SECRET_LENGTH = 32;
-
-export interface ActivationSuppressionSecrets {
-  current: string;
-  previous?: string | undefined;
-}
-
-/** The other secrets of the Worker the suppression's must never equal: one list, every secret binding of the Worker. */
-const OTHER_SECRETS = [
-  "ASAAS_API_KEY",
-  "ASAAS_WEBHOOK_TOKEN",
-  "ASAAS_WEBHOOK_TOKEN_NEXT",
-  "AUTH_PASSWORD_PEPPER",
-  "BETTER_AUTH_SECRET",
-  "BILLING_PAYER_KEY",
-  "GOOGLE_CLIENT_SECRET",
-  "OFFLINE_LEASE_PREVIOUS_SECRET",
-  "OFFLINE_LEASE_SECRET",
-  "RESEND_API_KEY",
-  "SYNC_PAYLOAD_HASH_PREVIOUS_SECRET",
-  "SYNC_PAYLOAD_HASH_SECRET",
-  "TURNSTILE_SECRET_KEY",
-  "UNSUBSCRIBE_TOKEN_PREVIOUS_SECRET",
-  "UNSUBSCRIBE_TOKEN_SECRET",
-  "WOOVI_APP_ID",
-] as const;
-
-type SecretBindings = Pick<
-  WorkerBindings,
-  | "ACTIVATION_SUPPRESSION_HMAC_SECRET"
-  | "ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS"
-  | (typeof OTHER_SECRETS)[number]
->;
-
 /**
- * The secrets of the suppression's HMAC, or undefined when the current one is missing, shorter than 32 characters or
- * equal to another secret of the Worker, or when a previous one is set and is not usable: a suppression under a key
- * the Worker cannot use would go unseen, so the tips fail closed instead.
+ * Whether the webhook's secret is set the way the endpoint reads it (`whsec_` and a key of 24 bytes or more), is at least
+ * 32 characters and is no other secret of the Worker. Without it the endpoint answers 503 and a complaint would not stop
+ * the series, so the tips stay off.
  */
-export function activationSuppressionSecretsOf(
-  bindings: SecretBindings
-): ActivationSuppressionSecrets | undefined {
-  const others = new Set(
-    OTHER_SECRETS.map((name) => bindings[name]).filter(
-      (value): value is string => typeof value === "string" && value !== ""
-    )
+function resendWebhookSecretUsable(bindings: SecretBindings): boolean {
+  const secret = bindings.RESEND_WEBHOOK_SECRET;
+  if (
+    secret === undefined ||
+    secret.length < MIN_SECRET_LENGTH ||
+    svixKeyOf(secret) === null
+  ) {
+    return false;
+  }
+  return !OTHER_SECRETS.some(
+    (name) => name !== "RESEND_WEBHOOK_SECRET" && bindings[name] === secret
   );
-  const usable = (secret: string | undefined) =>
-    secret !== undefined &&
-    secret.length >= MIN_SECRET_LENGTH &&
-    !others.has(secret);
-  const current = bindings.ACTIVATION_SUPPRESSION_HMAC_SECRET;
-  const previous = bindings.ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS;
-  if (!(current && usable(current))) {
-    return undefined;
-  }
-  if (previous === undefined || previous === "") {
-    return { current };
-  }
-  if (!usable(previous)) {
-    return undefined;
-  }
-  return previous === current ? { current } : { current, previous };
 }
 
-const encoder = new TextEncoder();
-
-/** The HMAC-SHA-256 of one normalized address under one secret, with the purpose in the signed text. */
-export async function activationSuppressionHmac(
+async function suppressionKeyOf(
   secret: string,
   normalizedAddress: string
-): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { hash: "SHA-256", name: "HMAC" },
-    false,
-    ["sign"]
-  );
-  return new Uint8Array(
-    await crypto.subtle.sign(
-      "HMAC",
-      key,
-      encoder.encode(`${SUPPRESSION_HMAC_PREFIX}${normalizedAddress}`)
-    )
-  );
+): Promise<ActivationSuppressionKey> {
+  return {
+    hmac: await activationSuppressionHmac(secret, normalizedAddress),
+    keyId: await activationSuppressionKeyId(secret),
+  };
 }
 
 /** The provider's configuration (secrets): never logged. */
@@ -194,7 +146,8 @@ type EmailBindings = SecretBindings &
 
 /**
  * The configuration of the tips, or null when anything is missing: the provider's key, the sender of the series, the
- * support box (one address, the reply-to), the app's origin, the secret of the stop link and the suppression's. Also
+ * support box (one address, the reply-to), the app's origin, the secret of the stop link, the suppression's and the
+ * webhook's (without it a complaint would not reach the stop). Also
  * null while the stop on a complaint is not in force in the code (`STOP_ENFORCED`): with it off, no tip goes out even
  * with everything set.
  */
@@ -213,6 +166,7 @@ export function activationNoticeEmailConfig(
   const suppression = activationSuppressionSecretsOf(bindings);
   if (
     !(
+      resendWebhookSecretUsable(bindings) &&
       apiKey &&
       from &&
       supportEmail &&
@@ -408,10 +362,14 @@ export async function handleActivationNotice(
   if (!(address && normalized)) {
     return await skip("no_recipient", step);
   }
-  const secrets = [config.suppression.current, config.suppression.previous]
-    .filter((secret): secret is string => secret !== undefined)
-    .map((secret) => activationSuppressionHmac(secret, normalized));
-  if (await notices.isSuppressed(await Promise.all(secrets))) {
+  const { previous } = config.suppression;
+  const keys: ActivationSuppressionKeys = {
+    current: await suppressionKeyOf(config.suppression.current, normalized),
+    ...(previous === undefined
+      ? {}
+      : { previous: await suppressionKeyOf(previous, normalized) }),
+  };
+  if (await notices.isSuppressed(keys, now)) {
     return await skip("address_suppressed", step);
   }
   return await sendActivationNotice(dependencies, config, {

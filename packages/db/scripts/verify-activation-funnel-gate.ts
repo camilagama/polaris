@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import {
   ACTIVATION_FUNNEL_MAX_WEEKS,
+  ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS,
   readActivationFunnel,
 } from "../src/admin-diagnostics-repository";
 import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
 import { classifyOrganization } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
+import { rollbackAndRelease, withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -43,8 +45,10 @@ import {
  *      complement is the stores that existed and did not sell (a case built so that only the complement is small),
  *      and whose difference with the retention cells it contains (of the cohorts 1, 2 and 4 weeks older) is under
  *      5 in no answer;
- *   6. the cost with 1,000 stores and 50,000 sales (a rolled-back transaction): the time of the call and the plan of
- *      the query inside (auto_explain), printed as gate notes.
+ *   6. the cost with 1,000 stores and 50,000 sales (a rolled-back transaction): the first call, as the route makes
+ *      it (the audited wrapper as the Admin runtime, under the route's statement_timeout, jit off, auto_explain
+ *      logging nothing), which must not be cancelled and whose audit event rolls back; then the time of the call and
+ *      the plan of the query inside (auto_explain), printed as gate notes.
  * The fixtures write sale headers without items (`session_replication_role = replica`) and load auto_explain, so the
  * owner must be a superuser: the gate runs on the job's PostgreSQL only (`localOnly`).
  */
@@ -191,11 +195,14 @@ function expectedCohort(
     windowClosed ? cell : unavailable("activation_window_open");
   const band = (value: number) =>
     window(tier === 1 ? shown(value) : SUPPRESSED);
+  // a subset of the stores that sold, so it shows only where the sales do (the cut 1 to 5), as soldInTrial does
   const retention = (weekNumber: number, value: number) => {
     if (start + weekNumber * 7 * DAY > current) {
       return unavailable("week_not_closed");
     }
-    return value >= K && t.b - value >= K ? shown(value) : SUPPRESSED;
+    return tier <= 5 && value >= K && t.b - value >= K
+      ? shown(value)
+      : SUPPRESSED;
   };
   // the cell is the 7-day activation plus the band of 8 to 14 days; that band and the sales later than 14 days are its
   // differences with two shown counts, so both hold k
@@ -211,10 +218,11 @@ function expectedCohort(
       ? shown(a7 + t.d)
       : SUPPRESSED;
   };
-  // a subset of the trial stores, of the stores that sold and of the cohort: each of those and each complement holds k
+  // a subset of the trial stores, of the stores that sold and of the cohort: each of those and each complement holds k,
+  // and it shows only where the sales do: with the sales hidden, the cell would give their count away
   const trialShown = Math.min(t.t, t.n - t.t) >= K;
   const soldInTrialShown =
-    Math.min(t.t, t.n - t.t, t.s, t.t - t.s, t.b - t.s) >= K;
+    tier <= 5 && Math.min(t.t, t.n - t.t, t.s, t.t - t.s, t.b - t.s) >= K;
   return {
     activatedIn7Days: window([1, 2, 4].includes(tier) ? shown(a7) : SUPPRESSED),
     activatedWithin14Days: activatedWithin14Days(),
@@ -278,6 +286,13 @@ function suppressionProblems(funnel: Funnel): string[] {
     const a14 = shownValue(cohort.activatedWithin14Days);
     const trial = shownValue(cohort.trialStarted);
     const soldTrial = shownValue(cohort.soldInTrial);
+    for (const [week, cell] of Object.entries(cohort.retention)) {
+      if (b === null && shownValue(cell) !== null) {
+        problems.push(
+          `${cohort.week}: ${week} shows where withFirstSale is hidden`
+        );
+      }
+    }
     // nested counts: each difference is a set of stores too
     const nested: [string, number | null, number | null][] = [
       ["stores - withFirstProduct", n, a],
@@ -410,7 +425,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const notes: string[] = [];
 
@@ -441,7 +456,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const adminLoginUrl = await login(
@@ -920,7 +935,7 @@ async function run() {
     );
 
     // ------------------------------------------------- 3. the fixture written by hand
-    // weeks far enough back for every week of retention to be closed, where no other gate creates stores or users
+    // weeks far enough back (up to 19, and 25 for the retention cut) for every week of retention to be closed, where no other gate creates stores or users
     // and the cuts 2, 3, 4 and 6 and the borders of the bands each in a week of its own; one cohort in the last week,
     // whose 7 days are not over yet
     const WEEKS = {
@@ -942,14 +957,15 @@ async function run() {
       users: number;
     }>(
       `WITH bounds AS (
-         SELECT (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '18 weeks') AT TIME ZONE '${ZONE}' AS since,
+         SELECT (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '25 weeks') AT TIME ZONE '${ZONE}' AS since,
+                (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '19 weeks') AT TIME ZONE '${ZONE}' AS users_since,
                 (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '7 weeks') AT TIME ZONE '${ZONE}' AS users_until,
                 date_trunc('week', now() AT TIME ZONE '${ZONE}') AT TIME ZONE '${ZONE}' AS stores_until
        )
        SELECT ARRAY(SELECT o.id FROM public.organizations AS o, bounds
                      WHERE o.created_at >= bounds.since AND o.created_at < bounds.stores_until) AS stores,
               (SELECT count(*)::int FROM public."user" AS u, bounds
-                WHERE u.created_at >= bounds.since AND u.created_at < bounds.users_until) AS users`
+                WHERE u.created_at >= bounds.users_since AND u.created_at < bounds.users_until) AS users`
     );
     // a store of another gate in these weeks is kept out the way the funnel allows: marked as internal
     const strangers = fixtureRange.rows[0]?.stores ?? [];
@@ -1056,11 +1072,10 @@ async function run() {
             );
           }
           await client.query("COMMIT");
-        } catch (error) {
-          await client.query("ROLLBACK");
-          throw error;
-        } finally {
           client.release();
+        } catch (error) {
+          await rollbackAndRelease(client);
+          throw error;
         }
       }
       if (spec.internal) {
@@ -1256,16 +1271,18 @@ async function run() {
     // the last week: 5 with nothing, 5 with a product only, 5 sold; the 7 days of its stores are not over
     await cohortOf(WEEKS.open, { bands: [5, 0, 0, 0, 0], p0: 5, p1: 5 });
 
-    // the "up to 14 days" cell and the Pro trial: weeks 2 to 7 hold one cohort each. Their sales stay out of last week
+    // the "up to 14 days" cell and the Pro trial: weeks 2 to 7 and week 19 hold one cohort each. Their sales stay out of last week
     // (a store of week 3 or older sells later than 14 days only from week 4), whose active stores are counted by hand
     const TRIAL_WEEKS = {
       closedBare: 3,
+      suppressedSale: 19,
       secondWeek: 5,
       d6e6: 4,
       borders: 6,
       e1: 7,
       open: 2,
     } as const;
+    const RETENTION_CUT_WEEK = 25;
     const BORN = 36_000;
     interface Group {
       count: number;
@@ -1390,6 +1407,30 @@ async function run() {
       },
       { count: 2, sold: 10 * DAYS },
       { count: 1, sold: 20 * DAYS },
+    ]);
+
+    // week 19, cut 7 with the sales hidden (2 stores with a product and none without it leave under k stores that did
+    // not sell): 17 stores, 10 with a trial, 5 sold in it, 5 sold after it and 5 sold with no trial at all, so every
+    // cell the sold-in-trial rule reads holds k and only the cut hides the cell. The random cohorts of section 5 add
+    // their stores to this week afterwards; this cohort is read before that
+    await groupsOf(TRIAL_WEEKS.suppressedSale, [
+      { count: 2 },
+      { count: 5, sold: 5 * MINUTES, trial: { after: 0, state: "free" } },
+      { count: 5, sold: 8 * DAYS, trial: { after: 0, state: "free" } },
+      { count: 5, sold: 5 * MINUTES },
+    ]);
+
+    // week 25, cut 7 with the retention of weeks 2, 3 and 5 each at 5 stores and the 10 that did not sell in it: 17 stores,
+    // 2 with a product and none sold (under k without a sale, so `withFirstSale` and `withoutSale` are hidden), 15 that
+    // sold, 5 of them first at 8 days (week 2) and 5 and 5 first in 5 minutes with a second sale at 15 days (week 3) and at
+    // 29 days (week 5). Each retention cell and its complement hold k, so only the cut hides them: with the retention
+    // shown, `withFirstSale` would be at least 10 and `withoutSale` at most 2. The random cohorts of section 5 add their
+    // stores to this week afterwards; this cohort is read before that
+    await groupsOf(RETENTION_CUT_WEEK, [
+      { count: 2 },
+      { count: 5, sold: 8 * DAYS },
+      { count: 5, sold: 5 * MINUTES, soldAgain: 15 * DAYS },
+      { count: 5, sold: 5 * MINUTES, soldAgain: 29 * DAYS },
     ]);
 
     const byWeek = (
@@ -1648,6 +1689,46 @@ async function run() {
       },
       "week 6: a sale at 14 days exactly is up to 14 days (5 + 5), one 1 second later is not; 10 with a trial, 5 sold in it (a sale exactly 7 days after the start is out, 1 second before is in)"
     );
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.suppressedSale),
+      {
+        activatedIn7Days: SUPPRESSED,
+        activatedWithin14Days: SUPPRESSED,
+        soldInTrial: SUPPRESSED,
+        trialStarted: shown(10),
+      },
+      "week 19: the sales are hidden (2 without a sale), so the 5 that sold in the trial stay hidden too, though that cell and each of its complements hold k"
+    );
+    assert.deepEqual(
+      byWeek(fixture.funnel, TRIAL_WEEKS.suppressedSale, fixture.clock).cohort
+        .withFirstSale,
+      SUPPRESSED,
+      "week 19: the sales are hidden"
+    );
+    const retentionCut = byWeek(
+      fixture.funnel,
+      RETENTION_CUT_WEEK,
+      fixture.clock
+    ).cohort;
+    assert.deepEqual(
+      {
+        retention: retentionCut.retention,
+        stores: retentionCut.stores,
+        withFirstSale: retentionCut.withFirstSale,
+        withoutSale: retentionCut.withoutSale,
+      },
+      {
+        retention: {
+          week2: SUPPRESSED,
+          week3: SUPPRESSED,
+          week5: SUPPRESSED,
+        },
+        stores: shown(17),
+        withFirstSale: SUPPRESSED,
+        withoutSale: SUPPRESSED,
+      },
+      "week 25: 17 stores, 15 that sold, 2 that did not: the sales are hidden, and so are the retention of weeks 2, 3 and 5 (5 stores each, 10 that did not sell in it), or `stores` and a retention cell would give `withoutSale` away (at most 2)"
+    );
     const weekSeven = {
       activatedIn7Days: shown(10),
       activatedWithin14Days: SUPPRESSED,
@@ -1750,7 +1831,9 @@ async function run() {
     //  10 (cut 3): 5 of the cut itself and the 5 of cut 2 that sold later than 7 days = 10
     //   9 (cut 4): 5 of the cut itself, the 5 later ones sell in the next week = 5
     //   8 (cut 6): 2 of the cut itself and cut 4's 5 later ones = 7; hidden (see below)
-    //  18 (F's week): 1 store sold: hidden; 17 (E's week): nobody sold: hidden, never 0
+    //  18 (F's week): F's 1 and the 5 of week 19 that sell 8 days after their creation = 6; the retention of week 2 of
+    //     that cohort (5) is hidden by its cut, so nothing is taken out and the 6 show; 17 (E's week): nobody sold: hidden,
+    //     never 0
     const activeOf = (weeksAgo: number) =>
       byWeek(fixture.funnel, weeksAgo, fixture.clock).active.stores;
     for (const [weeksAgo, value] of [
@@ -1761,6 +1844,7 @@ async function run() {
       [WEEKS.cut2, 15],
       [WEEKS.cut3, 10],
       [WEEKS.cut4, 5],
+      [WEEKS.f, 6],
     ] as const) {
       assert.deepEqual(
         activeOf(weeksAgo),
@@ -1773,7 +1857,6 @@ async function run() {
     // 8 are the stores of cut 4 that sold in their week 2 (shown), which leaves 2
     assert.deepEqual(activeOf(WEEKS.b), SUPPRESSED);
     assert.deepEqual(activeOf(WEEKS.cut6), SUPPRESSED);
-    assert.deepEqual(activeOf(WEEKS.f), SUPPRESSED);
     assert.deepEqual(activeOf(WEEKS.e), SUPPRESSED);
     // last week (the cohort whose 7 days are not over) is closed for the sales of the week: its 5 that sold show
     assert.deepEqual(activeOf(WEEKS.open), shown(5));
@@ -1852,8 +1935,7 @@ async function run() {
           `5 active stores and ${idle} that existed without selling`
         );
       } finally {
-        await client.query("ROLLBACK");
-        client.release();
+        await rollbackAndRelease(client);
       }
     }
     tests.push(
@@ -2139,6 +2221,7 @@ async function run() {
             tally &&
             Date.parse(`${older}T00:00:00Z`) + weekNumber * 7 * DAY <=
               Date.parse(`${final.clock.currentWeek}T00:00:00Z`) &&
+            tierOf(tally, true) <= 5 &&
             tally[key] >= K &&
             tally.b - tally[key] >= K
           ) {
@@ -2215,6 +2298,13 @@ async function run() {
     );
 
     // ------------------------------------------------- 6. the cost with 1,000 stores and 50,000 sales
+    const readEventsKept = async () =>
+      (
+        await owner.pool.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read'"
+        )
+      ).rows[0]?.count;
+    const readEventsBeforeMeasure = await readEventsKept();
     {
       const client = await owner.pool.connect();
       const plans: string[] = [];
@@ -2268,6 +2358,58 @@ async function run() {
         const volume = await client.query<{ sales: number; stores: number }>(
           "SELECT (SELECT count(*)::int FROM public.organizations) AS stores, (SELECT count(*)::int FROM public.sales) AS sales"
         );
+        // the first call of the measure, as the route makes it (readActivationFunnel in admin-diagnostics-repository.ts):
+        // the audited wrapper as the Admin runtime, under the route's statement_timeout, jit off, before any timed
+        // call and before auto_explain logs anything (it is loaded further down). The rows are not committed, so a
+        // login of the Admin runtime could not see them: this connection takes the role for the call (withGateRole).
+        // DISCARD PLANS drops the plans cached by the statements before it; the connection and the buffers stay warm,
+        // and the event it writes is in this transaction, which the ROLLBACK ends
+        assert.equal(
+          (
+            await client.query<{ value: string | null }>(
+              "SELECT current_setting('auto_explain.log_min_duration', true) AS value"
+            )
+          ).rows[0]?.value ?? "-1",
+          "-1",
+          "auto_explain logs nothing in this session before the call that imitates the route"
+        );
+        const eventsBeforeRoute = await client.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read'"
+        );
+        await client.query("DISCARD PLANS");
+        await client.query("SET LOCAL jit = off");
+        await client.query(
+          `SET LOCAL statement_timeout = ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS}`
+        );
+        const routeStarted = performance.now();
+        try {
+          await withGateRole(client, "polaris_admin_runtime", () =>
+            client.query("SELECT public.admin_read_activation_funnel($1, $2)", [
+              operator,
+              ACTIVATION_FUNNEL_MAX_WEEKS,
+            ])
+          );
+        } catch (error: unknown) {
+          assert.notEqual(
+            (error as { code?: unknown } | null)?.code,
+            "57014",
+            `the audited funnel read must finish inside the route's statement_timeout (${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms, jit off, first call of the measure), but it was cancelled after ${(performance.now() - routeStarted).toFixed(1)} ms: rewrite the activity CTE instead of raising the limit`
+          );
+          throw error;
+        }
+        const routeMs = performance.now() - routeStarted;
+        await client.query("SET LOCAL statement_timeout = 0");
+        const eventsAfterRoute = await client.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read'"
+        );
+        assert.equal(
+          eventsAfterRoute.rows[0]?.count,
+          (eventsBeforeRoute.rows[0]?.count as number) + 1,
+          "the audited read wrote its event in the transaction that the gate rolls back"
+        );
+        notes.push(
+          `activation-funnel first call of the measure, through admin_read_activation_funnel (audit event included, plans discarded, auto_explain logging nothing, jit off) under the route's statement_timeout of ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms: ${routeMs.toFixed(1)} ms`
+        );
         const durations: number[] = [];
         for (const _ of times(3, () => 0)) {
           const started = performance.now();
@@ -2275,6 +2417,28 @@ async function run() {
           await client.query("SELECT public.admin_activation_funnel(26)");
           durations.push(performance.now() - started);
         }
+        const jit = await client.query<{ available: boolean }>(
+          "SELECT pg_catalog.pg_jit_available() AS available"
+        );
+        await client.query("SELECT public.admin_activation_funnel(26)");
+        const jitOn: number[] = [];
+        const jitOff: number[] = [];
+        for (const _ of times(3, () => 0)) {
+          for (const setting of ["on", "off"] as const) {
+            // biome-ignore lint/performance/noAwaitInLoops: Timed one after another, interleaved so that the cache is as warm for one as for the other.
+            await client.query(`SET LOCAL jit = ${setting}`);
+            const started = performance.now();
+            await client.query("SELECT public.admin_activation_funnel(26)");
+            (setting === "on" ? jitOn : jitOff).push(
+              performance.now() - started
+            );
+          }
+        }
+        // the comparison above left jit as its last iteration set it; the plan below is of the route's setting
+        await client.query("SET LOCAL jit = off");
+        notes.push(
+          `activation-funnel measure of jit: available ${jit.rows[0]?.available}; 26 weeks (after one warm-up call, interleaved) with jit on ${jitOn.map((ms) => ms.toFixed(1)).join(" / ")} ms, with jit off ${jitOff.map((ms) => ms.toFixed(1)).join(" / ")} ms`
+        );
         await client.query("LOAD 'auto_explain'");
         await client.query("SET LOCAL auto_explain.log_min_duration = 0");
         await client.query("SET LOCAL auto_explain.log_analyze = on");
@@ -2291,7 +2455,7 @@ async function run() {
         );
         const execution = EXECUTION_TIME.exec(plan)?.[1];
         notes.push(
-          `activation-funnel measure: ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
+          `activation-funnel measure (jit off, as the route reads): ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
         );
         for (const line of plan.split("\n")) {
           if (!line.startsWith("Query Text") && line.trim().length > 0) {
@@ -2300,16 +2464,20 @@ async function run() {
         }
         assert.ok(
           median < 5000,
-          `the funnel answers in under 5 s with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
+          `the funnel answers in under 5 s with jit off, as the route reads, with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
         );
         tests.push(
-          `with 1,000 stores more and 50,000 sales (rolled back), the call takes ${median.toFixed(1)} ms (median of 3) and auto_explain gives the plan of the query inside (gate notes)`
+          `with 1,000 stores more and 50,000 sales (rolled back), the first call of the measure (plans discarded), through the audited wrapper as the Admin runtime with jit off and auto_explain logging nothing, is not cancelled under the route's ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms statement_timeout (${routeMs.toFixed(1)} ms) and its audit event is rolled back; the aggregate call then takes ${median.toFixed(1)} ms with jit off (median of 3), and auto_explain gives the plan of the query inside (gate notes)`
         );
       } finally {
-        await client.query("ROLLBACK");
-        client.release();
+        await rollbackAndRelease(client);
       }
     }
+    assert.equal(
+      await readEventsKept(),
+      readEventsBeforeMeasure,
+      "the event of the audited read of the measure was rolled back with it"
+    );
 
     for (const note of notes) {
       console.log(`gate-note: ${note}`);
@@ -2328,9 +2496,8 @@ async function run() {
       )
     );
   } finally {
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

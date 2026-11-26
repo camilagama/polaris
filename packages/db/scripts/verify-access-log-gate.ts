@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { queryAsFunctionOwner } from "./gate-roles";
+import { inRolledBackTransaction, queryAsFunctionOwner } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -91,7 +91,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
@@ -127,7 +127,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       const client = new Client({
         connectionString: temporaryRuntimeUrl(adminUrl, role, password),
         connectionTimeoutMillis: 5000,
@@ -332,16 +332,16 @@ async function run() {
       }
     }
     // the tenant runtime with a user context sees nothing either: it is refused before any row
-    await tenantClient.query("BEGIN");
-    await tenantClient.query("SELECT set_config('app.user_id', $1, true)", [
-      userA,
-    ]);
-    await expectSqlState(
-      () => tenantClient.query(`SELECT * FROM ${TABLE}`),
-      "42501",
-      "a tenant runtime with app.user_id still has no access"
-    );
-    await tenantClient.query("ROLLBACK");
+    await inRolledBackTransaction(tenantClient, async () => {
+      await tenantClient.query("SELECT set_config('app.user_id', $1, true)", [
+        userA,
+      ]);
+      await expectSqlState(
+        () => tenantClient.query(`SELECT * FROM ${TABLE}`),
+        "42501",
+        "a tenant runtime with app.user_id still has no access"
+      );
+    });
     tests.push(
       "no runtime reaches the table: the authentication, Admin and tenant runtimes, logged in, are refused SELECT, INSERT, UPDATE and DELETE (42501), and a tenant context (app.user_id) changes nothing"
     );
@@ -967,12 +967,12 @@ async function run() {
     }
     // and a rolled-back read leaves no audit behind
     const auditBeforeRollback = (await auditRows()).length;
-    await adminClient.query("BEGIN");
-    assert.equal(
-      (await read(adminClient, operator, { user: userA })).result,
-      "ok"
-    );
-    await adminClient.query("ROLLBACK");
+    await inRolledBackTransaction(adminClient, async () => {
+      assert.equal(
+        (await read(adminClient, operator, { user: userA })).result,
+        "ok"
+      );
+    });
     assert.equal(
       (await auditRows()).length,
       auditBeforeRollback,
@@ -1185,8 +1185,7 @@ async function run() {
       "DROP FUNCTION IF EXISTS public.gate_alog_block_audit()"
     );
     // the access log rows stay: the table is append-only for every role (a disposable database goes away whole)
-    for (const [role, group] of logins) {
-      await cleanup("revoke", `REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await cleanup("role", `DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

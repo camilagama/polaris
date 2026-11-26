@@ -77,3 +77,61 @@ describe("PaymentProfileList, the fixed fee of a rule", () => {
     expect(html).toContain("valor escondido");
   });
 });
+
+const SINGLE_TILE = /data-row-tile=""[^>]*><svg[^>]*lucide-credit-card/;
+const WALLET_TILE = /data-row-tile=""[^>]*><svg[^>]*lucide-wallet/;
+
+describe("PaymentProfileList, the row of a profile", () => {
+  const renderOf = (profile: PaymentProfileReadModel) =>
+    renderToStaticMarkup(
+      <PaymentProfileList
+        hasAnyProfile
+        includeArchived={false}
+        loadError={null}
+        loading={false}
+        notLoaded={false}
+        onChangeLifecycle={none}
+        onEdit={none}
+        onIncludeArchivedChange={none}
+        online
+        onRetry={none}
+        pending={false}
+        profiles={[profile]}
+      />
+    );
+
+  it("reads name, count, state and then the action (the menu of an active profile, Restaurar of an archived one), with the state as a word in the badge", () => {
+    for (const status of ["active", "archived"] as const) {
+      const html = renderOf({ ...PROFILE, status });
+      const word = status === "active" ? "Ativo" : "Arquivado";
+      expect(html).toContain(`>${word}</span>`);
+      const order = [
+        html.indexOf(">Maquininha<"),
+        html.indexOf(">1 regra<"),
+        html.indexOf(`>${word}<`),
+        html.indexOf(
+          status === "active"
+            ? "Mais ações para Maquininha"
+            : "Restaurar perfil Maquininha"
+        ),
+      ];
+      expect(order).not.toContain(-1);
+      expect(order).toEqual([...order].sort((x, y) => x - y));
+    }
+  });
+
+  it("draws the tile as decoration, with the icon of the only method or the wallet for several", () => {
+    const single = renderOf(PROFILE);
+    expect(single).toMatch(SINGLE_TILE);
+    const [rule] = PROFILE.rules;
+    if (!rule) {
+      throw new Error("the fixture has a rule");
+    }
+    const several = renderOf({
+      ...PROFILE,
+      rules: [rule, { ...rule, id: "r2", method: "pix" }],
+    });
+    expect(several).toMatch(WALLET_TILE);
+    expect(single).toContain('aria-hidden="true"');
+  });
+});

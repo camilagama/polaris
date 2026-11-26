@@ -280,11 +280,30 @@ const customer = z.object({
   createdAt: z.string().datetime(),
   email: z.string().nullable(),
   id: z.string().uuid(),
+  // The commercial day (store calendar) of the customer's latest purchase, or null with none. Only `customer.list` and
+  // `customer.get` answer it, and the device's copy has none: absent is "not known", never "no purchases".
+  lastPurchaseOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   name: z.string().min(1),
   notes: z.string().nullable(),
   organizationId: z.string().min(1),
   phone: z.string().nullable(),
   status: z.enum(["active", "archived"]),
+  // Only `customer.get` answers it: what the customer bought (confirmed sales not cancelled and not returned in full).
+  summary: z
+    .object({
+      lastPurchaseOn: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable(),
+      purchaseCount: z.number().int().nonnegative(),
+      // Net sales of those purchases as the report counts them: the total due of each minus what its returns gave back.
+      totalSpent: z.string(),
+    })
+    .optional(),
   updatedAt: z.string().datetime(),
   version: z.number().int().positive(),
 });
@@ -351,6 +370,21 @@ const expense = z.object({
 });
 
 export type ExpenseReadModel = z.infer<typeof expense>;
+
+const expenseCategoryTotal = z.object({
+  /** Whether the category is archived; sent with the name, absent from an older server. */
+  categoryArchived: z.boolean().optional(),
+  categoryId: z.string().uuid(),
+  /** The name of the category, so a category this screen has not read yet is not written as unknown. */
+  categoryName: z.string().min(1).optional(),
+  count: z.number().int().positive(),
+  /** Exact BRL decimal with two places, as text. */
+  total: z.string(),
+});
+
+export type ExpenseCategoryTotalReadModel = z.infer<
+  typeof expenseCategoryTotal
+>;
 
 const expenseRule = z.object({
   amount: z.string(),
@@ -992,6 +1026,62 @@ const salePaymentInput = z.object({
   method: z.enum(SALE_PAYMENT_METHODS),
 });
 
+/** At most 18 integer digits, so a part stays below the `1e18` the `sale_payments` amount check allows. */
+const salePaymentPartAmount = z
+  .string()
+  .max(21)
+  .regex(/^\d{1,18}\.\d{2}$/);
+
+/**
+ * One part of a split payment: its own amount (two decimal places), method,
+ * plan and payment profile. The server checks that the parts add up to the
+ * total it computes; it never takes a sum from the client. Strict like the
+ * offline payload: a field from a newer build is refused, never dropped.
+ */
+const salePaymentPart = salePaymentInput
+  .extend({
+    amount: salePaymentPartAmount,
+    paymentProfile: salePaymentProfileSelection.nullable(),
+  })
+  .strict();
+
+const MAX_SALE_PAYMENT_PARTS = 2;
+
+/**
+ * The single payment of a sale paid in one go; absent when the sale sends
+ * `payments`. Optional in the static type too, so every reader of a request
+ * has to handle the sale paid in parts.
+ */
+const legacySalePayment = salePaymentInput.exactOptional();
+
+/**
+ * A sale is paid by `payment` (one method for the whole total, profile in the
+ * sale's `paymentProfile`) or by `payments` (1 to 2 parts, each with its own
+ * profile), never both and never neither. The sale-level `paymentProfile`
+ * belongs to the first form only.
+ */
+function requireOnePaymentForm(
+  value: { payment?: unknown; paymentProfile?: unknown; payments?: unknown },
+  context: z.RefinementCtx
+): void {
+  const hasPayment = value.payment !== undefined;
+  const hasParts = value.payments !== undefined;
+  if (hasPayment === hasParts) {
+    context.addIssue({
+      code: "custom",
+      message: "exactly one of payment or payments",
+      path: hasPayment ? ["payments"] : ["payment"],
+    });
+  }
+  if (hasParts && value.paymentProfile !== undefined) {
+    context.addIssue({
+      code: "custom",
+      message: "the profile of a split payment goes in each part",
+      path: ["paymentProfile"],
+    });
+  }
+}
+
 /** A device writes `toISOString()` (24 characters); the fraction of a second of an ISO instant takes any number of digits. */
 const offlineSaleInstant = z
   .string()
@@ -1012,11 +1102,17 @@ export const offlineSalePayloadSchema = z
     adjustments: z.array(saleAdjustmentInput).max(20),
     items: z.array(saleItemInput).min(1).max(200),
     occurredAt: offlineSaleInstant,
-    payment: salePaymentInput,
+    payment: legacySalePayment,
     paymentProfile: salePaymentProfileSelection.nullable().optional(),
+    payments: z
+      .array(salePaymentPart)
+      .min(1)
+      .max(MAX_SALE_PAYMENT_PARTS)
+      .exactOptional(),
     recordedAt: offlineSaleInstant,
   })
-  .strict();
+  .strict()
+  .superRefine(requireOnePaymentForm);
 export type OfflineSalePayload = z.infer<typeof offlineSalePayloadSchema>;
 
 const saleFeeSnapshot = z.object({
@@ -1024,6 +1120,21 @@ const saleFeeSnapshot = z.object({
   fixedAmount: z.string().nullable(),
   mode: z.enum([...PAYMENT_FEE_MODES, "not_applicable"]),
   percentage: z.string().nullable(),
+});
+
+const confirmedSalePayment = z.object({
+  amount: z.string(),
+  anticipationFee: saleFeeSnapshot,
+  anticipationRequested: z.boolean(),
+  expectedSettlementDays: z.number().int().nonnegative().nullable(),
+  installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
+  installments: z.number().int().positive().nullable(),
+  method: z.enum(SALE_PAYMENT_METHODS),
+  paymentProfileId: z.string().uuid().nullable(),
+  paymentProfileName: z.string().nullable(),
+  paymentProfileRuleId: z.string().uuid().nullable(),
+  paymentProfileVersion: z.number().int().positive().nullable(),
+  processingFee: saleFeeSnapshot,
 });
 
 const confirmedSale = z.object({
@@ -1048,20 +1159,17 @@ const confirmedSale = z.object({
       variantId: z.string().uuid(),
     })
   ),
-  payment: z.object({
-    amount: z.string(),
-    anticipationFee: saleFeeSnapshot,
-    anticipationRequested: z.boolean(),
-    expectedSettlementDays: z.number().int().nonnegative().nullable(),
-    installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
-    installments: z.number().int().positive().nullable(),
-    method: z.enum(SALE_PAYMENT_METHODS),
-    paymentProfileId: z.string().uuid().nullable(),
-    paymentProfileName: z.string().nullable(),
-    paymentProfileRuleId: z.string().uuid().nullable(),
-    paymentProfileVersion: z.number().int().positive().nullable(),
-    processingFee: saleFeeSnapshot,
-  }),
+  /** The part at position 0, for readers that still handle one payment. */
+  payment: confirmedSalePayment,
+  /**
+   * Every part, by position; one item for a sale paid with one method. The
+   * server always sends it; optional for what a device kept from an older one.
+   */
+  payments: z
+    .array(
+      confirmedSalePayment.extend({ position: z.number().int().nonnegative() })
+    )
+    .optional(),
   replayed: z.boolean(),
   sale: z.object({
     commandId: z.string().uuid(),
@@ -1166,7 +1274,13 @@ const saleListEntry = z.object({
   itemCount: z.number().int().positive(),
   occurredAt: z.string().datetime(),
   occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** The method of the part at position 0. */
   paymentMethod: z.enum(SALE_PAYMENT_METHODS).nullable(),
+  /**
+   * The method of each part, by position; its length is the number of parts.
+   * The server always sends it; optional for what a device kept from an older one.
+   */
+  paymentMethods: z.array(z.enum(SALE_PAYMENT_METHODS)).optional(),
   status: z.enum(["confirmed", "cancelled"]),
   totalDue: z.string(),
 });
@@ -1536,6 +1650,16 @@ export const billingPlanView = z
         ),
       })
       .strict(),
+    // the limits of the Pro plan as the stored catalog has them, only for a store not on Pro (the invitation to
+    // subscribe); a client that does not know the key ignores it
+    proLimits: z
+      .object({
+        goals: planCount.nullable(),
+        images: planCount.nullable(),
+        variants: planCount.nullable(),
+      })
+      .strict()
+      .optional(),
     // "provider_retries" enters by amendment, once the Gate 7 proves Woovi's calendar
     recovery: z.literal("provider_page").nullable(),
     refund: z
@@ -1565,7 +1689,16 @@ export const billingPlanView = z
     ]),
     trialAvailable: z.boolean(),
     usage: z
-      .object({ goals: planCount, images: planCount, variants: planCount })
+      .object({
+        // optional and additive: the PWA that predates it does not validate the output, so the Worker can go first
+        freeable: z
+          .object({ products: planCount, variants: planCount })
+          .strict()
+          .optional(),
+        goals: planCount,
+        images: planCount,
+        variants: planCount,
+      })
       .strict(),
   })
   .strict();
@@ -1689,6 +1822,11 @@ const legalAcceptanceStatus = z.object({
   ),
 });
 
+const emailPreference = z.object({
+  sent: z.number().int().nonnegative(),
+  tips: z.boolean(),
+});
+
 /**
  * Whether a procedure only reads (`read`) or changes state (`write`), declared on each one. The Worker's
  * rate limit picks its bucket by it, never by the name: a write with a name like a read still counts as a
@@ -1744,6 +1882,20 @@ export const polarisContract = {
           .strict()
       )
       .output(legalAcceptanceStatus),
+    // The preference of the tips e-mails of the person who owns the store (ADR 0106, D8): `tips` is false when they
+    // asked not to receive them, `sent` how many went out in every store of theirs. The person is the session's, never
+    // a field of the input; `organizationId` only names the store whose `organization:export` the owner shows.
+    emailPreference: readProcedure
+      .input(z.object({ organizationId: organizationIdInput }).strict())
+      .output(emailPreference),
+    // Turns the tips on or off and answers the state after, in the shape of the read. Idempotent.
+    setTips: writeProcedure
+      .input(
+        z
+          .object({ on: z.boolean(), organizationId: organizationIdInput })
+          .strict()
+      )
+      .output(emailPreference),
     // The documents still to accept: those whose highest accepted version is below the floor of the
     // server's constant, each with the version in force and what changed from the previous one.
     legalStatus: readProcedure.output(legalAcceptanceStatus),
@@ -1835,6 +1987,15 @@ export const polarisContract = {
         })
       )
       .output(z.object({ matches: z.array(customerDuplicateMatch) })),
+    // One customer by ID, archived or anonymized included: the sale detail reads the current name of its customer without the whole list.
+    get: readProcedure
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          organizationId: organizationIdInput,
+        })
+      )
+      .output(customer),
     list: readProcedure
       .input(
         z.object({
@@ -1911,6 +2072,8 @@ export const polarisContract = {
           nextCursor: z.string().nullable(),
           /** Sum of every expense that matches the filter, not only this page. */
           total: z.string(),
+          /** The same sum per category, in no order; absent on an answer from a server that does not send it. */
+          totalsByCategory: z.array(expenseCategoryTotal).optional(),
         })
       ),
     listCategories: readProcedure
@@ -2735,20 +2898,43 @@ export const polarisContract = {
       )
       .output(cancelledSaleResult),
     // One command confirms the whole sale. The payment profile is an explicit
-    // choice: an id with the version the operator saw, or null for no profile.
+    // choice: an id with the version the operator saw, or null for no profile;
+    // with `payment` it is the sale's `paymentProfile`, with `payments` each
+    // part carries its own.
     confirm: writeProcedure
       .input(
-        z.object({
-          adjustments: z.array(saleAdjustmentInput).max(20),
-          commandId: z.string().uuid(),
-          commandVersion: z.literal(1),
-          items: z.array(saleItemInput).min(1).max(200),
-          occurredAt: instantInput,
-          organizationId: organizationIdInput,
-          payment: salePaymentInput,
-          paymentProfile: salePaymentProfileSelection.nullable(),
-          recordedAt: instantInput.optional(),
-        })
+        z
+          .object({
+            adjustments: z.array(saleAdjustmentInput).max(20),
+            commandId: z.string().uuid(),
+            commandVersion: z.literal(1),
+            items: z.array(saleItemInput).min(1).max(200),
+            occurredAt: instantInput,
+            organizationId: organizationIdInput,
+            payment: legacySalePayment,
+            paymentProfile: salePaymentProfileSelection
+              .nullable()
+              .exactOptional(),
+            payments: z
+              .array(salePaymentPart)
+              .min(1)
+              .max(MAX_SALE_PAYMENT_PARTS)
+              .exactOptional(),
+            recordedAt: instantInput.optional(),
+          })
+          .superRefine((value, context) => {
+            requireOnePaymentForm(value, context);
+            if (
+              value.payment !== undefined &&
+              value.paymentProfile === undefined
+            ) {
+              context.addIssue({
+                code: "custom",
+                message: "the profile is an explicit choice, even when null",
+                path: ["paymentProfile"],
+              });
+            }
+          })
       )
       .output(confirmedSale),
     get: readProcedure
@@ -2841,6 +3027,8 @@ export const polarisContract = {
       .input(
         z.object({
           cursor: syncCursorText.nullish(),
+          // The user the tab holds the local copy for. Optional while a cached client may not send it.
+          expectedUserId: z.string().trim().min(1).max(255).optional(),
           limit: z.number().int().min(1).max(500).default(200),
           organizationId: organizationIdInput,
         })

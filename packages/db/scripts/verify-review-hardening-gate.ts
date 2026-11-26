@@ -12,7 +12,6 @@ import {
   writeOffStock,
 } from "../src/inventory-repository";
 import { createPaymentProfile } from "../src/payment-profile-repository";
-import { deleteProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import {
@@ -22,6 +21,8 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { runClock, storeDay } from "./gate-clock";
+import { rollbackAndRelease, rollbackQuietly } from "./gate-roles";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -199,6 +200,7 @@ async function run() {
         capability: "sale:read",
         isolationLevel: "repeatable read",
         requestedOrganizationId: tenantA.organizationId,
+        requireLegalAcceptance: false,
       },
       async (transaction) => {
         const { rows } = await transaction.execute<{
@@ -242,7 +244,7 @@ async function run() {
         `waited ${waited}ms`
       );
     } finally {
-      await holder.query("ROLLBACK");
+      await rollbackQuietly(holder);
       await holder.end();
     }
     tests.push(
@@ -393,7 +395,7 @@ async function run() {
       tenantA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: goneProduct.version,
           id: goneProduct.productId,
         })
@@ -710,8 +712,7 @@ async function run() {
         ]
       );
     } finally {
-      await probe.query("ROLLBACK");
-      probe.release();
+      await rollbackAndRelease(probe);
     }
     for (const [label, key, owner] of [
       [
@@ -820,7 +821,6 @@ async function run() {
       await concurrent.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     await admin.pool.end();

@@ -14,7 +14,20 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import {
+  redactConnectionStrings,
+  sqlConstraint,
+  sqlState,
+} from "./gate-errors";
 import { disposableHostPattern as gateHostPattern } from "./gate-hosts";
+import { rollbackQuietly } from "./gate-roles";
+
+// biome-ignore lint/performance/noBarrelFile: the gates import these error helpers from here; they live in gate-errors so gate-roles does not import this file
+export {
+  redactConnectionStrings,
+  sqlConstraint,
+  sqlState,
+} from "./gate-errors";
 
 export const runtimeRole = "polaris_pr11_runtime";
 
@@ -38,8 +51,6 @@ export const gateBranchPattern = /^pr\d+-[a-z0-9-]+-gate$/;
 // the one list of hosts a gate may connect to
 export const disposableHostPattern = gateHostPattern;
 
-const sqlStatePattern = /^[0-9A-Z]{5}$/;
-
 export type Database = ReturnType<typeof createDatabase>["db"];
 export type AdminPool = ReturnType<typeof createDatabase>["pool"];
 
@@ -59,38 +70,6 @@ export function requiredEnvironment(name: string): string {
     throw new Error(`Missing ${name}.`);
   }
   return value;
-}
-
-function errorField(error: unknown, field: "code" | "constraint") {
-  const visited = new Set<object>();
-  let current: unknown = error;
-  while (typeof current === "object" && current !== null) {
-    if (visited.has(current)) {
-      return;
-    }
-    visited.add(current);
-    const candidate = current as {
-      cause?: unknown;
-      code?: unknown;
-      constraint?: unknown;
-    };
-    const value = candidate[field];
-    if (
-      typeof value === "string" &&
-      (field === "constraint" || sqlStatePattern.test(value))
-    ) {
-      return value;
-    }
-    current = candidate.cause;
-  }
-}
-
-export function sqlState(error: unknown): string | undefined {
-  return errorField(error, "code");
-}
-
-export function sqlConstraint(error: unknown): string | undefined {
-  return errorField(error, "constraint");
 }
 
 export async function expectSqlState(
@@ -168,6 +147,7 @@ export async function withTenantAs<T>(
       authenticatedUserId: fixture.userId,
       capability,
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     operation
   );
@@ -204,7 +184,7 @@ export async function withRuntimeSqlContext<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    await rollbackQuietly(client);
     throw error;
   } finally {
     await client.end();
@@ -250,10 +230,6 @@ export async function createProductFixture(
   );
   assert.ok(variant);
   return { productId: product.id, variantId: variant.id };
-}
-
-export function redactConnectionStrings(text: string): string {
-  return text.replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted]");
 }
 
 export function redactedFailure(error: unknown): string {

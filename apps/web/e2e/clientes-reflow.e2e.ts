@@ -2,6 +2,11 @@
 import type { Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
+  expectBadgesAtRight,
+  expectBadgesBelow,
+  rowGeometries,
+} from "./lista-selo";
+import {
   assertNoEllipsis,
   assertNoPageScroll,
   assertNothingClipped,
@@ -29,7 +34,10 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
-const DAY = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const DAY = NOW.toISOString();
+const daysAgo = (days: number) =>
+  new Date(NOW.getTime() - days * 86_400_000).toISOString().slice(0, 10);
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 
 const LONG_NAME =
@@ -53,9 +61,16 @@ const customer = (n: number, name: string, extra: object = {}) => ({
 });
 
 const ONLY_EMAIL = "caio.prado.de.almeida.junior@exemplo.com";
-const WIDE = customer(1, LONG_NAME, { email: LONG_EMAIL });
-const ONLY_PHONE = customer(2, "Bia Souza");
-const NO_PHONE = customer(3, "Caio Prado", { email: ONLY_EMAIL, phone: null });
+const WIDE = customer(1, LONG_NAME, {
+  email: LONG_EMAIL,
+  lastPurchaseOn: daysAgo(300),
+});
+const ONLY_PHONE = customer(2, "Bia Souza", { lastPurchaseOn: daysAgo(2) });
+const NO_PHONE = customer(3, "Caio Prado", {
+  email: ONLY_EMAIL,
+  lastPurchaseOn: null,
+  phone: null,
+});
 const SHORT = customer(4, "Ana", { email: "a@b.co", phone: "1133334444" });
 const ACTIVE = [WIDE, ONLY_PHONE, NO_PHONE, SHORT];
 const ARCHIVED_WIDE = customer(5, "Dora Archived Customer", {
@@ -79,6 +94,7 @@ const rpc = (json: unknown) => ({
 });
 
 async function openCustomers(page: Page, width: number, fontPixels: number) {
+  const asked: string[] = [];
   await openReflowViewport(page, { fontPixels, width });
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
@@ -93,6 +109,7 @@ async function openCustomers(page: Page, width: number, fontPixels: number) {
       "/rpc/",
       ""
     );
+    asked.push(procedure);
     if (procedure === "organization/listMine") {
       return route.fulfill(rpc({ organizations: [ORGANIZATION] }));
     }
@@ -104,12 +121,14 @@ async function openCustomers(page: Page, width: number, fontPixels: number) {
     }
     return route.abort("internetdisconnected");
   });
+  await page.clock.setFixedTime(NOW);
   await page.goto("/customers");
   await expect(
     page.getByRole("heading", { exact: true, level: 1, name: "Clientes" })
   ).toBeVisible();
   await expect(page.locator("[data-customer-id]")).toHaveCount(ACTIVE.length);
   await expectReflowFont(page, fontPixels);
+  return asked;
 }
 
 /** The lines the contacts of one row take: the top of each contact box, and whether it is whole. */
@@ -178,7 +197,10 @@ reflowTest(
     expect(onlyPhone?.text).toBe("(11) 91234-5678");
     const onlyEmail = await contactBoxes(page, NO_PHONE.id);
     expect(onlyEmail?.text).toBe(ONLY_EMAIL);
-    const list = page.getByRole("list", { name: "Clientes" });
+    const list = page.getByRole("list", {
+      exact: true,
+      name: "Clientes cadastrados",
+    });
     await assertNothingClipped(list);
     await assertNoEllipsis(list.locator("[data-customer-id]"));
     await assertNoPageScroll(page);
@@ -204,7 +226,10 @@ reflowTest(
     await expect(
       anonymized.getByRole("button", { name: EDIT_NAME })
     ).toHaveCount(0);
-    const list = page.getByRole("list", { name: "Clientes" });
+    const list = page.getByRole("list", {
+      exact: true,
+      name: "Clientes cadastrados",
+    });
     await assertNothingClipped(list);
     await assertNoEllipsis(list.locator("[data-customer-id]"));
     await assertNoPageScroll(page);
@@ -239,6 +264,38 @@ reflowTest(
 );
 
 const WIDE_WINDOW = 1280;
+/** The device's own registration after the session opens: the shell's call, not something the list screen reads. */
+const DEVICE_REGISTRATION = "device/register";
+const OPENING_CALLS = new Set(["customer/list", "organization/listMine"]);
+
+reflowTest(
+  "a abertura de Clientes chama organization/listMine e customer/list, nenhuma outra rota de dados e sem customer/get, e a última compra aparece nas linhas que a têm",
+  async ({ page }) => {
+    const asked = await openCustomers(page, 360, 16);
+    await page.waitForLoadState("networkidle");
+    const reads = asked.filter((name) => name !== DEVICE_REGISTRATION);
+    expect(
+      new Set(reads),
+      "cada chamada da abertura aparece e nenhuma rota fora da lista é chamada"
+    ).toEqual(OPENING_CALLS);
+    expect(
+      asked.filter(
+        (name) => name.startsWith("customer/") && name !== "customer/list"
+      ),
+      "sem chamada extra de dados do cliente"
+    ).toEqual([]);
+    await expect(page.locator("[data-last-purchase]")).toHaveText([
+      "Última compra em 18/12/2025",
+      "Última compra há 2 dias",
+      "Sem compras",
+    ]);
+    await expect(
+      page
+        .locator(`[data-customer-id="${SHORT.id}"]`)
+        .locator("[data-last-purchase]")
+    ).toHaveCount(0);
+  }
+);
 
 for (const width of [360, WIDE_WINDOW]) {
   reflowTest(
@@ -257,3 +314,73 @@ for (const width of [360, WIDE_WINDOW]) {
     { coarse: width !== WIDE_WINDOW }
   );
 }
+
+const ARCHIVED_ROW = "[data-customer-id]";
+
+async function openArchived(page: Page, width: number, fontPixels: number) {
+  await openCustomers(page, width, fontPixels);
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  await expect(page.locator(ARCHIVED_ROW)).toHaveCount(ARCHIVED.length);
+}
+
+reflowTest(
+  "a 1280 px o selo Arquivado e o Anonimizado terminam no mesmo x, e o círculo de iniciais segue círculo",
+  async ({ page }) => {
+    await openArchived(page, WIDE_WINDOW, 16);
+    const rows = await rowGeometries(page, ARCHIVED_ROW);
+    expect(rows.map(({ badgeText }) => badgeText)).toEqual([
+      "Arquivado",
+      "Anonimizado",
+    ]);
+    expectBadgesAtRight(rows);
+    await expect(page.locator("[data-row-tile]")).toHaveCount(0);
+  },
+  { coarse: false }
+);
+
+for (const [width, font] of [
+  [360, 16],
+  [320, 20],
+] as const) {
+  reflowTest(
+    `a ${width} px com letra de ${font} px o selo desce sob o nome, à esquerda do texto`,
+    async ({ page }) => {
+      await openArchived(page, width, font);
+      expectBadgesBelow(await rowGeometries(page, ARCHIVED_ROW), 2);
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Clientes cadastrados",
+      });
+      await assertNothingClipped(list);
+      await assertNoEllipsis(list.locator(ARCHIVED_ROW));
+      await assertNoPageScroll(page);
+    }
+  );
+}
+
+reflowTest(
+  "a busca sem resultado troca o texto da contagem no mesmo nó, e limpá-la o devolve",
+  async ({ page }) => {
+    await openCustomers(page, 360, 16);
+    const count = page.locator("[data-list-count]");
+    await expect(count).toHaveText(`${ACTIVE.length} clientes`);
+    const node = await count.elementHandle();
+    const search = page.getByLabel("Buscar cliente");
+    await search.fill("zzzz sem cliente");
+    await expect(
+      page.getByText("Nenhum cliente com “zzzz sem cliente”.")
+    ).toBeVisible();
+    await expect(count).toHaveText("");
+    expect(
+      await node?.evaluate((element) => element.isConnected),
+      "o nó da contagem é o mesmo depois da busca sem resultado"
+    ).toBe(true);
+    await search.fill("");
+    await expect(count).toHaveText(`${ACTIVE.length} clientes`);
+    expect(
+      await node?.evaluate((element) => element.isConnected),
+      "o nó da contagem é o mesmo depois de limpar a busca"
+    ).toBe(true);
+    expect(await node?.textContent()).toBe(`${ACTIVE.length} clientes`);
+  }
+);

@@ -18,6 +18,10 @@ import {
   isOrganizationClosedRefusal,
   rpcErrorCode,
 } from "./rpc-error";
+import {
+  trackPlanUsageWrite,
+  writeChangesPlanUsage,
+} from "./plan-usage-changes";
 import { trackWrite } from "./writes-in-flight";
 
 function closedCause(
@@ -42,6 +46,11 @@ function createPolarisRpcClient(origin: string): PolarisRpcClient {
     interceptors: [
       // a write on its way holds the swap of the build (pwa/swap-guard.ts) until it answers or fails
       (options) => trackWrite(options.path, () => options.next()),
+      // a write that changes what the plan counts, or the plan, lets go of the readings the screens share
+      (options) =>
+        writeChangesPlanUsage(options.path, options.input)
+          ? trackPlanUsageWrite(() => options.next())
+          : options.next(),
       // The server said, in answer to one of the screen's own calls, that the session is over: the shell
       // offers "Entrar de novo" (it never navigates by itself while something may be in progress).
       onError((error, options) => {

@@ -8,7 +8,7 @@ import {
   type TestInfo,
 } from "@playwright/test";
 import type { PolarisRpcClient } from "@polaris/contracts";
-import { createDatabase } from "@polaris/db/client";
+import { createAuthDatabase } from "@polaris/db/client";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { PREFERRED_ORGANIZATION_KEY } from "../src/lib/current-organization-model";
@@ -26,8 +26,9 @@ import { commandSeed, startCommandIds } from "./seed";
  * The fixture of the journeys (T-125a): one user, one organization and one browser context per test and attempt.
  * The session is made here, in Node, with Better Auth's `testUtils` and the run secret (the same the preview signs
  * with); the Worker never loads `testUtils` (e2e-real/confinement.test.ts). The data of a journey enters through
- * the Worker's own commands (`rpc`), never by SQL; `sql` is the owner connection of the run database, for the
- * oracle only (it ignores RLS, so it never proves isolation).
+ * the Worker's own commands (`rpc`); only a state that `rpc` cannot produce (a billing row, a recurring expense's
+ * `starts_on` moved to today) enters by SQL, and nothing else does. `sql` is the owner connection of the run database,
+ * for that and for the oracle (it ignores RLS, so it never proves isolation).
  */
 
 interface AuthHelpers {
@@ -48,7 +49,7 @@ interface AuthHelpers {
   saveUser: (user: { id: string }) => Promise<{ id: string }>;
 }
 
-type Sql = ReturnType<typeof createDatabase>["pool"];
+type Sql = ReturnType<typeof createAuthDatabase>["pool"];
 
 export interface JourneyUser {
   headers: Headers;
@@ -126,7 +127,7 @@ let helpersPromise:
 function authHelpers() {
   helpersPromise ??= (async () => {
     const run = ensureRunEnvironment();
-    const { db, pool } = createDatabase(
+    const { db, pool } = createAuthDatabase(
       databaseUrl(ownerDatabaseUrl(), runDatabaseName(run.runId)),
       { maxConnections: 2 }
     );
@@ -166,6 +167,22 @@ export async function createJourneyUser(
     userId: id,
   });
   return { cookies, headers, id, name, rpc: rpcClient(origin, headers) };
+}
+
+/** A new session (cookies) of a user `createJourneyUser` made: the one before ended, as a sign-out ends it. */
+export async function createJourneySession(
+  origin: string,
+  user: { id: string }
+) {
+  const { helpers } = await authHelpers();
+  const cookies = await helpers.getCookies({
+    domain: new URL(origin).hostname,
+    userId: user.id,
+  });
+  return cookies.map((cookie) => ({
+    ...cookie,
+    expires: cookie.expires ?? -1,
+  }));
 }
 
 export async function openJourney(

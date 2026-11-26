@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AreaChart } from "./area-chart";
 import { OnDemandAreaChart } from "./on-demand";
+import { RingChart } from "./ring-chart";
 import { Sparkline } from "./sparkline";
 
 /**
@@ -31,6 +32,7 @@ const READING = /<p[^>]*data-chart-reading=""[^>]*>(.*?)<\/p>/;
 const LEGEND = /<ul[^>]*data-chart-legend[\s\S]*?<\/ul>/;
 const note = (index: number) =>
   index === 6 ? "inclui R$ 100,00 de despesas" : null;
+const bestOnTheLastDay = (index: number) => (index === 6 ? "melhor dia" : null);
 const plain = (value: number) => `R$ ${String(value).replace(".", ",")}`;
 const OKLCH_OR_HEX = /oklch\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/;
 /** The text of a piece of markup, read tag by tag (not by a regular expression that strips them: it can leave a `<script`). */
@@ -83,6 +85,32 @@ describe("AreaChart", () => {
     const reading = markup.match(READING)?.[0] ?? "";
     expect(text(reading)).toBe("23/10 R$ 520,00");
     expect(reading).not.toContain("aria-live");
+  });
+
+  it("says the note of the day in the reading and to the keyboard control, with no second series", () => {
+    const noted = html(
+      <AreaChart
+        data={WEEK}
+        formatValue={money}
+        label="x"
+        readingNote={bestOnTheLastDay}
+        spokenNote={bestOnTheLastDay}
+      />
+    );
+    expect(text(noted.match(READING)?.[0] ?? "")).toBe(
+      "23/10 R$ 520,00 · melhor dia"
+    );
+    expect(noted.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="23/10: R$ 520,00, melhor dia"'
+    );
+    expect(text(markup.match(READING)?.[0] ?? "")).not.toContain("melhor");
+  });
+
+  it("writes the amounts of the reading in Geist Mono, as the amount component does", () => {
+    const reading = markup.match(READING)?.[0] ?? "";
+    expect(reading).toContain(
+      'class="whitespace-nowrap font-mono tabular-nums"'
+    );
   });
 
   it("names the keyboard control as the caller says", () => {
@@ -441,4 +469,54 @@ describe("the box that holds the place of an area chart before its chunk comes",
       expect(heightOf(empty)).toBe(height);
     });
   }
+});
+
+const MARK_PATH = /data-ring-marker=""[\s\S]*?<path d="([^"]*)"/;
+const POINT = /(-?[\d.]+),(-?[\d.]+)/g;
+const MARK_SVG = /<svg[^>]*aria-hidden="true"[^>]*data-ring-marker=""/;
+
+describe("RingChart marker", () => {
+  const points = (markup: string) =>
+    [...(MARK_PATH.exec(markup)?.[1] ?? "").matchAll(POINT)].map(
+      (match) => [Number(match[1]), Number(match[2])] as const
+    );
+  const ring = (marker?: number) =>
+    html(
+      <RingChart
+        color="var(--chart-sales)"
+        marker={marker}
+        progress={0.5}
+        size={112}
+        strokeWidth={10}
+      />
+    );
+
+  it("draws nothing without a marker", () => {
+    expect(ring()).not.toContain("data-ring-marker");
+  });
+
+  it("is aria-hidden and crosses the arc radially from the point the arc begins", () => {
+    const markup = ring(0.25);
+    expect(markup).toMatch(MARK_SVG);
+    const [from, to] = points(markup);
+    // a quarter of the way round from 9 o'clock is 12 o'clock: the mark is vertical, over the center line
+    expect(from?.[0]).toBeCloseTo(56, 5);
+    expect(to?.[0]).toBeCloseTo(56, 5);
+    expect(Math.hypot((to?.[0] ?? 0) - 56, (to?.[1] ?? 0) - 56)).toBeCloseTo(
+      48 + 3,
+      5
+    );
+    expect(
+      Math.hypot((from?.[0] ?? 0) - 56, (from?.[1] ?? 0) - 56)
+    ).toBeCloseTo(38 - 3, 5);
+  });
+
+  it("reaches the point where an arc of the same share ends, at every share", () => {
+    for (const share of [0.2, 0.6, 1]) {
+      const [, to] = points(ring(share));
+      const angle = -Math.PI / 2 + share * 2 * Math.PI;
+      expect(to?.[0]).toBeCloseTo(56 + 51 * Math.sin(angle), 5);
+      expect(to?.[1]).toBeCloseTo(56 - 51 * Math.cos(angle), 5);
+    }
+  });
 });

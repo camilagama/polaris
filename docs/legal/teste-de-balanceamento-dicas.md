@@ -46,7 +46,7 @@ Só entra no envio quem é **dono ativo com e-mail verificado**: nunca e-mail di
 - **Parar de receber** em um clique, sem entrar na conta, e nas configurações da conta. O link só mostra a página; quem grava é o envio do formulário. A resposta é a mesma exista ou não a pessoa. Vale para todas as lojas e para qualquer e-mail futuro baseado em legítimo interesse; os avisos da conta e da cobrança continuam, porque fazem parte do serviço.
 - **Teto:** 3 e-mails em 14 dias; teto diário de envio; janela de validade de cada aviso.
 - **Para sozinha:** a primeira venda, o pedido para parar, 14 dias, o terceiro e-mail, loja com teste do Pro ou Pro, loja encerrada, suspensa, em purge ou com pedido de dados aberto, loja interna, e-mail não verificado ou suprimido, loja que não é a primeira da pessoa, flag desligada, série em parada. A regra vale na varredura e de novo no envio.
-- **Flag desligada em todos os ambientes.** Ligar depois não manda o acumulado.
+- **Flag desligada na produção; só o staging a liga, para caixas de teste.** Ligar depois não manda o acumulado.
 - **Uma reclamação desliga a série**, e só o usuário a religa, por decisão explícita e registrada.
 - **Sem rastreio de abertura nem de clique**, sem imagem, sem pixel; texto fixo; a fila leva só o ID do aviso.
 - **Texto na Política**, com como parar, retenção e que a resposta ao e-mail chega à caixa de suporte (quem lê: `{{SUPORTE_QUEM_LE_RESPOSTAS}}`).

@@ -40,9 +40,9 @@ export const MARGIN = { bottom: 32, left: 44, right: 20, top: 40 };
 export const EXTRA_HEIGHT = 40;
 export const LEFT_MARGIN_MIN = 44;
 
-/** The width a label of the y axis needs (12 px text) and 16 px of air, so it fits in the left margin. */
+/** The width a label of the y axis needs (12 px Geist Mono, 7.2 px a character) and 16 px of air, so it fits in the left margin. */
 export function yAxisMargin(text: string): number {
-  return Math.ceil(text.length * 6.6) + 16;
+  return Math.ceil(text.length * 7.2) + 16;
 }
 
 const DAY = 86_400_000;

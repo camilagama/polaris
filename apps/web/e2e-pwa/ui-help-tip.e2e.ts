@@ -2,7 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
-import { axeFaults, touchFaults } from "./ui-guardrails";
+import { axeFaults, touchFaults } from "./ui-guardrails/measures";
 
 /**
  * The HelpTip in the gallery (`/ui-galeria`, section "Ajuda (i)"): it opens by click, touch, Enter and Space and never
@@ -125,11 +125,13 @@ test("um toque ou clique fora fecha e o foco volta ao botão", async ({
 });
 
 test("o hover não abre nada", async ({ page }) => {
+  await page.clock.install();
   await openGallery(page);
   const button = helpButton(page);
   await button.hover();
-  // a hover popup would open within its delay; wait past any delay the library has
-  await page.waitForTimeout(800);
+  // a hover popup would open within its delay; run the page's clock past any delay the library has
+  await page.clock.runFor(800);
+  await page.evaluate(() => 0);
   await expect(popup(page)).toHaveCount(0);
   await expect(button).toHaveAttribute("aria-expanded", "false");
 });

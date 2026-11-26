@@ -1,36 +1,32 @@
-import type { EffectiveEntitlements } from "@polaris/domain/billing/entitlements";
+import type {
+  EffectiveEntitlements,
+  PlanEntitlements,
+} from "@polaris/domain/billing/entitlements";
 import { historyMonthsOf } from "@polaris/domain/billing/plan-view";
 import { localDate } from "@polaris/domain/organization/closure-deadlines";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
-  getEffectiveEntitlements,
   listBillingPrices,
   type OrganizationScope,
+  readDatabaseNow,
+  readPlanCatalog,
+  resolveEffectiveEntitlements,
 } from "./billing-repository";
 import { countActiveGoals } from "./goal-repository";
 import { countActiveImages } from "./media-repository";
-import { countOrganizationVariants } from "./product-repository";
+import {
+  countFreeableArchivedProducts,
+  countOrganizationVariants,
+} from "./product-repository";
 import { organizations } from "./schema/organization";
 import { products } from "./schema/product";
 import { sales } from "./schema/sale";
 import type { TenantRequestTransaction } from "./tenant-transaction";
 
-/** The database clock decides, never the application server's (as `getEffectiveEntitlements`). */
-async function databaseNow(
-  transaction: TenantRequestTransaction
-): Promise<Date> {
-  const clock = await transaction.execute<{ now: Date }>(
-    sql`SELECT now() AS now`
-  );
-  const value = clock.rows[0]?.now;
-  if (!value) {
-    throw new Error("database_clock_unavailable");
-  }
-  return new Date(value);
-}
-
 /** What the organization holds against the limits of its plan, counted as the writes count it. */
 export interface PlanUsage {
+  /** What deleting archived products would free now: archived, not deleted, no stock (the deletion's own rule). */
+  freeable: { products: number; variants: number };
   goals: number;
   images: number;
   variants: number;
@@ -50,6 +46,8 @@ export interface OwnerPlanTenantFacts {
   entitlements: EffectiveEntitlements;
   kept: PlanKept;
   prices: Awaited<ReturnType<typeof listBillingPrices>>;
+  /** The Pro row of the stored catalog, as the transaction read it (grants do not raise it). */
+  proEntitlements: PlanEntitlements;
   usage: PlanUsage;
 }
 
@@ -67,8 +65,16 @@ export async function readOwnerPlanTenantFacts(
 ): Promise<OwnerPlanTenantFacts> {
   const { organizationId } = scope;
   const prices = await listBillingPrices(transaction);
-  const entitlements = await getEffectiveEntitlements(transaction, scope);
+  const catalog = await readPlanCatalog(transaction);
+  const databaseNow = await readDatabaseNow(transaction);
+  const entitlements = await resolveEffectiveEntitlements(
+    transaction,
+    scope,
+    catalog,
+    databaseNow
+  );
   const usage: PlanUsage = {
+    freeable: await countFreeableArchivedProducts(transaction, organizationId),
     goals: await countActiveGoals(transaction, organizationId),
     images: await countActiveImages(transaction, organizationId),
     variants: await countOrganizationVariants(transaction, organizationId),
@@ -80,7 +86,7 @@ export async function readOwnerPlanTenantFacts(
     })
     .from(sales)
     .where(eq(sales.organizationId, organizationId));
-  const clock = now ?? (await databaseNow(transaction));
+  const clock = now ?? databaseNow;
   const [organization] = await transaction
     .select({ timezone: organizations.timezone })
     .from(organizations)
@@ -108,6 +114,7 @@ export async function readOwnerPlanTenantFacts(
       sales: saleCounts?.total ?? 0,
     },
     prices,
+    proEntitlements: catalog.pro,
     usage,
   };
 }

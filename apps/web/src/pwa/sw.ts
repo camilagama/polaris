@@ -281,6 +281,29 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     return { request, response };
   };
 
+  /**
+   * The copy answered as a new `Response` over its body read whole, not as the `Response` of `cache.match` nor a
+   * clone of it: with those, Chrome cancelled about one script in a hundred of a page reloaded right after its
+   * `load` (`net::ERR_ABORTED`, the entry module or `theme-init.js`), and the page reloaded itself or lost its
+   * theme; with the body read first, none in 1800 reloads, and fewer of the page's `modulepreload` refused as a
+   * "cross-world service worker resource mismatch" (`scripts/sw-recarga-bancada.mjs`, ADR 0040). The cost is the
+   * file in the worker's memory until it is answered. A copy that cannot be read (evicted meanwhile) goes to the
+   * network, as a missing one does.
+   */
+  const readWhole = async (copy: Response, request: Request) => {
+    let body: Blob;
+    try {
+      body = await copy.blob();
+    } catch {
+      return fetch(request);
+    }
+    return new Response(body, {
+      headers: copy.headers,
+      status: copy.status,
+      statusText: copy.statusText,
+    });
+  };
+
   /** A time this worker wrote in its cache (`ACTIVATED_AT_PATH`, `seenAtPath`); null when there is none. */
   const storedTime = async (path: string): Promise<number | null> => {
     const answer = await (await caches.open(cacheName)).match(path);
@@ -395,12 +418,9 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     const find = route === "asset" ? lookup : anyBuild;
     event.respondWith(
       find(event.request).then((cached) =>
-        // a copy that is not the file (a page kept in place of a chunk by an older worker) is not served.
-        // The copy is cloned: the `Response` straight from `cache.match` made Chrome refuse the page's
-        // `modulepreload` of a chunk ("a preload ... is not used because it is a cross-world service worker
-        // resource mismatch") and fetch it a second time; a clone is taken as the preload's (measured).
+        // a copy that is not the file (a page kept in place of a chunk by an older worker) is not served
         cached && isExpectedResponse(pathname, cached)
-          ? cached.clone()
+          ? readWhole(cached, event.request)
           : fetch(event.request)
       )
     );

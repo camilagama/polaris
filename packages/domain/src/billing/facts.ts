@@ -1,5 +1,6 @@
 import { Money } from "../money/money";
 import {
+  accessInForceUntil,
   type BillingFacts,
   type BillingState,
   grantsPro,
@@ -12,6 +13,7 @@ import {
   MAX_PERIOD_DAYS,
   RejectedBillingEventError,
 } from "./subscription-state";
+import { trialAccessEndsAt } from "./trial-access";
 
 /**
  * Provider facts reconciled into the billing record (plan PR79 and PR81). A
@@ -354,12 +356,14 @@ function chargeFailed(
   const endsAt = record.accessEndsAt ?? context.now;
   let event: BillingEvent | null = null;
   // the first charge after the trial failed: no Pro without payment. The
-  // provider says the trial is over, even if our own end of it is a few
-  // minutes later than the provider's.
+  // provider says the trial is over, even if our own end of it, with the
+  // slack that waits for this very charge, is later than the provider's.
   let at = context.now;
   if (record.state === "trialing") {
     event = { type: "trial_ended_without_payment" };
-    at = new Date(Math.max(context.now.getTime(), endsAt.getTime()));
+    at = new Date(
+      Math.max(context.now.getTime(), trialAccessEndsAt(endsAt).getTime())
+    );
   } else if (record.state === "active") {
     // grace counts from the end of the period that was paid for, however late
     // the failure is reported
@@ -778,17 +782,20 @@ export function reconcileFact(
  * conservatively: a paid period that nobody renewed or cancelled goes into the
  * seven days of grace, counted from the end of that period (not from when the
  * sweep happened to run), a cancelled one ends, and a trial without a first
- * charge ends. A late confirmation still revives the record
+ * charge ends once its slack has passed (`trialAccessEndsAt`: the end of the
+ * day in São Paulo plus a few hours, so the first charge, taken during that
+ * day, can be confirmed first). A late confirmation still revives the record
  * (`charge_succeeded` from free).
  */
 export function dueTransition(
   record: BillingRecord,
   context: ReconcileContext
 ): { record: BillingRecord; transition: BillingEvent["type"] } | null {
+  const until = accessInForceUntil(record);
   if (
     !grantsPro(record.state) ||
-    record.accessEndsAt === null ||
-    context.now.getTime() < record.accessEndsAt.getTime()
+    until === null ||
+    context.now.getTime() < until.getTime()
   ) {
     return null;
   }
@@ -802,7 +809,7 @@ export function dueTransition(
     } else {
       event = { type: "payment_failed" };
       // a late sweep must not give back access that already ran out
-      at = record.accessEndsAt;
+      at = until;
     }
   } else {
     event = { type: "grace_expired" };

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { parseWranglerConfig, varsOf } from "../wrangler-config.testing";
 import {
   CANCELLATION_FEEDBACK_EXPIRY_BATCH,
   CLOSURE_AUTO_PURGE_ALERT_PER_DAY,
@@ -307,16 +308,15 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     expect(closureAutoPurgeVolumeHigh(report(6))).toBe(true);
   });
 
-  it("is off in every environment of the repository", () => {
-    const config = readFileSync(
-      new URL("../../../wrangler.jsonc", import.meta.url),
-      "utf8"
+  it("is on only in staging: the local top level and production stay off", () => {
+    const config = parseWranglerConfig(
+      readFileSync(new URL("../../../wrangler.jsonc", import.meta.url), "utf8")
     );
-    const values = [
-      ...config.matchAll(/"CLOSURE_AUTO_PURGE_ENABLED":\s*"([^"]*)"/g),
-    ].map((match) => match[1]);
-    // the local top level, staging and production each declare it, and each one off
-    expect(values).toEqual(["false", "false", "false"]);
+    expect({
+      production: varsOf(config, "production").CLOSURE_AUTO_PURGE_ENABLED,
+      staging: varsOf(config, "staging").CLOSURE_AUTO_PURGE_ENABLED,
+      top: varsOf(config).CLOSURE_AUTO_PURGE_ENABLED,
+    }).toEqual({ production: "false", staging: "true", top: "false" });
   });
 });
 

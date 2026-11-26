@@ -1,6 +1,7 @@
+import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import PackagePlusIcon from "lucide-react/dist/esm/icons/package-plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   MASKED_MONEY,
   MASKED_SPOKEN,
@@ -8,8 +9,9 @@ import {
 } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Badge } from "@/ui/badge";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { stockEntryHref } from "../inventory/stock-entry-link";
@@ -21,9 +23,11 @@ import {
   isSubmitting,
   type SaleEvaluation,
   type SaleSummary,
+  type SplitEvaluation,
   type SubmissionState,
   submitButtonLabel,
 } from "./sale-form-model";
+import type { SplitBalance } from "./sale-split-model";
 
 /* -------------------------------------------------------------------------- */
 /* Receipt pieces (DESIGN.md v5.1: the summary is a receipt)                  */
@@ -32,30 +36,42 @@ import {
 /** An unknown cost or fee: explicit text, italic, dashed border, warning color. Never zero. */
 function Unknown({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-sm border border-warning/60 border-dashed px-1.5 py-px font-medium text-warning text-xs italic">
+    <Badge
+      className="inline overflow-visible whitespace-normal rounded-sm border-warning/60 border-dashed bg-transparent px-1.5 py-px italic leading-4"
+      variant="warning"
+    >
       {children}
-    </span>
+    </Badge>
   );
 }
 
 /** A row of the receipt: label, dotted leader, value. A `<div>` with `<dt>` and `<dd>` inside a `<dl>`. */
 export function LeaderRow({
   label,
+  mono = false,
   tone = "normal",
   value,
 }: {
   label: string;
+  /** The value in Geist Mono (the receipt of the confirmed sale): wider than Geist, so the leader gives up its minimum to the value. */
+  mono?: boolean;
   tone?: "discount" | "normal" | "total";
   value: ReactNode;
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <dt className="flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:-translate-y-0.75 after:border-input after:border-b after:border-dotted after:content-['']">
+      <dt
+        className={cn(
+          "flex min-w-0 flex-1 items-baseline gap-2 after:flex-1 after:-translate-y-0.75 after:border-input after:border-b after:border-dotted after:content-['']",
+          mono ? "after:min-w-0" : "after:min-w-4"
+        )}
+      >
         {label}
       </dt>
       <dd
         className={cn(
           "text-right font-medium tabular-nums",
+          mono && "font-mono",
           tone === "discount" && "text-warning"
         )}
       >
@@ -66,11 +82,15 @@ export function LeaderRow({
 }
 
 /** The perforation before the total. */
-export function Perforation() {
+export function Perforation({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className="relative h-0 overflow-x-clip border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]"
+      className={cn(
+        "relative h-0 overflow-x-clip border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]",
+        className
+      )}
+      data-receipt-perforation=""
     />
   );
 }
@@ -126,6 +146,28 @@ export function FeeValue({ line }: { line: FeeLine }) {
       <MoneyText text={line.text} />
     </span>
   );
+}
+
+/** The amount fields of the parts: the live texts wait until the focus leaves them, so typing is not read out. */
+const SPLIT_AMOUNT_ID = /^sale-part-[12]-amount$/;
+
+/**
+ * The text a live region reads: it follows `text`, but while the person types in an amount of a part it waits for the
+ * focus to leave the field, so a screen reader hears each change once and not at every key.
+ */
+export function useSettledText(text: string): string {
+  const [settled, setSettled] = useState(text);
+  useEffect(() => {
+    const typing = SPLIT_AMOUNT_ID.test(document.activeElement?.id ?? "");
+    if (!typing) {
+      setSettled(text);
+      return;
+    }
+    const settle = () => setSettled(text);
+    document.addEventListener("focusout", settle, { once: true });
+    return () => document.removeEventListener("focusout", settle);
+  }, [text]);
+  return settled;
 }
 
 const UNKNOWN_SETTLEMENT = "prazo desconhecido";
@@ -197,6 +239,101 @@ export function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
           </dl>
         ) : null}
       </div>
+    </section>
+  );
+}
+
+/** What the live region of the parts reads once the person leaves an amount: each part's fee and term, then the sum. */
+function partsSentence(split: SplitEvaluation): string {
+  const parts = split.partPreviews.map((preview, index) =>
+    preview === null
+      ? null
+      : `Parte ${index + 1}: taxa ${preview.processing.text}, ${preview.settlementText}.`
+  );
+  const total =
+    split.feesTotal === null
+      ? null
+      : `Taxas das duas partes: ${split.feesTotal.text}.`;
+  return [...parts, total].filter(Boolean).join(" ");
+}
+
+/**
+ * The summary of a sale paid in two parts: a group per part (method and amount, then its profile, fee and term) and
+ * the fees of both parts added up, unknown when either is. Typing in an amount changes these values at every key; the
+ * live region reads them once the focus leaves the field.
+ */
+function SplitPaymentDetails({ split }: { split: SplitEvaluation }) {
+  const announced = useSettledText(partsSentence(split));
+  return (
+    <section aria-labelledby="sale-parts-title" className="grid gap-3">
+      <h3 className="font-medium" id="sale-parts-title">
+        Pagamento em 2 partes
+      </h3>
+      {split.parts.map((part, index) => {
+        const preview = split.partPreviews[index] ?? null;
+        const ordinal = index + 1;
+        return (
+          <div className="grid gap-1.5" key={ordinal}>
+            {/* wraps instead of a leader: a long method beside a large amount does not fit 320 px with a big font */}
+            <dl className="grid">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <dt className="min-w-0 font-medium">
+                  Parte {ordinal} · {part.methodText}
+                </dt>
+                <dd className="ms-auto text-right font-medium">
+                  {part.amountText === null ? (
+                    "—"
+                  ) : (
+                    <MoneyText text={part.amountText} />
+                  )}
+                </dd>
+              </div>
+            </dl>
+            {preview ? (
+              <dl className="grid gap-1 text-support">
+                <DetailRow
+                  label="Perfil de pagamento"
+                  value={preview.profileText}
+                />
+                <DetailRow
+                  label="Taxa de processamento"
+                  value={<FeeValue line={preview.processing} />}
+                />
+                {preview.anticipation.tone === "not_applicable" ? null : (
+                  <DetailRow
+                    label="Antecipação"
+                    value={<FeeValue line={preview.anticipation} />}
+                  />
+                )}
+                <DetailRow
+                  label="Prazo"
+                  value={
+                    preview.settlementText.startsWith(UNKNOWN_SETTLEMENT) ? (
+                      <Unknown>{preview.settlementText}</Unknown>
+                    ) : (
+                      preview.settlementText
+                    )
+                  }
+                />
+              </dl>
+            ) : null}
+          </div>
+        );
+      })}
+      {split.feesTotal === null ? null : (
+        <dl className="grid text-support">
+          <DetailRow
+            label="Taxas das duas partes"
+            value={<FeeValue line={split.feesTotal} />}
+          />
+        </dl>
+      )}
+      <p className="text-muted-foreground text-support">
+        O servidor recalcula ao confirmar.
+      </p>
+      <p aria-atomic="true" aria-live="polite" className="sr-only">
+        {announced}
+      </p>
     </section>
   );
 }
@@ -397,15 +534,9 @@ export function SummaryPanel({
   const rows = summary?.rows.filter((row) => row.tone !== "total") ?? [];
   const total = summary?.rows.find((row) => row.tone === "total");
   return (
-    <aside
-      aria-labelledby="sale-summary-title"
-      className="@[44rem]/sale:sticky @[44rem]/sale:top-4 min-w-0 @[44rem]/sale:self-start"
-    >
-      <Card className="gap-0 py-0">
-        <CardContent className="grid gap-3 py-(--card-spacing)">
-          <h2 className="text-section" id="sale-summary-title">
-            Resumo
-          </h2>
+    <div className="@[44rem]/sale:sticky @[44rem]/sale:top-4 min-w-0 @[44rem]/sale:self-start">
+      <Block headingId="sale-summary-title" title="Resumo" variant="plain">
+        <div className="grid gap-3">
           {summary ? (
             <dl className="grid gap-2">
               {rows.map((row) => (
@@ -431,39 +562,43 @@ export function SummaryPanel({
                 value={evaluation.dateText}
               />
             )}
-            {evaluation.methodChosen ? (
+            {evaluation.methodChosen && !evaluation.split ? (
               <DetailRow label="Pagamento" value={evaluation.methodText} />
             ) : null}
-            {evaluation.feePreview || !evaluation.profileChosen ? null : (
+            {evaluation.feePreview ||
+            !evaluation.profileChosen ||
+            evaluation.split ? null : (
               <DetailRow
                 label="Perfil de pagamento"
                 value={evaluation.profileText}
               />
             )}
           </dl>
-          <FeePreviewDetails preview={evaluation.feePreview} />
-        </CardContent>
+          {evaluation.split ? (
+            <SplitPaymentDetails split={evaluation.split} />
+          ) : (
+            <FeePreviewDetails preview={evaluation.feePreview} />
+          )}
+        </div>
         {total ? (
           <>
-            <Perforation />
-            <CardContent className="py-(--card-spacing)">
-              <dl aria-atomic="true" aria-live="polite">
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="font-medium text-muted-foreground">
-                    {total.label}
-                  </dt>
-                  <dd>
-                    <Money
-                      className="font-semibold text-value-lg tracking-[-0.035em]"
-                      text={total.value}
-                    />
-                  </dd>
-                </div>
-              </dl>
-            </CardContent>
+            <Perforation className="-mx-(--card-spacing)" />
+            <dl aria-atomic="true" aria-live="polite">
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="font-medium text-muted-foreground">
+                  {total.label}
+                </dt>
+                <dd>
+                  <Money
+                    className="font-semibold text-value-lg tracking-[-0.035em]"
+                    text={total.value}
+                  />
+                </dd>
+              </div>
+            </dl>
           </>
         ) : null}
-        <CardContent className="grid gap-3 border-border border-t py-(--card-spacing)">
+        <div className="-mx-(--card-spacing) grid gap-3 border-border border-t px-(--card-spacing) pt-(--card-spacing)">
           {showRequired && errorCount > 0 ? (
             <Alert variant="destructive">
               <TriangleAlertIcon aria-hidden="true" />
@@ -500,13 +635,15 @@ export function SummaryPanel({
           <p className="text-muted-foreground text-support">
             {offline ? offlineNote : onlineNote}
           </p>
-        </CardContent>
-      </Card>
-    </aside>
+        </div>
+      </Block>
+    </div>
   );
 }
 
 interface SubmitBarProps {
+  /** The state of the parts of a split sale: "Falta R$ X" or "Passou R$ X" under the total while they do not close it. */
+  balance: SplitBalance | null;
   offline: boolean;
   submission: SubmissionState;
   summary: SaleSummary | null;
@@ -519,32 +656,54 @@ interface SubmitBarProps {
  * as noise; what takes the focus inside the form keeps a `scroll-margin-bottom` for it (styles/index.css), so a
  * focused field or error scrolls above it.
  */
-export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
+export function SubmitBar({
+  balance,
+  offline,
+  submission,
+  summary,
+}: SubmitBarProps) {
   return (
     <div
-      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 flex @[44rem]/sale:hidden items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 grid @[44rem]/sale:hidden gap-1 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       data-submit-bar=""
     >
-      <div className="grid min-w-0 shrink-0">
-        <span className="text-muted-foreground text-xs">Total devido</span>
-        {summary ? (
-          <Money
-            className="font-semibold text-value-md"
-            text={summary.rows.find((row) => row.tone === "total")?.value ?? ""}
-          />
-        ) : (
-          <span className="text-muted-foreground text-support">—</span>
-        )}
+      <div className="flex items-center justify-between gap-3">
+        <div className="grid min-w-0 shrink-0">
+          <span className="text-muted-foreground text-xs">Total devido</span>
+          {summary ? (
+            <Money
+              className="font-semibold text-value-md"
+              text={
+                summary.rows.find((row) => row.tone === "total")?.value ?? ""
+              }
+            />
+          ) : (
+            <span className="text-muted-foreground text-support">—</span>
+          )}
+        </div>
+        <Button
+          aria-busy={isSubmitting(submission) || undefined}
+          className="h-auto min-h-ctl-xl min-w-0 shrink whitespace-normal py-1.5"
+          disabled={isSubmitting(submission)}
+          size="xl"
+          type="submit"
+        >
+          {submitButtonLabel(submission, offline)}
+        </Button>
       </div>
-      <Button
-        aria-busy={isSubmitting(submission) || undefined}
-        className="h-auto min-h-ctl-xl min-w-0 shrink whitespace-normal py-1.5"
-        disabled={isSubmitting(submission)}
-        size="xl"
-        type="submit"
-      >
-        {submitButtonLabel(submission, offline)}
-      </Button>
+      {/* a line of its own: a long difference wraps instead of widening the bar */}
+      {balance === null || balance.kind === "closed" ? null : (
+        <p
+          className="flex min-w-0 items-start gap-1 font-medium text-support text-warning"
+          data-split-bar-balance=""
+        >
+          <CircleAlertIcon
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0"
+          />
+          <span className="[overflow-wrap:anywhere]">{balance.text}</span>
+        </p>
+      )}
     </div>
   );
 }

@@ -32,7 +32,11 @@ import {
   raceBehindLock,
   raceRounds,
 } from "./concurrency-support";
-import { withGateRole } from "./gate-roles";
+import {
+  inCommittedTransaction,
+  inRolledBackTransaction,
+  withGateRole,
+} from "./gate-roles";
 import {
   createTenantFixture,
   type Database,
@@ -95,6 +99,7 @@ function withSession<T>(
       authenticatedUserId: fixture.userId,
       capability,
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
       sessionId,
     },
     operation
@@ -166,9 +171,7 @@ async function run() {
         await admin.pool.query(insert, values);
         return id;
       }
-      const client = await admin.pool.connect();
-      try {
-        await client.query("BEGIN");
+      await inCommittedTransaction(admin.pool, async (client) => {
         await client.query(
           "ALTER TABLE public.session DISABLE TRIGGER session_absolute_expiration"
         );
@@ -176,13 +179,7 @@ async function run() {
         await client.query(
           "ALTER TABLE public.session ENABLE TRIGGER session_absolute_expiration"
         );
-        await client.query("COMMIT");
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      } finally {
-        client.release();
-      }
+      });
       return id;
     };
     const sessionExists = async (id: string) =>
@@ -790,18 +787,14 @@ async function run() {
       userId: string | null,
       statement: string,
       values: unknown[]
-    ) => {
-      await runtimeClient.query("BEGIN");
-      try {
+    ) =>
+      inRolledBackTransaction(runtimeClient, async () => {
         await runtimeClient.query(
           "SELECT set_config('app.user_id', $1, true)",
           [userId ?? ""]
         );
         return await runtimeClient.query(statement, values);
-      } finally {
-        await runtimeClient.query("ROLLBACK");
-      }
-    };
+      });
     const end =
       "SELECT * FROM public.end_device_sessions($1::uuid, $2::text, $3::boolean, false, NULL)";
     try {
@@ -1434,12 +1427,7 @@ async function run() {
         ).rows[0]?.count
       );
     const rolledBack = async (body: () => Promise<void>) => {
-      await ownerClient.query("BEGIN");
-      try {
-        await body();
-      } finally {
-        await ownerClient.query("ROLLBACK");
-      }
+      await inRolledBackTransaction(ownerClient, body);
     };
     try {
       await createSession(tenantB.userId);
@@ -1599,11 +1587,9 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     if (authLogin && authLoginCreated) {
-      await admin.pool.query(`REVOKE "${authRuntimeRole}" FROM "${authLogin}"`);
       await admin.pool.query(`DROP ROLE "${authLogin}"`);
     }
     await admin.pool.end();

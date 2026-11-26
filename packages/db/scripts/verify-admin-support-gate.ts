@@ -19,6 +19,7 @@ import {
   type SupportCaseSummary,
 } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -321,8 +322,7 @@ async function verifyRevealLimit(context: RevealLimitContext) {
     }
     assert.equal(await revealRows(racer), REVEAL_LIMIT);
   } finally {
-    await holder.query("ROLLBACK").catch(() => undefined);
-    holder.release();
+    await rollbackAndRelease(holder);
   }
 
   // the hour: 30 reveals 59 minutes ago still count; the same 30, 61 minutes ago, do not
@@ -415,7 +415,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
 
   try {
@@ -445,7 +445,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const adminLoginUrl = await login(
@@ -1448,9 +1448,8 @@ async function run() {
       )
     );
   } finally {
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

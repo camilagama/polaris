@@ -6,8 +6,10 @@ import type { ConfirmedSaleView } from "./sale-form-model";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
-const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
-const BORDERED_BLOCK = /<dl class="[^"]*border/;
+const MUTED_BLOCK = /<div class="[^"]*bg-muted[^"]*" data-slot="inset-block"/g;
+const BORDERED_BLOCK = /<div class="[^"]*border[^"]*" data-slot="inset-block"/;
+const HOME_LINK = /<a [^>]*aria-label="Ver o Início"[^>]*>Início<\/a>/;
+const RESULT_LINK = /<a [^>]*aria-label="Ver o Resultado"[^>]*>Resultado<\/a>/;
 const SALE_ID = "77777777-7777-4777-8777-777777777777";
 
 const SALE: ConfirmedSaleView = {
@@ -18,10 +20,11 @@ const SALE: ConfirmedSaleView = {
   replayed: false,
   saleDetails: [{ label: "Venda", tone: "plain", value: SALE_ID }],
   saleId: SALE_ID,
+  summary: { itemCount: 2 },
   totals: [],
 };
 
-const LINE = '1ª venda registrada. Veja o Hoje no <a aria-label="Ver o Início"';
+const LINE = "1ª venda registrada. Veja o Hoje no <a ";
 
 const render = (firstSale: boolean) =>
   renderToStaticMarkup(
@@ -37,8 +40,9 @@ describe("the panel of a confirmed sale", () => {
   it("says it was the first sale, with the two links, as the last line of the card", () => {
     const html = render(true);
     expect(html).toContain(LINE);
+    expect(html).toMatch(HOME_LINK);
+    expect(html).toMatch(RESULT_LINK);
     expect(html).toContain('href="/"');
-    expect(html).toContain('aria-label="Ver o Resultado"');
     expect(html).toContain('href="/dashboard"');
     expect(html).toContain(" e o resultado estimado em ");
     expect(html.lastIndexOf("1ª venda registrada")).toBeGreaterThan(

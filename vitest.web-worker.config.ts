@@ -8,6 +8,9 @@ import { pgWorkerdAliases } from "./scripts/workerd-harness.mjs";
 export default defineConfig({
   resolve: { alias: pgWorkerdAliases },
   test: {
+    // The order of the files and the seed come from this root config; the project sets the order of its tests
+    // (apps/web/vitest.workers-db.config.ts), which a project does not inherit from here.
+    sequence: { shuffle: { files: true, tests: true } },
     projects: ["apps/web/vitest.workers-db.config.ts"],
   },
 });

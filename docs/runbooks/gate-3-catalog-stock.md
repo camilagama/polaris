@@ -21,8 +21,8 @@ O conjunto roda `gate2-runtime` (catálogo sob RLS com sessão, organização e 
 ## Limites conhecidos
 
 - **Mídia privada ponta a ponta** (rota Worker + banco real + R2 real) não é provada por um gate repetível: o isolamento no banco é provado aqui, a autorização das rotas por testes de unidade com armazenamento simulado, e o caminho Cloudflare Images/R2 real foi exercitado manualmente nos PR34 e PR35 com Worker temporário. A orientação EXIF e a remoção de metadados do upload não têm prova no provedor real.
-- `inventory` e `media-upload` estão na suíte `ci` e rodam no CI e no PostgreSQL 18 local. Só o `gate2-runtime` exige um endpoint Neon: roda na prova de liberação e no fim da fase, em Neon descartável ([Gate 4](./gate-4-sales-core.md#o-que-só-roda-em-neon)).
-- O gate `media-derivatives` (reconciliação com papéis de limpeza) fica fora do conjunto por exigir três URLs com logins próprios; segue como gate avulso.
+- `inventory`, `media-upload`, `media-schema` e `media-derivatives` estão na suíte `ci` e rodam no CI e no PostgreSQL 18 local. Só o `gate2-runtime` exige um endpoint Neon: roda na prova de liberação e no fim da fase, em Neon descartável ([Gate 4](./gate-4-sales-core.md#o-que-só-roda-em-neon)).
+- `media-derivatives` (reivindicação de limpeza com papéis próprios) cria e apaga o login de limpeza sozinho, então roda pelo executor como os outros. Em `media-schema`, as colunas que o runtime pode atualizar são conferidas uma a uma (`has_column_privilege`): só `product_media.position`. Onde esses dois gates esperam `23514` (restrição CHECK, guarda do tombstone, gatilho de vínculo), conferem também o nome da restrição.
 
 ## Rollback ou forward-fix
 

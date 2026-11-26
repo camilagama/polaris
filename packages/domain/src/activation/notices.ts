@@ -4,10 +4,12 @@
  * the order the sender checks them: the first that holds is the one recorded.
  *
  * The rules the database re-reads for one notice, in the order `activation_notice_still_owed` answers them (migration
- * 0131): the PostgreSQL gate `activation-candidates` seeds a store for each and fails if the function answers a code
- * that is not here, or in another order.
+ * 0131 and 0135): the PostgreSQL gate `activation-candidates` seeds a store for each and fails if the function answers
+ * a code that is not here, or in another order. `series_stopped` comes first: a stop after a complaint (D7) is the safety
+ * rule and one read, and it holds whatever the notice, the store or the switch.
  */
 export const ACTIVATION_NOTICE_REREAD_REASONS = Object.freeze([
+  "series_stopped",
   "expired",
   "series_window_passed",
   "activated",
@@ -37,12 +39,14 @@ export type ActivationNoticeSkipReason =
   (typeof ACTIVATION_NOTICE_SKIP_REASONS)[number];
 
 /**
- * Whether the stop of the series on a complaint (ADR 0106, D7) is in force in the code. Until it is, no tip may go out
- * even with the switch on and everything configured: the consumer counts the sending as not configured
- * (`email_not_configured`), because one complaint of a hostile sign-up could suspend the provider's account that the
- * sign-in and the billing e-mails share. The change that brings the stop turns this to `true`.
+ * Whether the stop of the series on a complaint (ADR 0106, D7) is in force in the code: the webhook of the provider
+ * records the complaint and the candidates and the re-reading answer `series_stopped` while a stop is active. With it
+ * `false` no tip may go out even with the switch on and everything configured (the consumer counts the sending as not
+ * configured, `email_not_configured`), because one complaint of a hostile sign-up could suspend the provider's account
+ * that the sign-in and the billing e-mails share. It is the brake to pull back if the stop ever has to be taken out of
+ * the code.
  */
-export const STOP_ENFORCED: boolean = false;
+export const STOP_ENFORCED: boolean = true;
 
 /** The hours of São Paulo a tip may go out in, a retry of the queue included: from 08:00 to before 20:00. */
 export const ACTIVATION_SEND_HOURS = Object.freeze({

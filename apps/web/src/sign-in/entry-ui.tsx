@@ -16,10 +16,16 @@ import {
 import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { SkeletonArt } from "@/ui/skeleton-art";
+import {
+  INLINE_TEXT_LINK_CLASS,
+  TEXT_LINK_CLASS,
+  TextLink,
+} from "@/ui/text-link";
 import { mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
 import { useChallengeRetry } from "./challenge-retry";
 import { useEntryMethods } from "./entry-methods";
@@ -44,6 +50,7 @@ import {
   TRYING_AGAIN,
 } from "./password-texts";
 import {
+  ENTRY_ART_PHRASE,
   GOOGLE_BUTTON,
   GOOGLE_BUTTON_PENDING,
   NEW_TAB_HINT,
@@ -58,12 +65,10 @@ import type { Challenge } from "./turnstile";
  * `/redefinir-senha` and `/desbloquear`. "Trocar senha" inside the app uses the same fields and notices.
  */
 
-export const TEXT_LINK =
-  "touch-hit focus-ring relative rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+export const TEXT_LINK = `${TEXT_LINK_CLASS} relative`;
 /** A link inside a line of running text: no area of its own, which would cover the line above and below
    (WCAG 2.5.8 exempts it from the size), and in one piece, so its box never spans two lines. */
-export const INLINE_LINK =
-  "focus-ring whitespace-nowrap rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+export const INLINE_LINK = `${INLINE_TEXT_LINK_CLASS} whitespace-nowrap`;
 
 /** The provisional brand: an "i" with its dot in the mark color. */
 function BrandMark() {
@@ -128,13 +133,14 @@ function HelpLine() {
   return (
     <p className="mt-5 text-center text-muted-foreground text-support">
       Precisa de ajuda? Escreva para{" "}
-      <a
+      <TextLink
         aria-label={`Escrever para o suporte: ${SUPPORT_EMAIL}`}
-        className="focus-ring select-text break-words rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
+        className="select-text break-words"
         href={mailtoHref(SUPPORT_EMAIL)}
+        inline
       >
         {SUPPORT_EMAIL}
-      </a>
+      </TextLink>
       .
     </p>
   );
@@ -151,14 +157,36 @@ const ENTRY_WIDTH: Record<EntryWidth, string> = {
 };
 
 /**
+ * The right half from 1024 px: the drawing of the Início and one line about the product. Decoration only, so it
+ * is out of the accessibility tree and of the tab order, has no link, and brings no request: the drawing is the
+ * inline SVG of the app. Under 1024 px it is `display: none`, and the page is a single column.
+ */
+function EntryArt() {
+  return (
+    <div
+      aria-hidden="true"
+      className="hidden bg-muted lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:items-center lg:justify-center lg:gap-6 lg:px-12"
+      data-entry-art=""
+    >
+      <SkeletonArt className="max-w-md" kind="home" />
+      <p className="max-w-sm text-balance text-center text-foreground text-section">
+        {ENTRY_ART_PHRASE}
+      </p>
+    </div>
+  );
+}
+
+/**
  * The page of `/entrar` and `/criar-conta`, and of the screens that stand outside the app shell like them (the
  * first access, the acceptance, the legal texts): one card at the top, the brand and the title; under the card,
  * the two legal links. Its columns are flex and not grid: an empty part that stays in the tree (a live region,
- * the closed password) gives back the gap with `-mb-4`, which a grid track ignores.
+ * the closed password) gives back the gap with `-mb-4`, which a grid track ignores. From 1024 px the entry card
+ * (`narrow`) is the left half, at the same distance from the top, and the right half is the drawing of the product.
  */
 export function EntryScreen({
   brandHref,
   children,
+  halves,
   help = false,
   legalLinks = true,
   settling = false,
@@ -169,6 +197,8 @@ export function EntryScreen({
   /** A page that is public to every visitor, signed in or not, takes the brand back to the start. */
   brandHref?: string;
   children: ReactNode;
+  /** The right half with the drawing, from 1024 px: on by default for the entry card, off for a page that stays one column. */
+  halves?: boolean;
   /** The line "Precisa de ajuda?" with the address of the support: the sign-in and the first access. */
   help?: boolean;
   /** Without them (the legal texts, which are the pages they point to). */
@@ -184,6 +214,7 @@ export function EntryScreen({
   width?: EntryWidth;
 }) {
   const reading = width === "reading";
+  const split = halves ?? width === "narrow";
   const brand = (
     <>
       <BrandMark />
@@ -191,7 +222,12 @@ export function EntryScreen({
     </>
   );
   return (
-    <div className="min-h-dvh bg-background font-sans text-foreground text-sm antialiased">
+    <div
+      className={cn(
+        "min-h-dvh bg-background font-sans text-foreground text-sm antialiased",
+        split && "lg:grid lg:grid-cols-2"
+      )}
+    >
       {/* at the top, at a fixed distance, and never centered: a card that grows while it reads (the check of the
           session, the text of the terms) grows down only, and what is in it stays where it was */}
       <main
@@ -202,8 +238,8 @@ export function EntryScreen({
         id="conteudo"
       >
         <div className={cn("mx-auto w-full min-w-0", ENTRY_WIDTH[width])}>
-          <Card className="motion-full:animate-rise">
-            <CardContent className="flex flex-col gap-4 py-1">
+          <Block className="motion-full:animate-rise" variant="plain">
+            <div className="flex flex-col gap-4 py-1">
               {brandHref ? (
                 <a
                   className="focus-ring touch-hit relative flex w-fit items-center gap-2 rounded-sm font-semibold text-[1.0625rem] tracking-tight"
@@ -234,12 +270,13 @@ export function EntryScreen({
                 ) : null}
               </div>
               {children}
-            </CardContent>
-          </Card>
+            </div>
+          </Block>
           {help && !settling ? <HelpLine /> : null}
           {legalLinks && !settling ? <LegalLinks /> : null}
         </div>
       </main>
+      {split ? <EntryArt /> : null}
     </div>
   );
 }

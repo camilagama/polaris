@@ -201,25 +201,6 @@ export function OnDemandAreaChart({
   if (state.status === "failed" && props.empty === undefined) {
     return failed ?? null;
   }
-  // a caller that reserves the lines above the drawing gets the same lines here, in the same grid, so the box does not
-  // change height when the chunk arrives
-  if (props.reserve) {
-    return (
-      <div className={cn("grid gap-2", props.className)}>
-        {props.readingAtRest === false ? null : (
-          <div
-            aria-hidden="true"
-            className={cn("min-h-[1.125rem]", props.reserve)}
-          />
-        )}
-        <Reserved
-          floor={32}
-          height={(props.height ?? 180) + EXTRA_HEIGHT}
-          message={props.empty}
-        />
-      </div>
-    );
-  }
   // the box of the chart is its plot plus the margins of the blocks (`EXTRA_HEIGHT` of chart-data.ts, which this loader
   // may not import), and the reading line above the drawing is one line of text that the box holds too (with a second
   // series that has a legend, one more)
@@ -231,7 +212,10 @@ export function OnDemandAreaChart({
       height={areaBlockHeight({
         height: props.height,
         readingAtRest: props.readingAtRest,
-        secondary: props.secondary && !props.secondary.subtle,
+        secondary:
+          props.secondary &&
+          !props.secondary.subtle &&
+          !props.secondary.legendInHeader,
       })}
       message={props.empty}
     />
@@ -263,12 +247,13 @@ export function OnDemandRingChart({
   if (state.status === "failed") {
     return failed ?? null;
   }
+  const side = props.fluid ? `${props.size / 16}rem` : props.size;
   return (
     <span
       aria-hidden="true"
       className={cn("block", props.className)}
       data-chart-loading=""
-      style={{ height: props.size, width: props.size }}
+      style={{ height: side, width: side }}
     />
   );
 }

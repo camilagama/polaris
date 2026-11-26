@@ -5,8 +5,14 @@ import { sql } from "drizzle-orm";
 import { type BillingStore, createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { readOwnerPlanTenantFacts } from "../src/plan-read-repository";
-import { archiveProduct, deleteProduct } from "../src/product-repository";
+import {
+  archiveProduct,
+  configureProductVariants,
+  deleteProduct,
+} from "../src/product-repository";
+import { ProductStockNotEmptyError } from "@polaris/domain/catalog/product";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createProductFixture,
@@ -54,7 +60,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 4 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let store: BillingStore | undefined;
@@ -86,7 +92,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     runtime = createDatabase(
@@ -157,7 +163,7 @@ async function run() {
       })
     );
     await withTenantAs(db, shop, "product:update", (transaction, identity) =>
-      deleteProduct(transaction, identity, {
+      archiveThenDeleteProduct(transaction, identity, {
         expectedVersion: 1,
         id: deleted.productId,
       })
@@ -192,8 +198,19 @@ async function run() {
       products: number;
       sales: number;
       variants: number;
+      freeable_products: number;
+      freeable_variants: number;
     }>(
       `SELECT
+           (SELECT count(*)::int FROM public.products p
+             WHERE p.organization_id = $1 AND p.archived_at IS NOT NULL AND p.deleted_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM public.inventory_balances b
+                                WHERE b.organization_id = p.organization_id AND b.product_id = p.id AND b.quantity > 0)) AS freeable_products,
+           (SELECT count(*)::int FROM public.product_variants v
+              JOIN public.products p ON p.organization_id = v.organization_id AND p.id = v.product_id
+             WHERE v.organization_id = $1 AND p.archived_at IS NOT NULL AND p.deleted_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM public.inventory_balances b
+                                WHERE b.organization_id = p.organization_id AND b.product_id = p.id AND b.quantity > 0)) AS freeable_variants,
            (SELECT count(*)::int FROM public.product_variants v
               JOIN public.products p ON p.organization_id = v.organization_id AND p.id = v.product_id
              WHERE v.organization_id = $1 AND p.deleted_at IS NULL) AS variants,
@@ -213,11 +230,20 @@ async function run() {
     );
     assert.ok(counted);
     assert.deepEqual(facts.usage, {
+      freeable: {
+        products: counted.freeable_products,
+        variants: counted.freeable_variants,
+      },
       goals: counted.goals,
       images: counted.images,
       variants: counted.variants,
     });
-    assert.deepEqual(facts.usage, { goals: 1, images: 3, variants: 2 });
+    assert.deepEqual(facts.usage, {
+      freeable: { products: 1, variants: 1 },
+      goals: 1,
+      images: 3,
+      variants: 2,
+    });
     assert.deepEqual(facts.kept, {
       historyMonths: counted.history_months,
       products: counted.products,
@@ -257,6 +283,272 @@ async function run() {
     );
     tests.push(
       "the usage is counted as assertRoomFor counts it (archived counts, deleted does not) and what the store keeps matches SQL of its own"
+    );
+
+    // ------------------------------------------------ 1a. usage.freeable: what deleting frees now (AC-3.1)
+    const freeShop = await newTenant("freeable");
+    const otherShop = await newTenant("freeable other store");
+    const archiveOf = (tenant: TenantFixture, productId: string) =>
+      withTenantAs(
+        db,
+        tenant,
+        "product:update",
+        async (transaction, identity) =>
+          (
+            await archiveProduct(transaction, identity, {
+              expectedVersion: 1,
+              id: productId,
+            })
+          ).product
+      );
+    const freeActive = await createProductFixture(
+      db,
+      freeShop,
+      `ativo ${suffix}`
+    );
+    const freeDeleted = await createProductFixture(
+      db,
+      freeShop,
+      `excluído ${suffix}`
+    );
+    await withTenantAs(
+      db,
+      freeShop,
+      "product:update",
+      (transaction, identity) =>
+        archiveThenDeleteProduct(transaction, identity, {
+          expectedVersion: 1,
+          id: freeDeleted.productId,
+        })
+    );
+    const freeStocked = await createSellableProduct(
+      { adminPool: owner.pool, db },
+      freeShop,
+      `arquivado com saldo ${suffix}`,
+      { cost: "10.00", quantity: 4 }
+    );
+    const freeNeverStocked = await createProductFixture(
+      db,
+      freeShop,
+      `arquivado sem saldo nunca registrado ${suffix}`
+    );
+    const freeSoldOut = await createSellableProduct(
+      { adminPool: owner.pool, db },
+      freeShop,
+      `arquivado esgotado ${suffix}`,
+      { cost: "10.00", quantity: 2 }
+    );
+    await confirmPlainSale({ adminPool: owner.pool, db }, freeShop, [
+      { quantity: 2, variantId: freeSoldOut.variantId },
+    ]);
+    const freeMulti = await createProductFixture(
+      db,
+      freeShop,
+      `arquivado com variantes ${suffix}`
+    );
+    await withTenantAs(
+      db,
+      freeShop,
+      "product:update",
+      (transaction, identity) =>
+        configureProductVariants(transaction, identity, {
+          expectedVersion: 1,
+          id: freeMulti.productId,
+          options: [{ name: "color", values: ["Azul", "Preto", "Verde"] }],
+          requestId: randomUUID(),
+          variants: [
+            { values: { color: "Azul" } },
+            { values: { color: "Preto" } },
+            { values: { color: "Verde" } },
+          ],
+        })
+    );
+    const otherArchived = await createProductFixture(
+      db,
+      otherShop,
+      `arquivado de outra loja ${suffix}`
+    );
+    await archiveOf(otherShop, otherArchived.productId);
+    const archivedVersion = new Map<string, number>();
+    for (const productId of [
+      freeStocked.productId,
+      freeNeverStocked.productId,
+      freeSoldOut.productId,
+    ]) {
+      archivedVersion.set(
+        productId,
+        (await archiveOf(freeShop, productId)).version
+      );
+    }
+    const multiVersion = await withTenantAs(
+      db,
+      freeShop,
+      "product:update",
+      async (transaction, identity) =>
+        (
+          await archiveProduct(transaction, identity, {
+            expectedVersion: (
+              await transaction.execute<{ version: number }>(
+                sql`SELECT version FROM public.products WHERE id = ${freeMulti.productId}`
+              )
+            ).rows[0]?.version as number,
+            id: freeMulti.productId,
+          })
+        ).product.version
+    );
+    archivedVersion.set(freeMulti.productId, multiVersion);
+    const {
+      usage: { freeable },
+    } = await read(freeShop);
+    assert.deepEqual(
+      freeable,
+      { products: 3, variants: 5 },
+      "the one that never had stock, the one sold out (a balance row at zero) and the one with three variants; not the active, the deleted, the stocked, nor another store's"
+    );
+    assert.deepEqual((await read(otherShop)).usage.freeable, {
+      products: 1,
+      variants: 1,
+    });
+    tests.push(
+      "usage.freeable counts the archived, not deleted products with no stock (a balance row at zero or none at all) and their variants, per store"
+    );
+
+    // the number is what the deletion accepts on balance (far below the hourly cap here): delete every archived product, the count is the deletions that pass
+    const accepted = { products: 0, variants: 0 };
+    for (const [productId, version] of archivedVersion) {
+      const variantCount = Number(
+        (
+          await owner.pool.query<{ total: string }>(
+            "SELECT count(*)::text AS total FROM public.product_variants WHERE product_id = $1",
+            [productId]
+          )
+        ).rows[0]?.total
+      );
+      try {
+        await withTenantAs(
+          db,
+          freeShop,
+          "product:update",
+          (transaction, identity) =>
+            deleteProduct(transaction, identity, {
+              expectedVersion: version,
+              id: productId,
+              requestId: randomUUID(),
+            })
+        );
+        accepted.products += 1;
+        accepted.variants += variantCount;
+      } catch (error) {
+        assert.ok(error instanceof ProductStockNotEmptyError);
+        assert.equal(productId, freeStocked.productId);
+      }
+    }
+    assert.deepEqual(accepted, freeable);
+    assert.deepEqual((await read(freeShop)).usage.freeable, {
+      products: 0,
+      variants: 0,
+    });
+    const stillThere = await owner.pool.query<{
+      archived: boolean;
+      id: string;
+    }>(
+      `SELECT id, archived_at IS NOT NULL AS archived
+         FROM public.products WHERE organization_id = $1 AND deleted_at IS NULL`,
+      [freeShop.organizationId]
+    );
+    assert.deepEqual(
+      stillThere.rows.map((row) => row.id).sort(),
+      [freeActive.productId, freeStocked.productId].sort(),
+      "after the deletions only the active product and the one with stock remain"
+    );
+    assert.equal(
+      stillThere.rows.find((row) => row.id === freeActive.productId)?.archived,
+      false,
+      "the active product was never archived, so it never counted as freeable"
+    );
+    tests.push(
+      "usage.freeable equals what product.delete accepts on the same products, and is zero once they are deleted"
+    );
+
+    // ------------------------------------------------ 1a'. what does not count: a deleted product and an archived one with stock
+    const exclusionShop = await newTenant("freeable exclusions");
+    const tombstone = await createProductFixture(
+      db,
+      exclusionShop,
+      `tombstone com variantes ${suffix}`
+    );
+    await withTenantAs(
+      db,
+      exclusionShop,
+      "product:update",
+      (transaction, identity) =>
+        configureProductVariants(transaction, identity, {
+          expectedVersion: 1,
+          id: tombstone.productId,
+          options: [{ name: "color", values: ["Azul", "Preto"] }],
+          requestId: randomUUID(),
+          variants: [
+            { values: { color: "Azul" } },
+            { values: { color: "Preto" } },
+          ],
+        })
+    );
+    const tombstoneVersion = (
+      await owner.pool.query<{ version: number }>(
+        "SELECT version FROM public.products WHERE id = $1",
+        [tombstone.productId]
+      )
+    ).rows[0]?.version as number;
+    await withTenantAs(
+      db,
+      exclusionShop,
+      "product:update",
+      (transaction, identity) =>
+        archiveThenDeleteProduct(transaction, identity, {
+          expectedVersion: tombstoneVersion,
+          id: tombstone.productId,
+        })
+    );
+    const withBalance = await createSellableProduct(
+      { adminPool: owner.pool, db },
+      exclusionShop,
+      `arquivado com saldo isolado ${suffix}`,
+      { cost: "10.00", quantity: 3 }
+    );
+    await archiveOf(exclusionShop, withBalance.productId);
+    const tombstoneRow = await owner.pool.query<{
+      deleted: boolean;
+      variants: number;
+    }>(
+      `SELECT p.deleted_at IS NOT NULL AS deleted,
+              (SELECT count(*)::int FROM public.product_variants v WHERE v.product_id = p.id) AS variants
+         FROM public.products p WHERE p.id = $1`,
+      [tombstone.productId]
+    );
+    assert.deepEqual(tombstoneRow.rows[0], { deleted: true, variants: 2 });
+    const balanceRow = await owner.pool.query<{ quantity: number }>(
+      "SELECT quantity FROM public.inventory_balances WHERE product_id = $1",
+      [withBalance.productId]
+    );
+    assert.ok(Number(balanceRow.rows[0]?.quantity) > 0);
+    assert.deepEqual(
+      (await read(exclusionShop)).usage.freeable,
+      { products: 0, variants: 0 },
+      "a deleted product (with its variants still stored) and an archived one with a positive balance free nothing"
+    );
+    const zeroStock = await createProductFixture(
+      db,
+      exclusionShop,
+      `arquivado sem saldo isolado ${suffix}`
+    );
+    await archiveOf(exclusionShop, zeroStock.productId);
+    assert.deepEqual(
+      (await read(exclusionShop)).usage.freeable,
+      { products: 1, variants: 1 },
+      "only the archived product with no stock counts, next to the two that do not"
+    );
+    tests.push(
+      "usage.freeable ignores a deleted product and an archived one with a positive balance, and counts the one with no stock beside them"
     );
 
     // ------------------------------------------------ 1b. the months of history (AS-24, D1): from the first sale to now
@@ -345,6 +637,48 @@ async function run() {
       freeLimits["images.active.max"]
     );
     tests.push("the limits read are the effective ones, raised by a grant");
+
+    const proRowOf = async (key: string) =>
+      (
+        await owner.pool.query<{ limit_value: number }>(
+          "SELECT limit_value FROM public.plan_entitlements WHERE plan_id = 'pro' AND key = $1",
+          [key]
+        )
+      ).rows[0]?.limit_value;
+    const liveProVariants = await proRowOf("variants.active.max");
+    assert.equal(
+      granted.proEntitlements["variants.active.max"],
+      liveProVariants,
+      "the Pro limit read is the catalog row, not the effective one raised by the grant"
+    );
+    assert.equal(
+      granted.proEntitlements["images.active.max"],
+      await proRowOf("images.active.max")
+    );
+    assert.equal(
+      granted.proEntitlements["goals.active.max"],
+      await proRowOf("goals.active.max")
+    );
+    const changedProVariants = (liveProVariants ?? 0) + 1;
+    await owner.pool.query(
+      "UPDATE public.plan_entitlements SET limit_value = $1 WHERE plan_id = 'pro' AND key = 'variants.active.max'",
+      [changedProVariants]
+    );
+    try {
+      assert.equal(
+        (await read(shop)).proEntitlements["variants.active.max"],
+        changedProVariants,
+        "a changed catalog row changes the Pro limit read, with no deploy"
+      );
+    } finally {
+      await owner.pool.query(
+        "UPDATE public.plan_entitlements SET limit_value = $1 WHERE plan_id = 'pro' AND key = 'variants.active.max'",
+        [liveProVariants]
+      );
+    }
+    tests.push(
+      "the Pro limits read are the stored catalog's Pro row, and follow a change of it"
+    );
 
     // ------------------------------------------------ 2. refusals: not a member and no organization, alike
     const stranger = await newTenant("stranger");
@@ -548,10 +882,7 @@ async function run() {
   } finally {
     await store?.close().catch(() => undefined);
     await runtime?.pool.end().catch(() => undefined);
-    for (const [role, group] of logins) {
-      await owner.pool
-        .query(`REVOKE "${group}" FROM "${role}"`)
-        .catch(() => undefined);
+    for (const role of logins) {
       await owner.pool
         .query(`DROP ROLE IF EXISTS "${role}"`)
         .catch(() => undefined);

@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { Plugin } from "vite";
 import {
@@ -680,6 +680,120 @@ function growthLine(size: PrecacheSize, baseline: number): string {
   return `PRECACHE-GROWTH total ${restLine(size)} B gzip, growth ${growth >= 0 ? "+" : ""}${growth} B over the baseline of ${baseline} B (reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, ${growth > REST_GROWTH_BUDGET_GZIP_BYTES ? `over by ${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B` : `${REST_GROWTH_BUDGET_GZIP_BYTES - growth} B left`}; mark +${REST_GROWTH_MARK_GZIP_BYTES} B)`;
 }
 
+const PRECACHE_SIZE_FILE = "precache-size.json";
+
+/**
+ * Where the build leaves the measures, never inside the output directory: what is inside is served and the file is
+ * for the CI only. The Cloudflare build (`dist/client`) gets `dist/precache-size.json`; any other directory gets a
+ * file named after it in its parent, so two builds side by side do not share one.
+ */
+export function precacheSizePath(outputDirectory: string): string {
+  const directory = resolve(outputDirectory);
+  const parent = dirname(directory);
+  if (parent === directory) {
+    throw new Error("The root directory cannot be a build output directory");
+  }
+  const name = basename(directory);
+  return name === "client"
+    ? join(parent, PRECACHE_SIZE_FILE)
+    : join(parent, `${name}.${PRECACHE_SIZE_FILE}`);
+}
+
+/** The measures of one build as `PRECACHE_SIZE_FILE` keeps them: the lines of `measurePrecache` and their sum. */
+export interface PrecacheSizeRecord extends PrecacheSize {
+  /** The sum of every line (fonts in bytes, the others gzip): what the precache weighs. */
+  total: number;
+}
+
+const RECORD_LINES = [
+  "rest",
+  "interface",
+  "fonts",
+  "primitives",
+  "charts",
+  "motion",
+  "calendar",
+  "heatmap",
+] as const satisfies readonly (keyof PrecacheSize)[];
+
+export function precacheSizeRecord(size: PrecacheSize): PrecacheSizeRecord {
+  return {
+    ...size,
+    total: RECORD_LINES.reduce((sum, line) => sum + size[line], 0),
+  };
+}
+
+/** The record in a file's text, or `null` when the text is not one (missing line, not a count of bytes). */
+export function parsePrecacheSizeRecord(
+  text: string
+): PrecacheSizeRecord | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const fields = [...RECORD_LINES, "total"] as const;
+  if (
+    !fields.every(
+      (field) =>
+        typeof record[field] === "number" &&
+        Number.isSafeInteger(record[field]) &&
+        (record[field] as number) >= 0
+    )
+  ) {
+    return null;
+  }
+  return value as PrecacheSizeRecord;
+}
+
+const signedBytes = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
+
+/**
+ * The line a review greps for in the CI log next to `PRECACHE-GROWTH`: what the pull request changes in the
+ * precache against the build of its base, line by line. The growth over the baseline carries the lag of the baseline; this does not.
+ */
+export function deltaLine(
+  head: PrecacheSizeRecord,
+  base: PrecacheSizeRecord,
+  baseSha: string
+): string {
+  const lines = RECORD_LINES.map(
+    (line) => `${line} ${signedBytes(head[line] - base[line])}`
+  ).join(", ");
+  return `PRECACHE-DELTA total ${signedBytes(head.total - base.total)} B (${lines}) vs base ${baseSha.slice(0, 8) || "desconhecida"}`;
+}
+
+/**
+ * The text of the delta from the two files' contents (`null` for a file that is not there). It never throws, so the
+ * script that prints it cannot fail the job for the base's sake.
+ */
+export function deltaReport(input: {
+  baseBuild: "failed" | "ok";
+  baseSha: string;
+  baseText: string | null;
+  headText: string | null;
+}): string {
+  const head =
+    input.headText === null ? null : parsePrecacheSizeRecord(input.headText);
+  if (head === null) {
+    return "PRECACHE-DELTA indisponível (o build do PR não gravou precache-size.json)";
+  }
+  if (input.baseBuild === "failed") {
+    return "PRECACHE-DELTA indisponível (build da base falhou)";
+  }
+  const base =
+    input.baseText === null ? null : parsePrecacheSizeRecord(input.baseText);
+  if (base === null) {
+    return "PRECACHE-DELTA indisponível (a base não gravou precache-size.json)";
+  }
+  return deltaLine(head, base, input.baseSha);
+}
+
 /**
  * Fails the production build of the shell for structure (the placement of the charts and of the calendar, who loads `motion`, the chunks of the browser
  * checks) and, with `BUDGET_MODE` in "block", when the precache goes past the budget; in "warn" the size lines only
@@ -778,6 +892,10 @@ export function precacheBudgetPlugin(
         }
         return;
       }
+      writeFileSync(
+        precacheSizePath(directory),
+        `${JSON.stringify(precacheSizeRecord(size), null, 2)}\n`
+      );
       const baseline = restBaseline(offlineRuntime);
       const problems = [...budgetProblems(size, baseline, mode), ...placement];
       // The gallery and the screens lab are for the browser checks only (main.tsx): never in the shell.

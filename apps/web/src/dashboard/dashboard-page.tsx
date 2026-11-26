@@ -11,17 +11,19 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { Card, CardContent } from "@/ui/card";
-import { Tabs, TabsContent } from "@/ui/tabs";
-import { replaceAddress } from "../app-shell/address";
-import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
-import { SlowReadNote } from "../app-shell/read-wait";
-import { TitleLine } from "../app-shell/screen-title";
+import { KPI_STRIP, KpiTileSkeleton } from "@/ui/kpi-card";
+import { SectionTabContent, SectionTabs } from "@/ui/section-tabs";
+import { Skeleton } from "@/ui/skeleton";
 import {
-  ScreenTabList,
-  ScreenTabTrigger,
-  useScreenTab,
-} from "../app-shell/screen-tabs";
+  dropNavigationState,
+  navigateInApp,
+  readNavigationState,
+  replaceAddress,
+  useAddress,
+} from "../app-shell/address";
+import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
+import { TitleLine } from "../app-shell/screen-title";
+import { useScreenTab } from "../app-shell/screen-tabs";
 import { LoadError } from "../expenses/expense-fields";
 import { monthOfDay } from "../expenses/expense-model";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -37,14 +39,21 @@ import { OfflineCopyNotice } from "./offline-copy-notice";
 import { PeriodPicker } from "./period-picker";
 import { QualityBanner } from "./quality-banner";
 import { ResultCards } from "./result-cards";
-import { ResultChain } from "./result-chain";
-import { ResultChart } from "./result-chart";
+import { ResultChain, ResultChainSkeleton } from "./result-chain";
+import { ResultChart, ResultChartSkeleton } from "./result-chart";
 import {
+  addressWithPeriod,
   copyMonthOf,
+  historyLinkState,
   type Period,
   type PeriodPreset,
+  type PeriodSelection,
+  periodFromSearch,
+  periodFromState,
   periodText,
+  presetOfPeriod,
   presetPeriod,
+  RESULT_PERIOD_STATE,
   samePeriod,
 } from "./result-period";
 import { comparisonPeriod, resultChipPeriod } from "./result-kpis";
@@ -53,17 +62,16 @@ import {
   type ComparisonDays,
   type ComparisonSales,
   type PeriodSummaryState,
-  useComparisonDays,
-  useComparisonSales,
+  useComparisonReads,
   usePeriodSummary,
 } from "./use-period-summary";
 
 const RESULT_TABS = ["resultado", "metas"] as const;
 
-function Heading() {
+function Heading({ action }: { action: ReactNode }) {
   return (
     <header>
-      <TitleLine>
+      <TitleLine action={action}>
         <div className="flex items-center gap-1">
           <h1 className="text-title">Resultado</h1>
           <HelpTip about="Resultado">
@@ -126,38 +134,40 @@ function statusLine(
     : null;
 }
 
+/** "às 09:00" of the server's read on screen, or null while the figures are not the server's. */
+function updatedText(
+  { source, summary }: PeriodSummaryState,
+  timezone: string
+): string | null {
+  return source === "server" && summary
+    ? formatUpdatedAt(
+        summary.generatedAt,
+        timezone,
+        calendarDayInTimezone(new Date(), timezone)
+      )
+    : null;
+}
+
 /**
- * The one line of control: the period on the left and, on the right, the time of the server's read, which is the
- * button that reads again. When the two do not fit, the time goes down before anything is cut. The status line comes
- * under it only when it has something to say (no height kept for it), in the same `aria-live` region that is always in
- * in place; with nothing to say on screen it is `sr-only`: it tells the screen reader that the same period is being
- * read again and, once a read ends, the time, as the button name does not change under a reader that is not looking
- * at it.
+ * The controls of the Resultado, on the line of its title: the period and, beside it, the time of the server's read,
+ * which is the button that reads again. They are the title's action only on the Resultado tab: the Metas put their
+ * own "Atualizar metas" and "Nova meta" on the same line, so it exists on both tabs and the tabs do not move. Under 760 px, when the two do not fit, the time goes down to the line below; from
+ * there the group does not wrap (it would grow the title line), the button's own text wraps first.
  */
-function Toolbar({
+function ResultActions({
   onCustom,
   onPreset,
   onRefresh,
   period,
   preset,
   state,
-  thisYear,
   timezone,
   today,
-}: ToolbarProps) {
-  const { source, summary } = state;
-  const updated =
-    source === "server" && summary
-      ? formatUpdatedAt(
-          summary.generatedAt,
-          timezone,
-          calendarDayInTimezone(new Date(), timezone)
-        )
-      : null;
-  const status = statusLine(state, timezone, period, thisYear);
+}: Omit<ToolbarProps, "thisYear">) {
+  const updated = updatedText(state, timezone);
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3 min-[47.5rem]:flex-nowrap">
+      <div className="min-w-0">
         <PeriodPicker
           onCustom={onCustom}
           onPreset={onPreset}
@@ -165,50 +175,64 @@ function Toolbar({
           preset={preset}
           today={today}
         />
-        <RefreshButton
-          busy={state.isLoading}
-          disabled={state.isLoading}
-          onClick={onRefresh}
-          updated={updated ?? undefined}
-        />
       </div>
-      <p
-        aria-live="polite"
-        className={
-          status?.seen ? "mt-2 text-muted-foreground text-support" : "sr-only"
-        }
-        id="dashboard-updated"
-      >
-        {status?.text ?? (updated ? `Atualizado ${updated}` : null)}
-      </p>
+      <RefreshButton
+        busy={state.isLoading}
+        className="min-[47.5rem]:shrink-0"
+        disabled={state.isLoading}
+        onClick={onRefresh}
+        updated={updated ?? undefined}
+      />
     </div>
   );
 }
 
-/** A line of text in a card: the read in progress, or a period with nothing in it. */
-function CardNote({
-  children,
-  description,
-  loading,
-}: {
-  children: string;
-  description?: ReactNode;
-  loading?: boolean;
-}) {
+/**
+ * What the line under the title says, only when there is something to say (no height kept for it), in the
+ * `aria-live` region that is always in place; with nothing to say on screen it is `sr-only`: it tells the screen reader
+ * that the same period is being read again and, once a read ends, the time, as the button name does not change under a
+ * reader that is not looking at it.
+ */
+function ResultStatus({
+  period,
+  state,
+  thisYear,
+  timezone,
+}: Pick<ToolbarProps, "period" | "state" | "thisYear" | "timezone">) {
+  const updated = updatedText(state, timezone);
+  const status = statusLine(state, timezone, period, thisYear);
   return (
-    <Card>
-      <CardContent
-        className="grid gap-1 text-center"
-        role={loading ? "status" : undefined}
-      >
-        <p className={loading ? "text-muted-foreground" : "font-medium"}>
-          {children}
-        </p>
-        {description ? (
-          <p className="text-muted-foreground text-support">{description}</p>
-        ) : null}
-      </CardContent>
-    </Card>
+    <p
+      aria-live="polite"
+      className={
+        status?.seen ? "text-muted-foreground text-support" : "sr-only"
+      }
+      id="dashboard-updated"
+    >
+      {status?.text ?? (updated ? `Atualizado ${updated}` : null)}
+    </p>
+  );
+}
+
+/**
+ * The result while its first read goes on: the four cards, the chart and the chain as they are with figures, so the
+ * page keeps its height when they come. The read in progress is a status for the screen reader.
+ */
+function ResultSkeleton({ canCreateExpense }: { canCreateExpense: boolean }) {
+  return (
+    <div className="grid gap-4" role="status">
+      <span className="sr-only">Carregando o resultado…</span>
+      <div className={KPI_STRIP} data-kpi-row="">
+        {[0, 1, 2, 3].map((index) => (
+          <KpiTileSkeleton key={index} strip />
+        ))}
+      </div>
+      <div aria-hidden="true" className="flex h-4.5 items-center">
+        <Skeleton className="h-3 w-48" />
+      </div>
+      <ResultChartSkeleton />
+      <ResultChainSkeleton canCreateExpense={canCreateExpense} />
+    </div>
   );
 }
 
@@ -219,6 +243,8 @@ interface ContentProps {
   comparison: ComparisonDays | null;
   /** The same days as `dailySales` read them, for the chips of sales and ticket (null while not read). */
   salesComparison: ComparisonSales | null;
+  /** Opens the Histórico on a period; null when the sales cannot be listed to match the card (no connection, or figures from the device's copy). */
+  onOpenSales: ((period: Period) => void) | null;
   /** What the person asked for: the figures on screen may still be those of the period before it (AC-3). */
   period: Period;
   state: PeriodSummaryState;
@@ -240,6 +266,7 @@ function onScreen<T extends { period: Period }>(
 function Content({
   canCreateExpense,
   comparison,
+  onOpenSales,
   salesComparison,
   period,
   state,
@@ -249,17 +276,10 @@ function Content({
   const { summary } = state;
   if (summary === null) {
     return state.isLoading ? (
-      <CardNote
-        description={
-          <SlowReadNote
-            className="block min-h-5"
-            key={`${period.from}/${period.to}`}
-          />
-        }
-        loading
-      >
-        Carregando o resultado…
-      </CardNote>
+      <ResultSkeleton
+        canCreateExpense={canCreateExpense}
+        key={`${period.from}/${period.to}`}
+      />
     ) : null;
   }
   // the label is always the period of the figures, never the one asked for while they are still the older ones
@@ -274,13 +294,14 @@ function Content({
   return (
     <div
       className={cn(
-        "grid gap-5 motion-full:transition-opacity",
+        "grid gap-4 motion-full:transition-opacity",
         stale && "opacity-60"
       )}
       data-stale={stale ? "" : undefined}
     >
       <ResultCards
         comparison={onScreen(comparison, summary.period, today)}
+        onOpenSales={stale ? null : onOpenSales}
         salesComparison={onScreen(salesComparison, summary.period, today)}
         summary={summary}
         today={today}
@@ -294,12 +315,6 @@ function Content({
       <ResultChain canCreateExpense={canCreateExpense} summary={summary} />
     </div>
   );
-}
-
-interface Selection {
-  /** The range of "Período", once the person gave a valid one. */
-  custom: Period | null;
-  preset: PeriodPreset;
 }
 
 /**
@@ -318,10 +333,34 @@ export function DashboardPage() {
   const [today, setToday] = useState(() =>
     calendarDayInTimezone(new Date(), organization.timezone)
   );
-  const [selection, setSelection] = useState<Selection>({
-    custom: null,
-    preset: "this-month",
+  const [selection, setSelection] = useState<PeriodSelection>(() => {
+    const requested = periodFromState(readNavigationState(RESULT_PERIOD_STATE));
+    if (requested === null) {
+      return periodFromSearch(window.location.search);
+    }
+    const preset = presetOfPeriod(requested, today);
+    return { custom: preset === "custom" ? requested : null, preset };
   });
+  useEffect(() => dropNavigationState(RESULT_PERIOD_STATE), []);
+  // the period is part of the address like the tab: rewritten in place, so "voltar" leaves the screen instead of walking
+  // between periods, and an address that asked for a period that is not valid is corrected to the one on screen
+  useLayoutEffect(() => {
+    replaceAddress(addressWithPeriod(window.location.href, selection));
+  }, [selection]);
+  // a step of the browser's history to another address of this route changes the period in it: the screen follows, and
+  // the figures are read for it by the same path as a choice in the picker. An address already equal to the selection
+  // (the write above, or a step to the same period) changes nothing
+  const { search } = useAddress();
+  // `search` only wakes the effect: it reads the address itself, which is current after the write above
+  useEffect(() => {
+    const fromAddress = periodFromSearch(window.location.search);
+    if (
+      addressWithPeriod(window.location.href, fromAddress) !==
+      addressWithPeriod(window.location.href, selection)
+    ) {
+      setSelection(fromAddress);
+    }
+  }, [search, selection]);
   const period = useMemo(
     () =>
       presetPeriod(selection.preset, today, selection.custom) ??
@@ -349,8 +388,11 @@ export function DashboardPage() {
   const comparedResult = answeredSummary
     ? resultChipPeriod(answeredSummary, today)
     : null;
-  const comparison = useComparisonDays(organizationId, comparedResult);
-  const salesComparison = useComparisonSales(organizationId, compared);
+  const { comparison, salesComparison } = useComparisonReads(
+    organizationId,
+    compared,
+    comparedResult
+  );
   // "hoje" is the store's day on the server's clock, the same that cuts the series (AC-1, AC-10): when the device
   // disagrees, the periods are computed again once, from the server's day, and read again
   const serverToday =
@@ -368,6 +410,10 @@ export function DashboardPage() {
   const snapshot = useRuntimeSnapshot();
   const online = useConnectionOnline();
   const goals = useGoals(organizationId);
+  // the Metas draw their buttons into the title line: the panel owns the state they act on, the line owns the place
+  const [goalsActionsHost, setGoalsActionsHost] = useState<HTMLElement | null>(
+    null
+  );
   const [initialTab] = useState(
     () => requestedTab("dashboard", window.location.search).value
   );
@@ -380,6 +426,9 @@ export function DashboardPage() {
       );
     }
   }, [initialTab]);
+  const handleOpenSales = useCallback((sales: Period) => {
+    navigateInApp("/sales/history", historyLinkState(sales));
+  }, []);
   const handlePreset = useCallback((preset: PeriodPreset) => {
     setSelection({ custom: null, preset });
   }, []);
@@ -393,31 +442,52 @@ export function DashboardPage() {
       : groupGoals(goals.state.goals).active.length;
 
   return (
-    <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <Heading />
-      <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
-        <ScreenTabList label="Resultado e metas" value={tab}>
-          <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>
-          <ScreenTabTrigger value="metas">
-            Metas
-            {inProgress > 0 ? (
-              <Badge variant="secondary">
-                {inProgress}
-                <span className="sr-only"> em andamento</span>
-              </Badge>
-            ) : null}
-          </ScreenTabTrigger>
-        </ScreenTabList>
-        <TabsContent className="grid gap-5" value="resultado">
-          <Toolbar
-            onCustom={handleCustom}
-            onPreset={handlePreset}
-            onRefresh={refresh}
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
+      <Heading
+        action={
+          tab === "resultado" ? (
+            <ResultActions
+              onCustom={handleCustom}
+              onPreset={handlePreset}
+              onRefresh={refresh}
+              period={period}
+              preset={selection.preset}
+              state={state}
+              timezone={organization.timezone}
+              today={today}
+            />
+          ) : (
+            <div className="flex items-start gap-2" ref={setGoalsActionsHost} />
+          )
+        }
+      />
+      <SectionTabs
+        label="Resultado e metas"
+        onValueChange={handleTab}
+        tabs={[
+          { label: "Resultado", value: "resultado" },
+          {
+            label: (
+              <>
+                Metas
+                {inProgress > 0 ? (
+                  <Badge variant="secondary">
+                    {inProgress}
+                    <span className="sr-only"> em andamento</span>
+                  </Badge>
+                ) : null}
+              </>
+            ),
+            value: "metas",
+          },
+        ]}
+        value={tab}
+      >
+        <SectionTabContent className="grid gap-4" value="resultado">
+          <ResultStatus
             period={period}
-            preset={selection.preset}
             state={state}
             thisYear={today.slice(0, 4)}
-            today={today}
             timezone={organization.timezone}
           />
           {state.summary && state.source === "cache" ? (
@@ -437,29 +507,33 @@ export function DashboardPage() {
               onRetry={refresh}
             />
           ) : null}
-          <div aria-busy={state.isLoading} className="grid gap-5">
+          <div aria-busy={state.isLoading} className="grid gap-4">
             <Content
               canCreateExpense={canCreateExpense}
               comparison={comparison}
               salesComparison={salesComparison}
+              onOpenSales={
+                online && state.source === "server" ? handleOpenSales : null
+              }
               period={period}
               state={state}
               thisYear={today.slice(0, 4)}
               timezone={organization.timezone}
             />
           </div>
-        </TabsContent>
+        </SectionTabContent>
         {/* kept mounted: a goal being typed is still there when the person comes back from the other tab */}
-        <TabsContent keepMounted value="metas">
+        <SectionTabContent keepMounted value="metas">
           <GoalsPanel
+            actionsHost={goalsActionsHost}
             goals={goals}
             month={monthOfDay(today)}
             organizationId={organizationId}
             timezone={organization.timezone}
             today={today}
           />
-        </TabsContent>
-      </Tabs>
+        </SectionTabContent>
+      </SectionTabs>
     </div>
   );
 }

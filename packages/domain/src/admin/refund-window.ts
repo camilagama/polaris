@@ -1,4 +1,8 @@
-import { type BillingState, grantsPro } from "../billing/entitlements";
+import {
+  accessInForceUntil,
+  type BillingState,
+  grantsPro,
+} from "../billing/entitlements";
 import {
   nextChargeDayOf,
   type PlanMethod,
@@ -100,9 +104,8 @@ export class RefundWindowReadRefusedError extends Error {
 }
 
 function renewalOf(record: PlanViewRecord, now: Date): RefundWindowRenewal {
-  const live =
-    record.accessEndsAt !== null &&
-    record.accessEndsAt.getTime() > now.getTime();
+  const until = accessInForceUntil(record);
+  const live = until !== null && until.getTime() > now.getTime();
   const resubscribeFrom = resubscribeFromOf(record);
   if (live && record.cancelAtPeriodEnd) {
     return {

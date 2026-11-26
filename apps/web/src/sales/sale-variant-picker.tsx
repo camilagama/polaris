@@ -22,6 +22,7 @@ import {
 } from "@/ui/combobox";
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon } from "@/ui/input-group";
+import { SkeletonArt } from "@/ui/skeleton-art";
 import { orpcClient } from "../lib/orpc";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import { NewProductLink } from "./sale-fields";
@@ -309,6 +310,7 @@ export function VariantSearch({
       <FieldError id={errorId}>{error}</FieldError>
       {nothingToSell ? (
         <div className="grid justify-items-start gap-3">
+          <SkeletonArt className="hidden w-44 md:block" kind="sale" />
           <p className="text-muted-foreground text-support">{view.message}</p>
           <NewProductLink href={view.href} />
         </div>

@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { reflowTest } from "./reflow";
+import { assertNoPageScroll, assertNothingClipped, reflowTest } from "./reflow";
 import {
   type ItemGeometry,
   layoutOf,
@@ -13,9 +13,10 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The fields of an item of the sale (Quantidade, Preço cobrado, Preço de tabela) choose their disposition by the width
- * of the item, not by the window: three columns from 27 rem, the phone's two-and-one from 16.25 rem, and one column
+ * of the item, not by the window: three columns from 27 rem, the phone's two-and-one from 18.25 rem, and one column
  * below that. The cuts were measured on the item at the widths the labels and the longest common value, `99.999,99`,
- * stop fitting; the rem is the real font size of the page (`Page.setFontSizes`), as in `breakpoints-rem.e2e.ts`.
+ * stop fitting (typed as `99.999,99`, the price of five digits fits beside Quantidade from 17.94 rem); the rem is the
+ * real font size of the page (`Page.setFontSizes`), as in `breakpoints-rem.e2e.ts`.
  */
 
 test.skip(
@@ -23,13 +24,18 @@ test.skip(
   "`Page.setFontSizes` is a Chrome DevTools command"
 );
 
-const STACKED_FROM_REM = 16.25;
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const LAST_PRICE_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+}).format(new Date(NOW.getTime() - 13 * 86_400_000));
+const STACKED_FROM_REM = 18.25;
 const THREE_COLUMNS_FROM_REM = 27;
 const NARROWEST_REM = 9.5;
 const LONGEST_VALUE = "99.999,99";
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
 const SHIRT = "0199c2d0-0000-7000-8000-0000000000b1";
+const REFRESH_BUTTON = /^Atualizar/;
 const WIDTHS = [320, 360, 390, 640, 768, 900, 1024, 1280];
 
 const rpc = (body: unknown) => ({
@@ -42,24 +48,25 @@ async function openItem(page: Page, pixels: number): Promise<Locator> {
   await page.setViewportSize({ height: 800, width: 1280 });
   await setBrowserFont(page, pixels);
   await page.addInitScript(
-    ([key, variant]) => {
+    ([key, variant, day]) => {
       window.localStorage.setItem(
         key as string,
         JSON.stringify({
           [variant as string]: {
             charged: "45.00",
             listed: "50.00",
-            on: "2026-10-01",
+            on: day,
           },
         })
       );
     },
-    [`polaris.sale.lastPrices.v1:${ORGANIZATION}`, SHIRT]
+    [`polaris.sale.lastPrices.v1:${ORGANIZATION}`, SHIRT, LAST_PRICE_DAY]
   );
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill(rpc({ profiles: [] }))
   );
   await serveLabWorker(page);
+  await page.clock.setFixedTime(NOW);
   await page.goto("/offline-screens-lab?screen=sale");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
@@ -100,23 +107,8 @@ function expectedLayout(rem: number) {
   return rem >= STACKED_FROM_REM ? "celular" : "empilhada";
 }
 
-/**
- * Below 18.25 rem, in the disposition with Quantidade and Preço cobrado side by side, the price field is narrower
- * than the longest common value. The cut stays at 16.25 rem because 320 px with the default font (16.5 rem) must keep
- * that disposition, so "Preço cobrado" is the only field whose value may scroll, and only in that range.
- */
-const VALUE_SCROLLS_BELOW_REM = 18.25;
-
 function problems(geometry: ItemGeometry) {
-  const rem = remOf(geometry);
-  const valueMayScroll =
-    expectedLayout(rem) === "celular" && rem < VALUE_SCROLLS_BELOW_REM;
-  return [
-    ...geometry.clipped.filter(
-      (text) => !(valueMayScroll && text === "Preço cobrado: valor com rolagem")
-    ),
-    ...geometry.overlaps,
-  ];
+  return [...geometry.clipped, ...geometry.overlaps];
 }
 
 for (const pixels of [16, 20]) {
@@ -141,7 +133,7 @@ for (const pixels of [16, 20]) {
     );
 
     reflowTest(
-      "nas larguras de janela de 320 a 1280 px nada fica cortado nem sobreposto, e 320, 360 e 390 px com letra de 16 px seguem na disposição do celular",
+      "nas larguras de janela de 320 a 1280 px nada fica cortado nem sobreposto, e 360 e 390 px com letra de 16 px seguem na disposição do celular, enquanto 320 px empilha com o preço inteiro",
       async ({ page }) => {
         const item = await openItem(page, pixels);
         await fillValues(item);
@@ -154,7 +146,10 @@ for (const pixels of [16, 20]) {
           expect(layoutOf(geometry), `${width} px`).toBe(
             expectedLayout(remOf(geometry))
           );
-          if (pixels === 16 && width <= 390) {
+          if (pixels === 16 && width === 320) {
+            expect(layoutOf(geometry), `${width} px`).toBe("empilhada");
+          }
+          if (pixels === 16 && width >= 360 && width <= 390) {
             const { Quantidade, "Preço cobrado": charged } = geometry.boxes;
             const listed = geometry.boxes["Preço de tabela"];
             expect(layoutOf(geometry), `${width} px`).toBe("celular");
@@ -197,6 +192,45 @@ for (const pixels of [16, 20]) {
         await item.getByLabel("Preço de tabela").fill("abc");
         await expect(item.locator("[id$=-error]:not(:empty)")).toHaveCount(3);
         await sweep(4);
+      }
+    );
+
+    reflowTest(
+      "o contador 'N linhas · M unidades' no cabeçalho de Itens, com 9.999 unidades, cabe a 320 e 360 px: nada cortado, sem rolagem de lado e sem tocar o Atualizar",
+      async ({ page }) => {
+        const item = await openItem(page, pixels);
+        await item.getByLabel("Quantidade").fill("9999");
+        const counter = page.getByText("1 linha · 9.999 unidades", {
+          exact: true,
+        });
+        const spoken = page.getByText("1 linha, 9.999 unidades", {
+          exact: true,
+        });
+        const header = page
+          .locator("[data-slot=block-header]")
+          .filter({ has: page.locator("#sale-items-title") });
+        const refresh = header.getByRole("button", { name: REFRESH_BUTTON });
+        for (const width of [320, 360]) {
+          // biome-ignore lint/performance/noAwaitInLoops: the widths are applied to the same page, one after the other
+          await page.setViewportSize({ height: 800, width });
+          await expect(counter, `${width} px`).toBeVisible();
+          await expect(spoken, `${width} px`).toHaveCount(1);
+          await assertNothingClipped(header);
+          await assertNoPageScroll(page);
+          const [text, button] = await Promise.all([
+            counter.boundingBox(),
+            refresh.boundingBox(),
+          ]);
+          expect(text && button, `${width} px`).toBeTruthy();
+          if (text && button) {
+            const apart =
+              text.x + text.width <= button.x + 0.5 ||
+              button.x + button.width <= text.x + 0.5 ||
+              text.y + text.height <= button.y + 0.5 ||
+              button.y + button.height <= text.y + 0.5;
+            expect(apart, `${width} px`).toBe(true);
+          }
+        }
       }
     );
   });

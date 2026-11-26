@@ -3,6 +3,7 @@ import type {
   SaleDetailReadModel,
   SaleListEntryReadModel,
 } from "@polaris/contracts";
+import { type Period, rangeProblem } from "../dashboard/result-period";
 import {
   formatBrlAmount,
   formatCalendarDate,
@@ -49,11 +50,15 @@ export interface SalePage {
 
 export interface HistoryState {
   hasMore: boolean;
+  /** The filter the rows on screen were read for; `null` while no first page has arrived. */
+  listKey: string | null;
   list: "error" | "loading" | "ready";
   listError: string | null;
   loadingMore: boolean;
-  /** A failed refresh or "load more" while a list is already showing. */
+  /** A failed "load more" while a list is already showing. */
   moreError: string | null;
+  /** The first page being read again under a list that is already showing, or that read having failed for the same filter. */
+  refresh: "failed" | "idle" | "loading";
   sales: SaleListEntryReadModel[];
 }
 
@@ -62,55 +67,92 @@ export function initialHistoryState(): HistoryState {
     hasMore: false,
     list: "loading",
     listError: null,
+    listKey: null,
     loadingMore: false,
     moreError: null,
+    refresh: "idle",
     sales: [],
   };
 }
 
-/** Starts a (re)load of the first page; a showing list stays visible. */
+/** Starts a (re)load of the first page; a showing list stays visible until it answers. */
 export function historyLoading(state: HistoryState): HistoryState {
+  // Re-reading the first page makes an in-flight page 2 stale: its answer is ignored.
   return state.list === "ready"
-    ? { ...state, moreError: null }
-    : { ...state, list: "loading", listError: null };
+    ? { ...state, loadingMore: false, moreError: null, refresh: "loading" }
+    : { ...state, list: "loading", listError: null, refresh: "idle" };
 }
 
-/** The first page replaces the list. */
+/** The first page replaces the rows, the filter they belong to and the offset together. */
 export function historyLoaded(
   state: HistoryState,
-  page: SalePage
+  page: SalePage,
+  listKey: string
 ): HistoryState {
   return {
     ...state,
     hasMore: page.hasMore,
     list: "ready",
     listError: null,
+    listKey,
     loadingMore: false,
     moreError: null,
+    refresh: "idle",
     sales: [...page.sales],
   };
 }
 
+/**
+ * A first page that failed. For the same filter the rows stay (they are its
+ * own) and say they may be out of date; for another filter they leave, since
+ * the filters would show one period and the rows another.
+ */
 export function historyLoadFailed(
   state: HistoryState,
-  error: unknown
+  error: unknown,
+  listKey: string
 ): HistoryState {
-  const message = loadErrorMessage(error, "as vendas");
-  return state.list === "ready"
-    ? { ...state, moreError: message }
-    : { ...state, list: "error", listError: message };
+  if (state.list === "ready" && state.listKey === listKey) {
+    return {
+      ...state,
+      loadingMore: false,
+      moreError: null,
+      refresh: "failed",
+    };
+  }
+  return {
+    ...state,
+    hasMore: false,
+    list: "error",
+    listError: loadErrorMessage(error, "as vendas"),
+    listKey: null,
+    loadingMore: false,
+    moreError: null,
+    refresh: "idle",
+    sales: [],
+  };
 }
 
 export function nextOffset(state: HistoryState): number {
   return state.sales.length;
 }
 
-export function canLoadMore(state: HistoryState): boolean {
-  return state.list === "ready" && state.hasMore && !state.loadingMore;
+/** Only the next page of the list on screen, and only when that list was read for the filter in force. */
+export function canLoadMore(state: HistoryState, listKey: string): boolean {
+  return (
+    state.list === "ready" &&
+    state.listKey === listKey &&
+    state.refresh === "idle" &&
+    state.hasMore &&
+    !state.loadingMore
+  );
 }
 
-export function loadMoreStarted(state: HistoryState): HistoryState {
-  return canLoadMore(state)
+export function loadMoreStarted(
+  state: HistoryState,
+  listKey: string
+): HistoryState {
+  return canLoadMore(state, listKey)
     ? { ...state, loadingMore: true, moreError: null }
     : state;
 }
@@ -159,6 +201,14 @@ export const HISTORY_STATUS_FILTERS: ReadonlyArray<
   ["cancelled", "Canceladas"],
   ["with_returns", "Com devoluções"],
 ];
+
+/** A situation taken from a navigation state: one of the real ones that narrows the list; "" (no filter) otherwise. */
+export function statusFromState(value: unknown): HistoryStatusFilter {
+  const status = HISTORY_STATUS_FILTERS.find(
+    ([candidate]) => candidate !== "" && candidate === value
+  );
+  return status ? status[0] : "";
+}
 
 export interface HistoryFilters {
   /** Part of the current customer's name. */
@@ -228,6 +278,8 @@ export interface HistoryRow {
   itemCountText: string;
   methodText: string;
   returnsBadge: string | null;
+  /** The sale was paid in two or more parts: the list gives the methods a line of their own under the customer. */
+  splitPayment: boolean;
   statusLabel: string;
   statusTone: "cancelled" | "confirmed";
   /** Local time of the sale on this device, or empty when unreadable. */
@@ -259,6 +311,19 @@ function rowCustomerInitials(sale: SaleListEntryReadModel): string {
   return letters.join("").toLocaleUpperCase("pt-BR");
 }
 
+const methodLabel = (method: string) => methodLabels.get(method) ?? method;
+
+/** One method as before; two or more parts join their methods by position ("Pix + Crédito"), equal methods included. */
+function rowMethodText(sale: SaleListEntryReadModel): string {
+  const methods = sale.paymentMethods ?? [];
+  if (methods.length > 1) {
+    return methods.map(methodLabel).join(" + ");
+  }
+  return sale.paymentMethod === null
+    ? "Pagamento não informado"
+    : methodLabel(sale.paymentMethod);
+}
+
 export function historyRows(state: HistoryState): HistoryRow[] {
   return state.sales.map((sale) => ({
     backdated: sale.occurredOn < localDay(sale.confirmedAt),
@@ -268,11 +333,9 @@ export function historyRows(state: HistoryState): HistoryRow[] {
     detailHref: saleDetailHref(sale.id),
     id: sale.id,
     itemCountText: `${sale.itemCount} ${sale.itemCount === 1 ? "item" : "itens"}`,
-    methodText:
-      sale.paymentMethod === null
-        ? "Pagamento não informado"
-        : (methodLabels.get(sale.paymentMethod) ?? sale.paymentMethod),
+    methodText: rowMethodText(sale),
     returnsBadge: sale.hasReturns ? RETURNS_BADGE : null,
+    splitPayment: (sale.paymentMethods?.length ?? 0) > 1,
     statusLabel: sale.status === "cancelled" ? "Cancelada" : "Confirmada",
     statusTone: sale.status,
     timeText: timeOf(sale.occurredAt),
@@ -309,14 +372,119 @@ export function historyTotal(
   };
 }
 
+function periodAlone(filters: HistoryFilters): boolean {
+  return (
+    filters.status === "" &&
+    filters.customer.trim() === "" &&
+    filters.query.trim() === "" &&
+    filters.from !== "" &&
+    filters.to !== ""
+  );
+}
+
+/** Null unless the list filters by the period alone: the window the Resultado reads. */
+export function periodTotalPeriod(filters: HistoryFilters): Period | null {
+  return periodAlone(filters) && rangeProblem(filters.from, filters.to) === null
+    ? { from: filters.from, to: filters.to }
+    : null;
+}
+
+/** The period alone, but longer than the year the summary reads: the screen total stays and says why. */
+function periodTooLong(filters: HistoryFilters): boolean {
+  return (
+    periodAlone(filters) &&
+    rangeProblem(filters.from, filters.to) === "too_long"
+  );
+}
+
+/** What the read of the period's net sales is doing; `idle` is a filter that has no period total. */
+export type PeriodTotalRead =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { netSales: string; salesCount: number; status: "ready" }
+  | { status: "failed" };
+
+export const PERIOD_TOTAL_LABEL = "Vendas líquidas do período";
+export const SCREEN_TOTAL_LABEL = "Total na tela";
+export const PERIOD_TOTAL_HELP =
+  "Vendas confirmadas do período, menos descontos e devoluções, até as feitas depois; igual ao Resultado. Não é a soma da lista: sem acréscimo, frete e canceladas.";
+export const PERIOD_TOTAL_OFFLINE_NOTICE =
+  "Sem conexão: total das vendas guardadas neste aparelho.";
+export const PERIOD_TOTAL_TOO_LONG_NOTICE =
+  "O total líquido do período vale para até 1 ano.";
+export const PERIOD_TOTAL_FAILED_NOTICE =
+  "Não foi possível ler o total do período agora.";
+
+export interface HistoryFooterView {
+  count: string;
+  hasHelp: boolean;
+  label: string;
+  note: string;
+  notice: string;
+  value: string | null;
+  valueLoading: boolean;
+}
+
+function footerNotice(
+  filters: HistoryFilters,
+  offline: boolean,
+  read: PeriodTotalRead
+): string {
+  if (read.status === "failed") {
+    return PERIOD_TOTAL_FAILED_NOTICE;
+  }
+  if (offline && filters.from !== "" && filters.to !== "") {
+    return PERIOD_TOTAL_OFFLINE_NOTICE;
+  }
+  return periodTooLong(filters) ? PERIOD_TOTAL_TOO_LONG_NOTICE : "";
+}
+
+/** Never pairs "Vendas líquidas do período" with the sum of the rows, nor "Total na tela" with the server figure. */
+export function historyFooterView(input: {
+  filters: HistoryFilters;
+  hasMore: boolean;
+  listLoading: boolean;
+  offline: boolean;
+  read: PeriodTotalRead;
+  sales: readonly SaleListEntryReadModel[];
+}): HistoryFooterView {
+  const { filters, hasMore, listLoading, offline, read, sales } = input;
+  if (read.status === "loading" || read.status === "ready") {
+    return {
+      count:
+        read.status === "ready"
+          ? `${read.salesCount} ${read.salesCount === 1 ? "venda" : "vendas"}`
+          : "",
+      hasHelp: true,
+      label: PERIOD_TOTAL_LABEL,
+      note: "",
+      notice: "",
+      value: read.status === "ready" ? formatBrlAmount(read.netSales) : null,
+      valueLoading: read.status === "loading",
+    };
+  }
+  const total = historyTotal(sales, hasMore);
+  const notice = listLoading ? "" : footerNotice(filters, offline, read);
+  return {
+    count: listLoading ? "" : total.countText,
+    hasHelp: false,
+    label: SCREEN_TOTAL_LABEL,
+    note: listLoading ? "" : total.noteText,
+    notice,
+    value: listLoading ? "…" : (total.totalText ?? "—"),
+    valueLoading: false,
+  };
+}
+
 export type HistoryView =
-  | { kind: "loading"; message: string }
+  | { kind: "loading" }
   | { kind: "error"; message: string }
   | {
       clearFilters: boolean;
       href: string | null;
       kind: "empty";
       message: string;
+      support: string | null;
     }
   | { kind: "ready"; rows: HistoryRow[] };
 
@@ -325,7 +493,7 @@ export function historyView(
   filters: HistoryFilters = emptyHistoryFilters
 ): HistoryView {
   if (state.list === "loading") {
-    return { kind: "loading", message: "Carregando vendas…" };
+    return { kind: "loading" };
   }
   if (state.list === "error") {
     return {
@@ -340,31 +508,59 @@ export function historyView(
           href: null,
           kind: "empty",
           message: "Nenhuma venda encontrada com estes filtros.",
+          support: null,
         }
       : {
           clearFilters: false,
           href: "/sales",
           kind: "empty",
-          message:
-            "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui.",
+          message: "Nenhuma venda ainda.",
+          support: "Registre a primeira venda para vê-la aqui.",
         };
   }
   return { kind: "ready", rows: historyRows(state) };
+}
+
+/**
+ * The count beside the title of the list: the rows on the screen, never the figure the total sums (the cancelled ones
+ * are rows and are not summed, and the period's figure from the server counts rows not loaded yet). Empty while the
+ * list loads or failed, "0 vendas" for a list with no result.
+ */
+export function historyListCount(view: HistoryView, hasMore: boolean): string {
+  if (view.kind === "loading" || view.kind === "error") {
+    return "";
+  }
+  const rows = view.kind === "ready" ? view.rows.length : 0;
+  return `${rows} ${rows === 1 ? "venda" : "vendas"}${hasMore && rows > 0 ? " · há mais" : ""}`;
 }
 
 export interface LoadMoreView {
   busy: boolean;
   error: string | null;
   label: string;
+  /** The first page is being read again under the list that is showing. */
+  refreshing: boolean;
+  /** The list on screen could not be read again for the same filter: it may be out of date. */
+  refreshFailed: boolean;
   visible: boolean;
 }
 
-export function loadMoreView(state: HistoryState): LoadMoreView {
+/** The button is hidden, not disabled, until the list on screen was read for the filter in force. */
+export function loadMoreView(
+  state: HistoryState,
+  listKey: string
+): LoadMoreView {
   return {
     busy: state.loadingMore,
     error: state.moreError,
     label: state.loadingMore ? "Carregando…" : "Carregar mais",
-    visible: state.list === "ready" && state.hasMore,
+    refreshFailed: state.list === "ready" && state.refresh === "failed",
+    refreshing: state.list === "ready" && state.refresh === "loading",
+    visible:
+      state.list === "ready" &&
+      state.hasMore &&
+      state.listKey === listKey &&
+      state.refresh === "idle",
   };
 }
 
@@ -418,7 +614,8 @@ function cancellationView(
   }
   rows.push({
     label: "Estoque",
-    value: "Devolvido item a item, pelo custo registrado em cada item.",
+    value:
+      "Voltou item a item, pelo custo registrado em cada item, exceto item de produto removido.",
   });
   return { rows };
 }

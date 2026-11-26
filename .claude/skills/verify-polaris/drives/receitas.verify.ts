@@ -54,7 +54,7 @@ async function fillCashSale(
 /** The balance on the row of a product of the Estoque list: the first `definition` after the term "Saldo". */
 function balanceOf(page: Page, product: string) {
   return page
-    .getByRole("list", { name: "Saldos por variante" })
+    .getByRole("list", { name: "Saldos em estoque" })
     .getByRole("listitem")
     .filter({ hasText: product })
     .getByRole("definition")
@@ -114,11 +114,11 @@ test("venda-devolver", async ({ evidence, page }) => {
   await expect(
     page.getByRole("region", { name: "Itens" }).getByText(MUG)
   ).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
   await page
-    .getByRole("region", { name: "Devolução" })
-    .getByRole("button", { name: "Registrar devolução" })
+    .getByRole("menuitem", { exact: true, name: "Registrar devolução" })
     .click();
-  const panel = page.getByRole("region", { name: "Registrar devolução" });
+  const panel = page.getByRole("dialog", { name: "Registrar devolução" });
   await panel.getByLabel(RETURNED).first().fill("1");
   await panel.getByLabel(RESTOCKED).first().fill("1");
   await panel.getByRole("button", { name: "Revisar devolução" }).click();
@@ -276,8 +276,11 @@ test("venda-cancelar", async ({ evidence, page }) => {
   await expect(
     page.getByRole("region", { name: "Itens" }).getByText(CANDLE)
   ).toBeVisible();
-  const cancel = page.getByRole("region", { name: "Cancelar venda" });
-  await cancel.getByRole("button", { name: "Cancelar venda" }).click();
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Cancelar venda" })
+    .click();
+  const cancel = page.getByRole("dialog", { name: "Cancelar venda" });
   await cancel.getByRole("button", { name: "Revisar cancelamento" }).click();
   await evidence.shot("venda-cancelar-revisar", "cancelamento em revisão");
   await cancel.getByRole("button", { name: "Confirmar cancelamento" }).click();
@@ -363,7 +366,7 @@ test("metas", async ({ evidence, page }) => {
     edit.first().or(goals.getByText("Nenhuma meta ainda"))
   ).toBeVisible();
   if ((await edit.count()) === 0) {
-    await goals.getByRole("button", { name: "Nova meta" }).click();
+    await page.getByRole("button", { name: "Nova meta" }).click();
     const dialog = page.getByRole("dialog", { name: "Nova meta" });
     await dialog.getByLabel("Nome").fill("Meta verify");
     await dialog.getByLabel("Alvo").fill("50.000,00");

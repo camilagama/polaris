@@ -36,6 +36,15 @@ const legalRefusal = rpcError("FORBIDDEN", 403, {
   reason: "legal_acceptance_required",
 });
 
+const NOW = new Date("2026-11-10T12:00:00.000Z");
+const DAY = 24 * 3_600_000;
+const daysAgo = (days: number) =>
+  new Date(NOW.getTime() - days * DAY).toISOString().slice(0, 10);
+
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(NOW);
+});
+
 const BOTH_PENDING = [
   { changes: null, document: "terms", effectiveFrom: null, version: 1 },
   { changes: null, document: "privacy", effectiveFrom: null, version: 1 },
@@ -45,7 +54,7 @@ const PRIVACY_CHANGED = [
     changes:
       "Passamos a dizer por quanto tempo guardamos o registro de acesso. Nada mudou no que coletamos.",
     document: "privacy",
-    effectiveFrom: "2026-11-01",
+    effectiveFrom: daysAgo(9),
     version: 2,
   },
 ];

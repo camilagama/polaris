@@ -1,5 +1,15 @@
 import { Money } from "@polaris/domain/money/money";
-import { NO_KNOWN_COST_RESULT } from "../dashboard/dashboard-model";
+import {
+  NO_KNOWN_COST_RESULT,
+  NO_SALES_UNTIL_DAY,
+  TICKET_UNAVAILABLE,
+} from "../dashboard/dashboard-model";
+import {
+  type MissingDays,
+  type MissingQuality,
+  missingDaysText,
+  missingInputOf,
+} from "../dashboard/missing-input";
 import { formatBrlAmount } from "../lib/format";
 import {
   cogsCoverageOf,
@@ -356,7 +366,7 @@ type ResultSeries =
   /** No cost of the goods of the month is known: the dash and "Sem custo conhecido: o resultado não dá para estimar." */
   | { kind: "noCost" }
   /** Some day from the 1st to today has no known cost: "N de M dias sem custo informado". */
-  | { kind: "incomplete"; total: number; unknown: number }
+  | ({ kind: "incomplete" } & MissingDays)
   /** A copy kept before the results of the day existed: nothing of the series is drawn, nothing is said. */
   | { kind: "unsent" };
 
@@ -401,12 +411,23 @@ interface ReadContext {
   wholeMonth: string;
 }
 
-/** "ainda" only for the period still open at its end (today at rest); a reading on a day already gone is of a closed one. */
-function noSalesText(open: boolean, onlyReturns: boolean): string {
+/**
+ * What a reading with no sale says. "ainda" only for the period still open at its end (today at rest); a reading on a
+ * day already gone is of a closed one. A day read before the first sale of a month that has sales says only what is
+ * true of the day: the dates beside it give the reach, and "no período" would deny the sales the card itself counts.
+ */
+function noSalesText(
+  open: boolean,
+  onlyReturns: boolean,
+  dayOfPeriodWithSales: boolean
+): string {
   if (onlyReturns) {
     return open ? ONLY_RETURNS_OPEN : "Só devoluções no período";
   }
-  return open ? "Nenhuma venda ainda" : "Sem vendas no período";
+  if (open) {
+    return "Nenhuma venda ainda";
+  }
+  return dayOfPeriodWithSales ? NO_SALES_UNTIL_DAY : "Sem vendas no período";
 }
 
 function salesReading({
@@ -435,7 +456,11 @@ function salesReading({
   return {
     count:
       count === 0
-        ? noSalesText(atRest, cents(value) !== 0n)
+        ? noSalesText(
+            atRest,
+            cents(value) !== 0n,
+            !atRest && cards.salesCount > 0
+          )
         : salesCountText(count),
     date: range,
     delta,
@@ -493,9 +518,15 @@ function resultReading({
   };
 }
 
-/** "Sem vendas no período" only when none was made: with sales and no ticket sent, the card does not deny them. */
-function noTicketText(count: number): string {
-  return count === 0 ? "Sem vendas no período" : "Ticket indisponível agora";
+/**
+ * "Sem vendas no período" only when none was made: with sales and no ticket sent, the card does not deny them, and a
+ * day read before the first sale of a month that has sales says only "Sem vendas".
+ */
+function noTicketText(count: number, dayOfPeriodWithSales: boolean): string {
+  if (count > 0) {
+    return TICKET_UNAVAILABLE;
+  }
+  return dayOfPeriodWithSales ? NO_SALES_UNTIL_DAY : "Sem vendas no período";
 }
 
 const ticketOf = (sum: Cumulative | undefined): bigint | null =>
@@ -522,7 +553,12 @@ function ticketReading({
   return {
     // nothing under the number at rest: what it is and what it compares with are in the (i)
     count:
-      value === null ? noTicketText(atRest ? cards.salesCount : sum.count) : "",
+      value === null
+        ? noTicketText(
+            atRest ? cards.salesCount : sum.count,
+            !atRest && cards.salesCount > 0
+          )
+        : "",
     date: range,
     delta,
     help: ticketHelp(range, delta ? previousRange : null),
@@ -546,7 +582,8 @@ export function monthKpis(
     salesCount: number;
     ticket: string | null;
   },
-  quality: Pick<StoredQuality, "itemLines" | "itemLinesWithUnknownCost">
+  quality: Pick<StoredQuality, "itemLines" | "itemLinesWithUnknownCost"> &
+    MissingQuality
 ): MonthKpis {
   const days = month.filter(
     (day) => day.date >= firstOfMonth(today) && day.date <= today
@@ -575,7 +612,13 @@ export function monthKpis(
     // before the days: every day with a sale has a null result then, and "N de N dias" would say less than the dash
     result = { kind: "noCost" };
   } else if (unknown > 0) {
-    result = { kind: "incomplete", total: days.length, unknown };
+    result = {
+      input: missingInputOf(quality),
+      kind: "incomplete",
+      month: null,
+      total: days.length,
+      unknown,
+    };
   } else if (
     days.length === 0 ||
     days.some((day) => day.operatingResult === undefined)
@@ -635,18 +678,34 @@ export function monthKpis(
 /** The warning of the result card that is never hidden: what the number is not. */
 const NOT_PROFIT_NOR_CASH = "Não é lucro líquido nem caixa";
 
-/** "5 de 23 dias sem custo": the days of the period that still have no cost informed (AC-6, AC-9). */
-export function unknownDaysText(unknown: number, total: number): string {
-  return `${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem custo`;
+/**
+ * "5 de 23 dias sem custo": the days of the period that still have no cost informed (AC-6, AC-9); "sem taxa" when only
+ * the fee is missing, and the month's name before it for the days of one month of a period by month.
+ */
+export function unknownDaysText(missing: MissingDays): string {
+  return missingDaysText(missing, "short");
 }
 
 /**
- * Whether "N de M dias sem custo" is worth writing on the support line of a card (two digits on each side: a month never
- * has more). A longer count, which a long period of the Resultado
- * can have, goes to the (i), which says it in words (`resultHelp`).
+ * The most characters the support line of a card holds for "N de M dias sem custo" with the month named ("setembro de
+ * 2025: 31 de 31 dias sem taxa" is 40). Counted in text, not in digits: a month named in full is what makes the line wider
+ * than the digits say. It is a ceiling on length only: the Início tile still measures the real box and shows the count whole
+ * or not at all (`WarningDetail` in `kpi-card.tsx`), and the Resultado tile wraps it. What is not shown is in the (i)
+ * (`resultHelp`), with the month.
  */
-export function unknownDaysFit(unknown: number, total: number): boolean {
-  return unknown <= 99 && total <= 99;
+const UNKNOWN_DAYS_MAX_CHARS = 34;
+
+/**
+ * Whether the days with no cost are worth writing on the support line of a card: at most two digits on each side (a month
+ * never has more) and the whole text, month included, within `UNKNOWN_DAYS_MAX_CHARS`. What does not fit goes to the (i),
+ * which says it in words with the month (`resultHelp`), so no figure is lost.
+ */
+export function unknownDaysFit(missing: MissingDays): boolean {
+  return (
+    missing.unknown <= 99 &&
+    missing.total <= 99 &&
+    unknownDaysText(missing).length <= UNKNOWN_DAYS_MAX_CHARS
+  );
 }
 
 /**
@@ -660,17 +719,14 @@ export function unknownDaysFit(unknown: number, total: number): boolean {
 export function resultHelp(
   span: string,
   compare: string | null,
-  missing: { total: number; unknown: number } | null,
+  missing: MissingDays | null,
   notProfit = false
 ): string {
   const first = `Vendas menos custos, taxas e despesas ${span}${
     notProfit ? `; ${NOT_PROFIT_NOR_CASH.toLowerCase()}` : ""
   }.`;
-  if (
-    missing &&
-    (notProfit || !unknownDaysFit(missing.unknown, missing.total))
-  ) {
-    return `${first} ${missing.unknown} de ${missing.total} dias ainda sem custo informado.`;
+  if (missing && (notProfit || !unknownDaysFit(missing))) {
+    return `${first} ${missingDaysText(missing, "informed", true).replace(" sem ", " ainda sem ")}.`;
   }
   return compare ? `${first} Compara com ${compare}.` : first;
 }

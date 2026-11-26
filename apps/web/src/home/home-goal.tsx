@@ -1,9 +1,12 @@
 import type { GoalReadModel } from "@polaris/contracts";
+import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { Card } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { buttonVariants } from "@/ui/button";
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
+import { PaceLine } from "@/ui/pace-line";
 import { Skeleton } from "@/ui/skeleton";
 import { OnDemandRingChart } from "@/ui/charts/on-demand";
 import {
@@ -11,7 +14,14 @@ import {
   formatGoalValue,
   goalProgressWidth,
   goalTitle,
+  groupGoals,
 } from "../dashboard/goal-model";
+import {
+  type GoalPace,
+  goalPace,
+  goalPaceLine,
+  goalPaceSpoken,
+} from "../dashboard/goal-pace";
 import {
   MASKED_SPOKEN,
   maskMoney,
@@ -25,31 +35,82 @@ import {
   goalPeriodShort,
   monthTitle,
   type OfflineGoal,
+  orderGoalsByProximity,
   pastGoalSummary,
 } from "./home-model";
+import { GoalSlides, GoalStepper, useGoalPosition } from "./goal-carousel";
 import { BlockError, HomeBlock } from "./home-parts";
-import type { Block } from "./use-home";
+import type { Block as ReadBlock } from "./use-home";
 
 /**
- * The goal of the Início (AC-10, AC-11, § 5.3): the active one that ends first, the one that just settled, or the
- * way to set one. Goals are set and changed on the Resultado: the links take the person there.
+ * The goal of the Início (AC-10, AC-11, § 5.3): the active one nearest to being reached (or each of them, one at a time,
+ * when there are several), the one that just settled, or the way to set one. Goals are set and changed on the Resultado: the links take the person there.
  */
 
-const LINK =
-  "touch-hit focus-ring rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+const BLOCK_ACTION = cn(
+  buttonVariants({ size: "sm", variant: "ghost" }),
+  "w-fit self-end justify-self-end"
+);
 
 /**
- * With no goal the card is a thin strip from 960 px of content: the title, a sentence and the way to set one on one
- * row, and the chart takes the row under it (`data-goal-strip` is what the grid of the page reads).
+ * With no goal the card is a thin strip under 960 px of content (the title and "Definir meta", the sentence hidden);
+ * from 960 px it is a card of the pair of the map, as tall as it (`data-goal-strip` marks it for the tests).
  */
 const STRIP_ATTRIBUTES = { "data-goal-strip": "" } as const;
-const STRIP_CLASS =
-  "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
-const STRIP_END = "@min-[60rem]/home:order-last @min-[60rem]/home:ml-auto";
 
-/** The side of the ring of the goal, and the width of its arc (v7 § 3 item 9). */
+/** The body of the card with no goal: from 960 px it takes the room the map's height leaves and centers what it says in it. */
+function StripBody({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid @min-[60rem]/home:grow @min-[60rem]/home:content-center gap-(--card-spacing)">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The panel of the goal in error keeps, from `md`, the height the panel has with a typical active goal (12.5 rem: the
+ * title block, the 7 rem ring and the panel padding), so the card does not jump when "Tentar novamente" reads it. With
+ * the projection the panel with data still fits in it; a long name (2 or more lines) may leave the panel with data
+ * taller than this, and then the card grows when it leaves the error (accepted).
+ */
+const ERROR_PANEL_CLASS = "md:min-h-50";
+
+const GOAL_FOOTER = {
+  capability: "goal:manage",
+  href: "/dashboard?aba=metas",
+  label: "Ver as metas",
+} as const;
+
+/**
+ * The one way out of the card per width: to the Metas tab, saying how many goals are active when there is more than
+ * one. The foot is not there under 760 px, so with more than one goal the same link ends the body there.
+ */
+const goalFooter = (others: number) =>
+  others > 0
+    ? { ...GOAL_FOOTER, inBody: true, label: `Ver as ${others + 1} metas` }
+    : GOAL_FOOTER;
+
+/**
+ * The side of the ring of the goal and the width of its arc (v7 § 3 item 9), in pixels at the default 16 px letter:
+ * the ring is 7 rem, the arc 0.625 rem and the margin 0.5 rem, so it grows with the letter of the person.
+ */
 const RING_SIZE = 112;
 const RING_WIDTH = 10;
+
+/** The hole of the ring in rem (7 rem, less an arc and a margin on each side), and the room kept from the arc, in pixels. */
+const HOLE_REM = 4.75;
+const HOLE_ROOM = 4;
+/** What a character of Geist Mono takes, in em. */
+const MONO_ADVANCE = 0.6;
+
+/**
+ * The size of the percent: `text-xl` at most, and less when the text written would not fit the hole (the hole minus
+ * the room, over the advance of its characters); never under 0.875 rem. It follows the letter because the hole does.
+ */
+function percentFontSize(percent: string): string {
+  const fit = `calc((${HOLE_REM}rem - ${HOLE_ROOM}px) / ${Number((MONO_ADVANCE * percent.length).toFixed(2))})`;
+  return `max(0.875rem, min(1.25rem, ${fit}))`;
+}
 
 /**
  * The color of the ring: the color of the entity the goal measures (v7 § 5), green for the sales (net sales and number
@@ -74,11 +135,13 @@ function ringColors(kind: GoalReadModel["kind"]): {
  */
 function GoalRing({
   goal,
+  pace,
   percent,
   spoken,
   width,
 }: {
   goal: GoalReadModel;
+  pace: GoalPace | null;
   percent: string;
   spoken: string;
   width: number;
@@ -87,15 +150,16 @@ function GoalRing({
   return (
     <div
       aria-label={hidden ? maskMoney(spoken, MASKED_SPOKEN) : spoken}
-      className="relative grid shrink-0 place-items-center"
+      className="relative grid size-28 shrink-0 place-items-center"
       data-goal-ring=""
       role="img"
-      style={{ height: RING_SIZE, width: RING_SIZE }}
     >
       <OnDemandRingChart
         className="col-start-1 row-start-1"
+        fluid
         progress={width / 100}
         size={RING_SIZE}
+        {...(pace ? { marker: pace.position / 100 } : {})}
         strokeWidth={RING_WIDTH}
         {...ringColors(goal.kind)}
       />
@@ -104,13 +168,10 @@ function GoalRing({
         className="col-start-1 row-start-1 grid justify-items-center gap-0.5 text-center"
       >
         <span
-          className={cn(
-            "font-semibold tabular-nums leading-6 tracking-tight",
-            // "100,0%" fits the hole of 76 px at 20 px; a goal far past its target is written smaller
-            percent.length > 6 ? "text-base" : "text-xl"
-          )}
+          className="font-semibold leading-6"
+          style={{ fontSize: percentFontSize(percent) }}
         >
-          {percent}
+          <Figure>{percent}</Figure>
         </span>
         <span className="text-muted-foreground text-xs">da meta</span>
       </span>
@@ -136,6 +197,19 @@ function goalState(goal: GoalReadModel): string | null {
 const PROJECTION_HELP =
   "Estimativa: a média dos últimos 7 dias repetida até o fim da meta.";
 
+/** What it says of the mark on the ring. */
+const PACE_HELP =
+  "O traço marca onde a meta estaria hoje se as vendas fossem iguais todos os dias.";
+
+export function goalHelpText(
+  projection: GoalProjection | null,
+  pace: GoalPace | null
+): string | null {
+  const parts = [projection ? PROJECTION_HELP : null, pace ? PACE_HELP : null];
+  const text = parts.filter(Boolean).join(" ");
+  return text === "" ? null : text;
+}
+
 /** The estimate under the amounts (v7 § 3 item 9): where the current rhythm takes the goal. */
 function ProjectionLine({ projection }: { projection: GoalProjection }) {
   if (projection.kind === "no_sales") {
@@ -159,7 +233,7 @@ function ProjectionLine({ projection }: { projection: GoalProjection }) {
   return (
     <p className="mt-1.5 text-support" data-goal-projection="">
       No ritmo atual, deve chegar a{" "}
-      <span className="font-medium tabular-nums">
+      <span className="font-medium">
         <MoneyText text={projection.value} />
       </span>{" "}
       em {projection.on}.
@@ -170,18 +244,21 @@ function ProjectionLine({ projection }: { projection: GoalProjection }) {
 function ActiveGoal({
   daysLeft = null,
   goal,
-  others,
   projection = null,
+  today = null,
 }: {
   /** "faltam 6 dias", with a connection only. */
   daysLeft?: string | null;
   goal: GoalReadModel;
-  others: number;
   /** The estimate by the rhythm of the last 7 days, with a connection and the daily series only. */
   projection?: GoalProjection | null;
+  /** The store's today, for the mark of the pace; null while the figures are not read (no mark, no word). */
+  today?: string | null;
 }) {
   const { progress } = goal;
   const state = goalState(goal);
+  const pace = goalPace(goal, today);
+  const measured = state === null;
   const period = goalPeriodShort(goal);
   return (
     <>
@@ -197,32 +274,32 @@ function ActiveGoal({
         </p>
       </div>
       {progress && !goal.paused ? (
-        <div className="flex min-w-0 items-center gap-4 group-data-[pair]/row:@min-[60rem]/home:flex-1 group-data-[pair]/row:@min-[60rem]/home:flex-col group-data-[pair]/row:@min-[60rem]/home:justify-center group-data-[pair]/row:@min-[60rem]/home:text-center">
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-4">
           <GoalRing
             goal={goal}
             percent={formatGoalPercent(progress.percent)}
-            spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}`}
+            pace={pace}
+            spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}${pace ? `. ${goalPaceSpoken(pace)}` : ""}`}
             width={goalProgressWidth(progress.percent)}
           />
-          <div className="grid min-w-0 gap-0.5 group-data-[pair]/row:@min-[60rem]/home:justify-items-center">
-            <p className="font-semibold text-lg tabular-nums leading-7 tracking-tight">
-              <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
+          <div className="grid min-w-30 grow basis-30 gap-0.5">
+            <p className="font-semibold text-lg leading-7 tracking-tight">
+              <Figure>
+                <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
+              </Figure>
             </p>
-            <p className="text-muted-foreground text-support tabular-nums">
-              <MoneyText
-                text={`de ${formatGoalValue(goal.kind, goal.target)}`}
-              />
+            <p className="text-muted-foreground text-support">
+              de{" "}
+              <Figure>
+                <MoneyText text={formatGoalValue(goal.kind, goal.target)} />
+              </Figure>
             </p>
+            {measured ? <PaceLine {...goalPaceLine(pace)} /> : null}
             {projection ? <ProjectionLine projection={projection} /> : null}
           </div>
         </div>
       ) : null}
       {state ? <p className="text-support">{state}</p> : null}
-      {others > 0 ? (
-        <a className={cn(LINK, "w-fit")} href="/dashboard?meta=lista">
-          Ver as outras
-        </a>
-      ) : null}
     </>
   );
 }
@@ -230,21 +307,17 @@ function ActiveGoal({
 /** No goal: the title of the block and the way to set one, nothing else (the button says what the sentence did). */
 function NoGoal() {
   return (
-    <>
+    <StripBody>
       <p className="@min-[60rem]/home:block hidden text-muted-foreground text-support">
         Defina quanto quer vender no mês e acompanhe aqui.
       </p>
       <a
-        className={cn(
-          buttonVariants({ variant: "outline" }),
-          "w-fit",
-          STRIP_END
-        )}
+        className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
         href="/dashboard?meta=nova"
       >
         Definir meta
       </a>
-    </>
+    </StripBody>
   );
 }
 
@@ -277,24 +350,20 @@ function PastMonthGoal({
   online?: boolean;
 }) {
   return (
-    <>
+    <StripBody>
       <p className="font-medium">Sem meta ainda</p>
+      <p className="text-muted-foreground text-support">
+        <MoneyText text={pastGoalSummary(goal)} />
+      </p>
       {online ? (
         <a
-          className={cn(
-            buttonVariants({ variant: "outline" }),
-            "w-fit",
-            STRIP_END
-          )}
+          className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
           href="/dashboard?meta=nova"
         >
           Definir meta
         </a>
       ) : null}
-      <p className="text-muted-foreground text-support tabular-nums">
-        <MoneyText text={pastGoalSummary(goal)} />
-      </p>
-    </>
+    </StripBody>
   );
 }
 
@@ -343,15 +412,16 @@ function SettledGoal({
         </p>
       </div>
       {goal.achievedValue === null ? null : (
-        <p className="text-support tabular-nums">
+        <p className="text-support">
           <MoneyText
             text={`Chegou a ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)}.`}
           />
         </p>
       )}
       {online ? (
-        <a className={cn(LINK, "w-fit")} href="/dashboard?meta=nova">
+        <a className={BLOCK_ACTION} href="/dashboard?meta=nova">
           Definir meta
+          <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
         </a>
       ) : null}
     </>
@@ -361,17 +431,72 @@ function SettledGoal({
 /** The goal while it reads: the shape of the card of a store without a goal (the title and "Definir meta"), its least. */
 function GoalSkeleton() {
   return (
-    <Card
-      aria-busy="true"
-      className="min-w-0 px-(--card-spacing)"
-      role="status"
-    >
+    <Block aria-busy="true" role="status" variant="plain">
       <span className="sr-only">Carregando a meta…</span>
       <div aria-hidden="true" className="flex h-5 items-center">
         <Skeleton className="h-4 w-12" />
       </div>
       <Skeleton aria-hidden="true" className="h-ctl-md w-32" />
-    </Card>
+    </Block>
+  );
+}
+
+/**
+ * The block with active goals: one goal at a time, the nearest to being reached first (`orderGoalsByProximity`), with
+ * the arrows and "1 de 3" in the heading when there is more than one. With one goal the block is as it always was.
+ * Every goal sits in the same grid cell, so the tallest sets the height and the swap moves nothing.
+ */
+function ActiveGoalsBlock({
+  goals,
+  others,
+  projection,
+  projections,
+  today,
+  view,
+}: {
+  goals: readonly GoalReadModel[];
+  others: number;
+  projection: GoalProjection | null;
+  projections: Readonly<Record<string, GoalProjection | null>> | undefined;
+  today: string | null;
+  view: Extract<GoalView, { kind: "active" }>;
+}) {
+  const position = useGoalPosition(goals);
+  const carousel = goals.length > 1;
+  const projectionOf = (goal: GoalReadModel) =>
+    goal.id === view.goal.id ? projection : (projections?.[goal.id] ?? null);
+  const helpText = goalHelpText(
+    goals.map(projectionOf).find(Boolean) ?? null,
+    goals.map((goal) => goalPace(goal, today)).find(Boolean) ?? null
+  );
+  const renderGoal = (goal: GoalReadModel) => (
+    <ActiveGoal
+      daysLeft={today ? goalDaysLeftText(goal, today) : null}
+      goal={goal}
+      projection={projectionOf(goal)}
+      today={today}
+    />
+  );
+  return (
+    <HomeBlock
+      {...(carousel ? { action: <GoalStepper {...position} /> } : {})}
+      footer={goalFooter(carousel ? goals.length - 1 : others)}
+      id="home-goal"
+      title="Meta"
+      {...(helpText ? { help: { about: "Meta", text: helpText } } : {})}
+    >
+      {carousel ? (
+        <GoalSlides
+          position={position}
+          slides={goals.map((goal) => ({
+            id: goal.id,
+            node: renderGoal(goal),
+          }))}
+        />
+      ) : (
+        renderGoal(view.goal)
+      )}
+    </HomeBlock>
   );
 }
 
@@ -379,13 +504,16 @@ export function GoalBlock({
   block,
   onRetry,
   projection,
+  projections,
   today,
   view,
 }: {
-  block: Block<GoalReadModel[]>;
+  block: ReadBlock<GoalReadModel[]>;
   onRetry: () => void;
-  /** The estimate of the active goal, when what it needs is known (`goalProjection`). */
+  /** The estimate of the goal that opens, when what it needs is known (`goalProjection`). */
   projection: GoalProjection | null;
+  /** The estimate of each goal of the card by its id, by the same rule; without it only the one that opens has one. */
+  projections?: Readonly<Record<string, GoalProjection | null>>;
   /** The store's today by the server's clock, for the days left; null when it is not known (no figures read). */
   today: string | null;
   view: GoalView | null;
@@ -398,7 +526,12 @@ export function GoalBlock({
   }
   if (block.status === "error" || view === null) {
     return (
-      <HomeBlock id="home-goal" title="Meta">
+      <HomeBlock
+        footer={{ ...GOAL_FOOTER, link: false }}
+        id="home-goal"
+        panelClassName={ERROR_PANEL_CLASS}
+        title="Meta"
+      >
         <BlockError
           message="Não foi possível carregar a meta."
           onRetry={block.status === "error" && block.retryable ? onRetry : null}
@@ -406,27 +539,29 @@ export function GoalBlock({
       </HomeBlock>
     );
   }
+  if (view.kind === "active") {
+    const ordered = orderGoalsByProximity(groupGoals(block.data).active);
+    return (
+      <ActiveGoalsBlock
+        goals={ordered.length > 0 ? ordered : [view.goal]}
+        others={view.others}
+        projection={projection}
+        projections={projections}
+        today={today}
+        view={view}
+      />
+    );
+  }
   const pastMonth = pastMonthOf(view, today);
   const strip = view.kind === "none" || pastMonth !== null;
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
-        : {})}
+        ? { attributes: STRIP_ATTRIBUTES, plain: true }
+        : { footer: goalFooter(0) })}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
-      {...(view.kind === "active" && projection
-        ? { help: { about: "Meta", text: PROJECTION_HELP } }
-        : {})}
     >
-      {view.kind === "active" ? (
-        <ActiveGoal
-          daysLeft={today ? goalDaysLeftText(view.goal, today) : null}
-          goal={view.goal}
-          others={view.others}
-          projection={projection}
-        />
-      ) : null}
       {view.kind === "settled" ? (
         <SettledOrPast goal={view.goal} pastMonth={pastMonth !== null} />
       ) : null}
@@ -450,7 +585,7 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       content = goal.ended ? (
         <EndedGoal goal={goal.goal} />
       ) : (
-        <ActiveGoal goal={goal.goal} others={0} />
+        <ActiveGoal goal={goal.goal} />
       );
       break;
     case "settled":
@@ -464,16 +599,18 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       break;
     default:
       content = (
-        <p className="flex min-h-ctl-md items-center text-muted-foreground">
-          Sem conexão
-        </p>
+        <StripBody>
+          <p className="flex min-h-ctl-md items-center text-muted-foreground">
+            Sem conexão
+          </p>
+        </StripBody>
       );
   }
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
-        : {})}
+        ? { attributes: STRIP_ATTRIBUTES, plain: true }
+        : { footer: { ...GOAL_FOOTER, link: false } })}
       id="home-goal"
       title={title}
     >

@@ -1,10 +1,13 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
-import PackageIcon from "lucide-react/dist/esm/icons/package";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import { useCallback, useMemo } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
+import { EmptyState } from "@/ui/empty-state";
+import { ListBlock } from "@/ui/list-block";
+import { Skeleton } from "@/ui/skeleton";
+import { TextLink } from "@/ui/text-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +20,7 @@ import type { PendingProduct } from "../offline/product-create";
 import { ProductThumbnail, useThumbnailSequence } from "./product-thumbnail";
 import { productInitials } from "./product-search-model";
 import { OFFLINE_NOTICE_ID } from "./products-page-parts";
-import { ListNotice, OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
+import { OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
 
 export type ProductListStatus = "active" | "archived";
 
@@ -41,6 +44,7 @@ function syncStateLabel(syncState: PendingProduct): string {
 
 interface RowActions {
   onArchive: (product: ProductReadModel) => void;
+  onDelete: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
   onManageMedia: (product: ProductReadModel) => void;
   onManageVariants: (product: ProductReadModel) => void;
@@ -60,6 +64,7 @@ interface ProductMenuProps extends Omit<RowActions, "onEdit"> {
 function ProductMenu({
   locked,
   onArchive,
+  onDelete,
   onManageMedia,
   onManageVariants,
   onRestore,
@@ -81,6 +86,10 @@ function ProductMenu({
   const handleRestore = useCallback(
     () => onRestore(product),
     [onRestore, product]
+  );
+  const handleDelete = useCallback(
+    () => onDelete(product),
+    [onDelete, product]
   );
   const disabled = locked || pending;
   return (
@@ -116,6 +125,18 @@ function ProductMenu({
             Restaurar
           </DropdownMenuItem>
         )}
+        {product.status === "archived" ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={disabled}
+              onClick={handleDelete}
+              variant="destructive"
+            >
+              Excluir…
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -215,8 +236,8 @@ function ProductRow({
   const hasExtras = Boolean(syncState || pendingLabel);
   const thumbs = useMediaThumbsEnabled();
   return (
-    <li
-      className={`grid px-3 md:px-4 ${OPENABLE_ROW_CLASS}`}
+    <ListBlock.Row
+      className={`grid items-stretch gap-0 py-0 ${OPENABLE_ROW_CLASS}`}
       data-product-id={product.id}
     >
       <div className="flex items-center gap-3">
@@ -262,12 +283,9 @@ function ProductRow({
                 {syncStateLabel(syncState)}
               </Badge>
               {syncState.state === "rejected" ? (
-                <a
-                  className="focus-ring touch-hit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-                  href="/attention"
-                >
+                <TextLink className="text-support" href="/attention">
                   Resolver em Pendências
-                </a>
+                </TextLink>
               ) : null}
             </div>
           ) : null}
@@ -287,12 +305,32 @@ function ProductRow({
           ) : null}
         </div>
       ) : null}
-    </li>
+    </ListBlock.Row>
+  );
+}
+
+/** The id of the frame's title: "Carregar mais" finds the rows of the list by it. */
+export const PRODUCT_LIST_TITLE_ID = "product-list-title";
+
+const PRODUCT_LIST_TITLE = "Produtos cadastrados";
+
+/** The shape of a row while the list loads: the mark, the name and the line under it. */
+function ProductRowShape() {
+  return (
+    <div className="flex items-center gap-3">
+      <Skeleton className="size-9 shrink-0 rounded-full" />
+      <div className="grid flex-1 gap-1.5">
+        <Skeleton className="h-3.5 w-1/2" />
+        <Skeleton className="h-3 w-1/3" />
+      </div>
+    </div>
   );
 }
 
 interface ProductListProps extends RowActions {
   categories: CategoryReadModel[];
+  /** "1.248 produtos": the count beside the title, empty while it is not known. */
+  count: string;
   isLoading: boolean;
   /** Working from this device's collections while the connection is down. */
   isOffline: boolean;
@@ -311,6 +349,7 @@ interface ProductListProps extends RowActions {
 
 export function ProductList({
   categories,
+  count,
   isLoading,
   isOffline,
   onNew,
@@ -329,42 +368,50 @@ export function ProductList({
   useThumbnailSequence(coverIds);
   if (isLoading) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Carregando produtos…
-        </p>
-      </ListNotice>
+      <ListBlock
+        count={count}
+        id={PRODUCT_LIST_TITLE_ID}
+        skeleton={<ProductRowShape />}
+        state="loading"
+        title={PRODUCT_LIST_TITLE}
+      />
     );
   }
 
   if (total === 0) {
     return (
-      <ListNotice>
+      <EmptyState
+        afterRead
+        art={status === "active" ? "products" : undefined}
+        icon={TagIcon}
+        title={
+          status === "active"
+            ? "Nenhum produto ainda"
+            : "Nenhum produto arquivado."
+        }
+      >
         {status === "active" ? (
-          <>
-            <PackageIcon
-              aria-hidden="true"
-              className="size-6 text-muted-foreground"
-            />
-            <p className="font-medium">Nenhum produto ainda</p>
-            <Button onClick={onNew} type="button">
-              Novo produto
-            </Button>
-          </>
-        ) : (
-          <p className="text-muted-foreground">Nenhum produto arquivado.</p>
-        )}
-      </ListNotice>
+          <Button onClick={onNew} type="button">
+            Novo produto
+          </Button>
+        ) : null}
+      </EmptyState>
     );
   }
 
   if (products.length === 0) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Nenhum produto com “{query.trim()}”.
-        </p>
-      </ListNotice>
+      <ListBlock
+        count={count}
+        emptyNotice={
+          <p className="text-muted-foreground" role="status">
+            Nenhum produto com “{query.trim()}”.
+          </p>
+        }
+        id={PRODUCT_LIST_TITLE_ID}
+        state="filtered-empty"
+        title={PRODUCT_LIST_TITLE}
+      />
     );
   }
 
@@ -372,28 +419,31 @@ export function ProductList({
     categories.map((category) => [category.id, category.name])
   );
   return (
-    <Card className="gap-0 py-0">
-      <ul aria-label="Produtos" className="divide-y divide-border">
-        {products.map((product) => {
-          const syncState = syncStates.get(product.id);
-          return (
-            <ProductRow
-              {...actions}
-              categoryName={
-                product.categoryId
-                  ? (categoryNames.get(product.categoryId) ??
-                    "Categoria vinculada")
-                  : null
-              }
-              key={product.id}
-              lockedReason={lockedReasonFor(syncState, isOffline)}
-              pendingAction={pendingAction}
-              product={product}
-              syncState={syncState}
-            />
-          );
-        })}
-      </ul>
-    </Card>
+    <ListBlock
+      count={count}
+      id={PRODUCT_LIST_TITLE_ID}
+      state="rows"
+      title={PRODUCT_LIST_TITLE}
+    >
+      {products.map((product) => {
+        const syncState = syncStates.get(product.id);
+        return (
+          <ProductRow
+            {...actions}
+            categoryName={
+              product.categoryId
+                ? (categoryNames.get(product.categoryId) ??
+                  "Categoria vinculada")
+                : null
+            }
+            key={product.id}
+            lockedReason={lockedReasonFor(syncState, isOffline)}
+            pendingAction={pendingAction}
+            product={product}
+            syncState={syncState}
+          />
+        );
+      })}
+    </ListBlock>
   );
 }

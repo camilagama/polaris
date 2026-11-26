@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 
 const shellCachePattern = /^polaris-shell-/;
 const polarisTitle = /Polaris$/;
+const historyTitle = "Histórico de vendas · Polaris";
 const helpChunk = /^\/assets\/help-page-[\w-]+\.js$/;
 
 /** Opens the app and waits until the worker controls the page (after a reload). */
@@ -53,9 +54,12 @@ test("sem rede o app abre a partir do shell em cache, inclusive numa rota intern
   await expect(page).toHaveTitle(polarisTitle);
   await expect(page.locator("#root")).not.toBeEmpty();
 
-  await page.goto("/vendas/historico");
-  await expect(page).toHaveTitle(polarisTitle);
+  await page.goto("/sales/history");
+  await expect(page).toHaveTitle(historyTitle);
   await expect(page.locator("#root")).not.toBeEmpty();
+  await expect(
+    page.locator('a[href="/sales/history"][aria-current="page"]').first()
+  ).toBeVisible();
 });
 
 test("Ajuda e contato fica no pré-cache como os Termos e abre sem rede, com o título dela", async ({
@@ -87,7 +91,7 @@ test("sem rede, o endereço de uma tela que virou aba, e o da aba Despesas que s
     ],
     ["/expenses", "/expenses", "Despesas · Polaris"],
     ["/categories", "/products?aba=categorias", "Categorias · Polaris"],
-    ["/devices", "/configuracoes?aba=aparelhos", "Aparelhos · Polaris"],
+    ["/devices", "/conta?aba=aparelhos", "Aparelhos · Polaris"],
   ] as const) {
     // biome-ignore lint/performance/noAwaitInLoops: one address at a time
     await page.goto(old);

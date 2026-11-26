@@ -3,8 +3,19 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { ACTIVATION_NOTICE_REREAD_REASONS } from "@polaris/domain/activation/notices";
 import { Client } from "pg";
+import {
+  ACTIVATION_PREFERENCE_STATEMENT,
+  ACTIVATION_SET_TIPS_STATEMENT,
+  parseActivationPreference,
+} from "../src/activation-preference";
+import { ACTIVATION_EMAIL_EVENT_STATEMENT } from "../src/activation-email-events";
+import { ACTIVATION_ADDRESS_SUPPRESSED_STATEMENT } from "../src/activation-notice-store";
 import { createDatabase } from "../src/client";
-import { setLoginRole, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  setLoginRole,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -60,6 +71,22 @@ import {
  *      `organizations.name`, the owner of the series among them, and the candidates answer no name; one store per rule
  *      leaves the candidates while the re-read of its notice answers the code of `@polaris/domain/activation/notices`, in
  *      that order; the name comes only with a notice still owed; a clock more than 10 minutes away is the database's.
+ *  11. the preference for the session (migration 0134, AC-8b.1 and AC-8b.6a): `activation_email_preference` and
+ *      `activation_set_tips` are SECURITY DEFINER of the owner of the series, never read `"user"`, and only the tenant
+ *      runtime executes them (function by function, every `polaris_*` group and PUBLIC; the billing runtime keeps only
+ *      the opt-out); the owner of the series holds the DELETE of `email_opt_outs` and no other table privilege; with
+ *      two accounts the read and the write of one never touch the other; an opt-out recorded through the page of 0129
+ *      reads `tips: false`, and turning the tips on through the new function brings the person back into the
+ *      candidates; an account older than the 14 days the owner sees on `"user"` still works.
+ *  12. the stop after a complaint, the inbox and the suppression (migration 0135, AC-9.2 to AC-9.9): the three new functions
+ *      are SECURITY DEFINER of the owner of the series with a fixed search_path and no dynamic SQL, the billing runtime
+ *      alone executes the recording and the check, and nobody but the owner of the series the release (a login of every
+ *      runtime group is refused it); the billing runtime has no privilege left on the suppressions and none on the new
+ *      tables; the guards are ALWAYS triggers; a bounce suppresses and a complaint suppresses and stops (one stop at a
+ *      time), the same event id twice does nothing, an expired suppression is renewed; a stop answers nothing in the
+ *      candidates whatever the instant of the switch, and `series_stopped` first in the re-read; the release is the
+ *      named step with the session_user and the note, never by hand; the suppression is found under either key, re-keyed
+ *      with its original date (the older of two), kept 12 months to the second whatever the clock the caller sends.
  * Every case runs in a transaction that is rolled back, with the stores the other gates left suspended inside it, so
  * the answers are about this gate's stores only. Local Postgres only: the fixtures write sale headers whose items the
  * deferred checks never see.
@@ -77,10 +104,42 @@ const RECIPIENT_OWNER = "polaris_activation_recipient_owner";
 const MEASURE_OWNER = "polaris_activation_owner";
 const RECIPIENT_FUNCTION = "public.activation_notice_recipient(text, uuid)";
 const OPT_OUT_FUNCTION = "public.activation_record_opt_out(text)";
+const PREFERENCE_FUNCTIONS = [
+  { signature: "public.activation_email_preference(text)", volatility: "s" },
+  { signature: "public.activation_set_tips(text, boolean)", volatility: "v" },
+] as const;
+/** What the owner of the series owns: the five of 0134 and the three of 0135, in the order of the `C` collation. */
+const OWNER_FUNCTIONS = [
+  "activation_address_suppressed(bytea,text,bytea,text,timestamp with time zone)",
+  "activation_email_preference(text)",
+  "activation_notice_candidates(timestamp with time zone,integer)",
+  "activation_notice_still_owed(text,uuid,timestamp with time zone)",
+  "activation_record_email_event(text,text,text,bytea[])",
+  "activation_record_opt_out(text)",
+  "activation_release_stop(uuid,text)",
+  "activation_set_tips(text,boolean)",
+];
+const USER_TABLE = /"user"/;
 const STILL_OWED_FUNCTION =
   "public.activation_notice_still_owed(text, uuid, timestamptz)";
-/** The exact columns of the owner of the series: those of 0124 and 0126, the INSERT of 0129 and the name of 0131. */
+/**
+ * The exact columns of the owner of the series: those of 0124 and 0126, the INSERT of 0129, the name of 0131 and the
+ * four tables of 0135 (the suppressions, the stop, its releases and the inbox).
+ */
 const NOTICE_OWNER_COLUMNS = [
+  "activation_email_events.event_id:INSERT",
+  "activation_email_events.event_id:SELECT",
+  "activation_email_events.kind:INSERT",
+  "activation_email_suppressions.address_hmac:INSERT",
+  "activation_email_suppressions.address_hmac:SELECT",
+  "activation_email_suppressions.address_hmac:UPDATE",
+  "activation_email_suppressions.key_id:INSERT",
+  "activation_email_suppressions.key_id:SELECT",
+  "activation_email_suppressions.key_id:UPDATE",
+  "activation_email_suppressions.reason:INSERT",
+  "activation_email_suppressions.reason:SELECT",
+  "activation_email_suppressions.recorded_at:SELECT",
+  "activation_email_suppressions.recorded_at:UPDATE",
   "activation_notices.due_at:SELECT",
   "activation_notices.failed_at:SELECT",
   "activation_notices.id:SELECT",
@@ -91,6 +150,17 @@ const NOTICE_OWNER_COLUMNS = [
   "activation_notices.step:SELECT",
   "activation_notices.user_id:SELECT",
   "activation_series_state.enabled_since:SELECT",
+  "activation_series_stop_releases.id:SELECT",
+  "activation_series_stop_releases.note:INSERT",
+  "activation_series_stop_releases.released_at:SELECT",
+  "activation_series_stop_releases.stop_id:INSERT",
+  "activation_series_stop_releases.stop_id:SELECT",
+  "activation_series_stops.id:SELECT",
+  "activation_series_stops.reason:INSERT",
+  "activation_series_stops.reason:SELECT",
+  "activation_series_stops.released_at:SELECT",
+  "activation_series_stops.released_at:UPDATE",
+  "activation_series_stops.stopped_at:SELECT",
   "email_opt_outs.user_id:INSERT",
   "email_opt_outs.user_id:SELECT",
   "memberships.created_at:SELECT",
@@ -175,13 +245,13 @@ interface Store {
 }
 
 interface ParityCase {
+  candidates: string[];
   /** What the re-read answers; `null` for a store whose notice still holds. */
   code: string | null;
+  due: Date;
   label: string;
   /** The step of the notice, and how the candidates answer the same store at 10:00. */
   step: "a1" | "a2" | "a3";
-  candidates: string[];
-  due: Date;
   store: Store;
 }
 
@@ -204,7 +274,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
 
   try {
@@ -249,7 +319,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       const url = new URL(adminUrl);
       url.username = role;
       url.password = password;
@@ -379,8 +449,7 @@ async function run() {
         "22023",
         "a null clock is refused"
       );
-      await client.query("BEGIN");
-      try {
+      await inRolledBackTransaction(client, async () => {
         await client.query(
           "INSERT INTO public.activation_series_state (enabled_since) VALUES (now()) ON CONFLICT (id) DO UPDATE SET enabled_since = EXCLUDED.enabled_since, updated_at = now()"
         );
@@ -399,9 +468,7 @@ async function run() {
           "42501",
           "the billing role writes only the instant"
         );
-      } finally {
-        await client.query("ROLLBACK");
-      }
+      });
     });
     tests.push(
       'activation_notice_candidates is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL; of PUBLIC and every polaris_* group only the billing role executes it (and its owner), a tenant login is refused (42501), a limit of 0, 51 or null and a null clock are refused (22023); the state of the series is reached only by the billing role (which writes only the instant) and the owner of the series; that owner reads neither "user".email nor session and writes nothing'
@@ -411,8 +478,7 @@ async function run() {
       work: (client: Client) => Promise<T>
     ): Promise<T> =>
       as(adminUrl, async (client) => {
-        await client.query("BEGIN");
-        try {
+        return await inRolledBackTransaction(client, async () => {
           // the function must not lean on the session's zone: a database in São Paulo would hide a day of UTC
           await client.query("SET LOCAL TimeZone = 'UTC'");
           // the stores and notices other gates left are out of this transaction's answers
@@ -425,9 +491,7 @@ async function run() {
             [at(ten, -30 * DAY)]
           );
           return await work(client);
-        } finally {
-          await client.query("ROLLBACK");
-        }
+        });
       });
     const newPerson = async (client: Client, verified = true) => {
       const userId = randomUUID();
@@ -1688,7 +1752,18 @@ async function run() {
     assert.deepEqual(
       optOutOwnerColumns.rows.map((row) => row.entry).sort(),
       ["user_id:INSERT", "user_id:SELECT"],
-      "the owner of the series inserts and reads only the person, and never updates nor deletes"
+      "the owner of the series inserts and reads only the person, by column, and never updates"
+    );
+    const ownerTablePrivileges = await owner.pool.query<{ entry: string }>(
+      `SELECT t.table_name || ':' || t.privilege_type AS entry
+         FROM information_schema.table_privileges AS t WHERE t.grantee = $1
+        ORDER BY t.table_name || ':' || t.privilege_type COLLATE "C"`,
+      [NOTICE_OWNER]
+    );
+    assert.deepEqual(
+      ownerTablePrivileges.rows.map((row) => row.entry),
+      ["activation_email_suppressions:DELETE", "email_opt_outs:DELETE"],
+      "the table privileges of the owner of the series are the DELETE of email_opt_outs, which turns the tips back on, and the DELETE of the suppressions, which the re-keying needs"
     );
     const optOutAclRoles = await owner.pool.query<{ role: string }>(
       `SELECT DISTINCT a.grantee::regrole::text AS role
@@ -1730,10 +1805,11 @@ async function run() {
       optOutPolicies.rows.map((row) => row.entry).sort(),
       [
         `email_opt_outs_billing_runtime_select:SELECT:${BILLING_RUNTIME}`,
+        `email_opt_outs_owner_delete:DELETE:${NOTICE_OWNER}`,
         `email_opt_outs_owner_insert:INSERT:${NOTICE_OWNER}`,
         `email_opt_outs_owner_select:SELECT:${NOTICE_OWNER}`,
       ],
-      "the policies of email_opt_outs: the owner's insert of 0129 and the two reads of 0124 (the billing one with no grant behind it)"
+      "the policies of email_opt_outs: the owner's delete of 0134, its insert of 0129 and the two reads of 0124 (the billing one with no grant behind it)"
     );
     await as(billingUrl, async (client) => {
       await setLoginRole(client, BILLING_RUNTIME, "session");
@@ -1864,6 +1940,382 @@ async function run() {
     });
     tests.push(
       "activation_record_opt_out called by the billing runtime: two calls are one row; a repeat keeps the first instant; a person that does not exist and a null person leave no row, raise nothing and leave the caller's transaction usable; the answer (columns and value) is the same for a new person, a repeat, an earlier opt-out, an unknown person and null"
+    );
+
+    // 11. the preference for the session (migration 0134)
+    for (const preferenceFunction of PREFERENCE_FUNCTIONS) {
+      const preferenceDefinition = await owner.pool.query<{
+        config: string[] | null;
+        definer: boolean;
+        owner: string;
+        returns: string;
+        set: boolean;
+        source: string;
+        volatility: string;
+      }>(
+        `SELECT p.prosecdef AS definer, p.proconfig AS config, p.proowner::regrole::text AS owner, p.prosrc AS source,
+                p.provolatile::text AS volatility, p.prorettype::regtype::text AS returns, p.proretset AS set
+           FROM pg_catalog.pg_proc AS p WHERE p.oid = $1::regprocedure`,
+        [preferenceFunction.signature]
+      );
+      const [row] = preferenceDefinition.rows;
+      assert.ok(row, `${preferenceFunction.signature} exists`);
+      assert.equal(
+        row.definer,
+        true,
+        `${preferenceFunction.signature}: SECURITY DEFINER`
+      );
+      assert.equal(
+        row.owner,
+        NOTICE_OWNER,
+        `${preferenceFunction.signature}: its owner`
+      );
+      assert.deepEqual(row.config, ["search_path=pg_catalog, public, pg_temp"]);
+      assert.doesNotMatch(row.source, DYNAMIC_SQL, "no dynamic SQL");
+      assert.doesNotMatch(
+        row.source,
+        USER_TABLE,
+        `${preferenceFunction.signature} never reads "user": it works for an account older than the 14 days the owner sees there`
+      );
+      assert.equal(row.volatility, preferenceFunction.volatility);
+      assert.equal(row.returns, "jsonb");
+      assert.equal(row.set, false);
+      const reach = await owner.pool.query<{ role: string }>(
+        `SELECT r.role FROM (
+           SELECT 'public' AS role
+           UNION ALL SELECT rolname::text FROM pg_catalog.pg_roles WHERE rolname LIKE 'polaris\\_%' AND NOT rolcanlogin
+         ) AS r
+        WHERE pg_catalog.has_function_privilege(r.role, $1, 'EXECUTE')`,
+        [preferenceFunction.signature]
+      );
+      assert.deepEqual(
+        reach.rows.map((entry) => entry.role).sort(),
+        [NOTICE_OWNER, runtimeRole].sort(),
+        `${preferenceFunction.signature}: of PUBLIC and every polaris_* group only the tenant runtime executes it (and its owner)`
+      );
+      const acl = await owner.pool.query<{ role: string }>(
+        `SELECT DISTINCT a.grantee::regrole::text AS role
+           FROM pg_catalog.pg_proc AS p, pg_catalog.aclexplode(p.proacl) AS a
+          WHERE p.oid = $1::regprocedure`,
+        [preferenceFunction.signature]
+      );
+      assert.deepEqual(
+        acl.rows.map((entry) => entry.role).sort(),
+        [NOTICE_OWNER, runtimeRole].sort(),
+        `${preferenceFunction.signature}: its ACL names only its owner and the tenant runtime`
+      );
+      const billingReach = await owner.pool.query<{ billing: boolean }>(
+        "SELECT pg_catalog.has_function_privilege($1, $2, 'EXECUTE') AS billing",
+        [BILLING_RUNTIME, preferenceFunction.signature]
+      );
+      assert.deepEqual(billingReach.rows, [{ billing: false }]);
+    }
+    const billingFunctions = await owner.pool.query<{ signature: string }>(
+      `SELECT p.oid::regprocedure::text AS signature FROM pg_catalog.pg_proc AS p
+        WHERE p.proowner = $1::regrole AND pg_catalog.has_function_privilege($2, p.oid, 'EXECUTE')
+        ORDER BY p.oid::regprocedure::text COLLATE "C"`,
+      [NOTICE_OWNER, BILLING_RUNTIME]
+    );
+    assert.deepEqual(
+      billingFunctions.rows.map((row) => row.signature),
+      [
+        "activation_address_suppressed(bytea,text,bytea,text,timestamp with time zone)",
+        "activation_notice_candidates(timestamp with time zone,integer)",
+        "activation_notice_still_owed(text,uuid,timestamp with time zone)",
+        "activation_record_email_event(text,text,text,bytea[])",
+        "activation_record_opt_out(text)",
+      ],
+      "the billing runtime keeps the candidates, the re-read, the opt-out and the two functions of the suppression, and gets nothing of the preference"
+    );
+    await as(tenantUrl, async (client) => {
+      await setLoginRole(client, runtimeRole, "session");
+      const unknown = `gate-unknown-${randomUUID()}`;
+      const read = await client.query<{ preference: unknown }>(
+        ACTIVATION_PREFERENCE_STATEMENT,
+        [unknown]
+      );
+      assert.deepEqual(
+        parseActivationPreference(read.rows[0]?.preference),
+        { sent: 0, tips: true },
+        "a tenant login reads the state of a person that does not exist: tips on, nothing sent"
+      );
+      const off = await client.query<{ preference: unknown }>(
+        ACTIVATION_SET_TIPS_STATEMENT,
+        [unknown, false]
+      );
+      assert.deepEqual(
+        parseActivationPreference(off.rows[0]?.preference),
+        { sent: 0, tips: true },
+        "turning the tips off for a person that does not exist records nothing and answers the same state"
+      );
+      await expectSqlState(
+        () => client.query(ACTIVATION_PREFERENCE_STATEMENT, [null]),
+        "22023",
+        "a null person is refused by the read"
+      );
+      await expectSqlState(
+        () => client.query(ACTIVATION_SET_TIPS_STATEMENT, [null, true]),
+        "22023",
+        "a null person is refused by the write"
+      );
+      await expectSqlState(
+        () => client.query(ACTIVATION_SET_TIPS_STATEMENT, [unknown, null]),
+        "22023",
+        "a null switch is refused"
+      );
+      await expectSqlState(
+        () =>
+          client.query(ACTIVATION_SET_TIPS_STATEMENT, [
+            "pessoa@malformada",
+            false,
+          ]),
+        "23514",
+        "a malformed person is refused by the table's check: only the foreign key is swallowed"
+      );
+      for (const statement of [
+        "SELECT count(*) FROM public.email_opt_outs",
+        "DELETE FROM public.email_opt_outs WHERE false",
+        "INSERT INTO public.email_opt_outs (user_id) VALUES ('x')",
+      ]) {
+        await expectSqlState(
+          () => client.query(statement),
+          "42501",
+          `the tenant login is refused a direct statement on email_opt_outs: ${statement}`
+        );
+      }
+    });
+    for (const [url, role] of [
+      [billingUrl, BILLING_RUNTIME],
+      [authUrl, AUTH_RUNTIME],
+    ] as const) {
+      await as(url, async (client) => {
+        await setLoginRole(client, role, "session");
+        await expectSqlState(
+          () => client.query(ACTIVATION_PREFERENCE_STATEMENT, [randomUUID()]),
+          "42501",
+          `${role} does not execute the read of the preference`
+        );
+        await expectSqlState(
+          () =>
+            client.query(ACTIVATION_SET_TIPS_STATEMENT, [randomUUID(), false]),
+          "42501",
+          `${role} does not execute the write of the preference`
+        );
+      });
+    }
+    tests.push(
+      'AC-8b.6a: activation_email_preference and activation_set_tips are SECURITY DEFINER of polaris_activation_notice_owner, with search_path pg_catalog, public, pg_temp, no dynamic SQL, no mention of "user", one jsonb each (stable the read, volatile the write); has_function_privilege role by role: of PUBLIC and every polaris_* group only the tenant runtime executes each (and its owner), their ACL names no one else, and the billing runtime keeps exactly the candidates, the re-read and the opt-out; the owner of the series holds the DELETE of email_opt_outs as its one table privilege and owns exactly five functions; a tenant login calls both for a person that does not exist (tips on, nothing sent, no row), gets 22023 for a null person or switch and 23514 for a malformed person, and is refused every direct statement on the table (42501); a billing and an authentication login are refused both functions (42501)'
+    );
+
+    await scenario(async (client) => {
+      const asTenant = <T>(work: () => Promise<T>) =>
+        withGateRole(client, runtimeRole, work);
+      const preferenceOf = (userId: string) =>
+        asTenant(async () =>
+          parseActivationPreference(
+            (
+              await client.query<{ preference: unknown }>(
+                ACTIVATION_PREFERENCE_STATEMENT,
+                [userId]
+              )
+            ).rows[0]?.preference
+          )
+        );
+      const setTips = (userId: string, on: boolean) =>
+        asTenant(async () =>
+          parseActivationPreference(
+            (
+              await client.query<{ preference: unknown }>(
+                ACTIVATION_SET_TIPS_STATEMENT,
+                [userId, on]
+              )
+            ).rows[0]?.preference
+          )
+        );
+      const optOutAt = async (userId: string) =>
+        (
+          await client.query<{ opted_out_at: Date }>(
+            "SELECT opted_out_at FROM public.email_opt_outs WHERE user_id = $1",
+            [userId]
+          )
+        ).rows.map((row) => row.opted_out_at.getTime());
+      const recordByPage = (userId: string) =>
+        withGateRole(client, BILLING_RUNTIME, () =>
+          client.query("SELECT public.activation_record_opt_out($1)", [userId])
+        );
+
+      // two accounts: each one's read and write touch only its own rows
+      const accountA = await newStore(client, {
+        createdAt: at(ten, -30 * HOUR),
+      });
+      const accountASecond = await newStore(client, {
+        createdAt: at(ten, -28 * HOUR),
+        owner: accountA.userId,
+      });
+      const accountB = await newStore(client, {
+        createdAt: at(ten, -29 * HOUR),
+      });
+      await seedNotice(client, accountA, "a1", "sent", at(ten, -20 * HOUR));
+      await seedNotice(
+        client,
+        accountASecond,
+        "a2",
+        "sent",
+        at(ten, -10 * HOUR)
+      );
+      await seedNotice(client, accountA, "a3", "skipped", at(ten, -5 * HOUR));
+      await seedNotice(client, accountB, "a1", "sent", at(ten, -20 * HOUR));
+      await seedNotice(client, accountB, "a2", "failed", at(ten, -10 * HOUR));
+      assert.deepEqual(
+        await preferenceOf(accountA.userId),
+        { sent: 2, tips: true },
+        "A: tips on, the two sent (one in each store) count and the skipped does not"
+      );
+      assert.deepEqual(
+        await preferenceOf(accountB.userId),
+        { sent: 1, tips: true },
+        "B: the sent counts and the failed does not"
+      );
+      const bFirst = at(databaseNow, -DAY);
+      await client.query(
+        "INSERT INTO public.email_opt_outs (user_id, opted_out_at) VALUES ($1, $2)",
+        [accountB.userId, bFirst]
+      );
+      assert.deepEqual(
+        await setTips(accountA.userId, false),
+        { sent: 2, tips: false },
+        "A turns the tips off and gets the state after"
+      );
+      assert.deepEqual(
+        await preferenceOf(accountB.userId),
+        { sent: 1, tips: false },
+        "B was already off and is untouched by A"
+      );
+      assert.deepEqual(await optOutAt(accountB.userId), [bFirst.getTime()]);
+      const aFirst = await optOutAt(accountA.userId);
+      assert.equal(aFirst.length, 1);
+      assert.deepEqual(
+        await setTips(accountA.userId, false),
+        { sent: 2, tips: false },
+        "turning off twice is the same answer"
+      );
+      assert.deepEqual(
+        await optOutAt(accountA.userId),
+        aFirst,
+        "a repeat keeps the first instant"
+      );
+      assert.deepEqual(
+        await setTips(accountB.userId, true),
+        { sent: 1, tips: true },
+        "B turns the tips on"
+      );
+      assert.deepEqual(await optOutAt(accountB.userId), []);
+      assert.deepEqual(
+        await preferenceOf(accountA.userId),
+        { sent: 2, tips: false },
+        "A stays off when B turns on"
+      );
+      assert.deepEqual(
+        await setTips(accountB.userId, true),
+        { sent: 1, tips: true },
+        "turning on twice is the same answer"
+      );
+      assert.deepEqual(await setTips(accountA.userId, true), {
+        sent: 2,
+        tips: true,
+      });
+      assert.deepEqual(await optOutAt(accountA.userId), []);
+
+      // the two doors tell one story: the page of 0129 writes, the read of 0134 says so, and the other way round
+      await recordByPage(accountB.userId);
+      assert.deepEqual(
+        await preferenceOf(accountB.userId),
+        { sent: 1, tips: false },
+        "off through the page of the e-mail, the session reads tips: false"
+      );
+      assert.deepEqual(await setTips(accountB.userId, true), {
+        sent: 1,
+        tips: true,
+      });
+      assert.deepEqual(
+        await optOutAt(accountB.userId),
+        [],
+        "on through the session removes the row the page wrote"
+      );
+
+      // turning on through the new function brings the person back into the candidates
+      const person = await newStore(client, { createdAt: at(ten, -30 * HOUR) });
+      const personSecond = await newStore(client, {
+        createdAt: at(ten, -28 * HOUR),
+        owner: person.userId,
+      });
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        ["a1:due"],
+        "before anything, the person's first store is a candidate"
+      );
+      await recordByPage(person.userId);
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        [],
+        "off through the page: no candidate"
+      );
+      assert.deepEqual(
+        (await preferenceOf(person.userId)).tips,
+        false,
+        "and the read says off"
+      );
+      await setTips(person.userId, true);
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        ["a1:due"],
+        "on through the session: the person is a candidate again"
+      );
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), personSecond),
+        [],
+        "and only the first store, as before"
+      );
+      await setTips(person.userId, false);
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        [],
+        "off through the session: no candidate"
+      );
+
+      // an account whose only store is out of the 14 days the owner sees on "user" still works
+      const oldStore = await newStore(client, {
+        createdAt: at(databaseNow, -40 * DAY),
+      });
+      await seedNotice(
+        client,
+        oldStore,
+        "a1",
+        "sent",
+        at(databaseNow, -39 * DAY)
+      );
+      assert.deepEqual(
+        await preferenceOf(oldStore.userId),
+        { sent: 1, tips: true },
+        "an old account is read, with its notice"
+      );
+      assert.deepEqual(
+        await setTips(oldStore.userId, false),
+        { sent: 1, tips: false },
+        "and written"
+      );
+      assert.deepEqual(
+        (await optOutAt(oldStore.userId)).length,
+        1,
+        "its row exists"
+      );
+      assert.deepEqual(await setTips(oldStore.userId, true), {
+        sent: 1,
+        tips: true,
+      });
+    });
+    tests.push(
+      "AC-8b.1 and AC-8b.6a: with two accounts, A's read and write leave B's row, count and first instant as they were, in either direction; the sent count is the person's, in every store, and counts only sent (not skipped nor failed); turning off twice keeps the first instant and turning on twice answers the same; an opt-out recorded through the page of 0129 reads tips: false and turning on through the session deletes that row; turning on makes the person's first store a candidate again (a2 of its second store still is not) and turning off takes it out; an account with only a store older than 14 days is read and written"
     );
 
     // AC-8a.4: once recorded, no notice of the person is born, in any of their stores, with the switch on or off;
@@ -2247,14 +2699,14 @@ async function run() {
       {
         args: stillOwedFn.args,
         modes: stillOwedFn.modes,
-        returns: stillOwedFn.returns,
         retset: stillOwedFn.retset,
+        returns: stillOwedFn.returns,
       },
       {
         args: ["p_organization", "p_notice", "p_now"],
         modes: null,
-        returns: "jsonb",
         retset: false,
+        returns: "jsonb",
       },
       "the re-read takes three inputs and answers one jsonb, no column of its own"
     );
@@ -2314,12 +2766,8 @@ async function run() {
     );
     assert.deepEqual(
       ownedBySeries.rows.map((row) => row.signature),
-      [
-        "activation_notice_candidates(timestamp with time zone,integer)",
-        "activation_notice_still_owed(text,uuid,timestamp with time zone)",
-        "activation_record_opt_out(text)",
-      ],
-      "the owner of the series owns exactly its three functions"
+      OWNER_FUNCTIONS,
+      "the owner of the series owns exactly its eight functions"
     );
     for (const [url, role] of [
       [tenantUrl, runtimeRole],
@@ -2358,7 +2806,7 @@ async function run() {
       );
     });
     tests.push(
-      "AC-7c.12: activation_notice_still_owed(text, uuid, timestamptz) is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL, takes three inputs and returns one jsonb (no set, no column of its own); of PUBLIC and every polaris_* group only the billing runtime executes it (and its owner), and its ACL names no one else; a tenant and an authentication login are refused (42501), a billing login gets null for an unknown notice and 22023 for a null clock, and is refused a SELECT of organizations.name (42501); the owner of the series owns exactly the candidates, the re-read and the opt-out; the columns of activation_notice_candidates are exactly organization_id, user_id, step, due_at, outcome and truncated (pg_proc), so the candidates never answer the name of the store"
+      "AC-7c.12: activation_notice_still_owed(text, uuid, timestamptz) is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL, takes three inputs and returns one jsonb (no set, no column of its own); of PUBLIC and every polaris_* group only the billing runtime executes it (and its owner), and its ACL names no one else; a tenant and an authentication login are refused (42501), a billing login gets null for an unknown notice and 22023 for a null clock, and is refused a SELECT of organizations.name (42501); the owner of the series owns exactly the candidates, the re-read, the opt-out and the two functions of the preference; the columns of activation_notice_candidates are exactly organization_id, user_id, step, due_at, outcome and truncated (pg_proc), so the candidates never answer the name of the store"
     );
 
     const nameReaders = await owner.pool.query<{ role: string }>(
@@ -2405,11 +2853,11 @@ async function run() {
     );
     assert.equal(
       NOTICE_OWNER_COLUMNS.filter((entry) => entry.endsWith(":SELECT")).length,
-      35,
-      "35 columns read"
+      47,
+      "47 columns read"
     );
     tests.push(
-      `AC-7c.12 and P-1: has_column_privilege on organizations.name is true for polaris_activation_notice_owner and false for polaris_activation_owner (the measure), polaris_activation_recipient_owner and polaris_billing_runtime; of the polaris_* groups exactly ${ORGANIZATION_NAME_READERS.join(", ")} read it; the owner of the series holds exactly 35 SELECT columns and the INSERT of email_opt_outs.user_id`
+      `AC-7c.12 and P-1: has_column_privilege on organizations.name is true for polaris_activation_notice_owner and false for polaris_activation_owner (the measure), polaris_activation_recipient_owner and polaris_billing_runtime; of the polaris_* groups exactly ${ORGANIZATION_NAME_READERS.join(", ")} read it; the owner of the series holds exactly 47 SELECT columns (35 of the stop rules, 12 of the suppressions, the stop, its releases and the inbox) and the INSERT of email_opt_outs.user_id`
     );
 
     const transactionNow = async (client: Client) => {
@@ -2663,6 +3111,7 @@ async function run() {
       }
 
       const answers: unknown[] = [];
+      const owedNotices: string[] = [];
       const codesSeen = new Set<string>();
       for (const parity of cases) {
         const noticeId = await owe(
@@ -2678,6 +3127,7 @@ async function run() {
           noticeId
         );
         answers.push(answer);
+        owedNotices.push(noticeId);
         if (parity.code === null) {
           assert.deepEqual(
             Object.keys(answer as object).sort(),
@@ -2694,6 +3144,29 @@ async function run() {
           codesSeen.add(parity.code);
         }
       }
+      // a stop after a complaint (migration 0135): the candidates answer nothing and the re-read of every notice of
+      // every case, the eligible and the already stopped by a rule of the store alike, answers series_stopped first
+      await client.query(
+        "INSERT INTO public.activation_series_stops (reason) VALUES ('complaint')"
+      );
+      assert.deepEqual(
+        await candidates(client, ten),
+        [],
+        "with a stop standing the candidates answer nothing"
+      );
+      for (const [index, parity] of cases.entries()) {
+        assert.deepEqual(
+          await stillOwed(
+            client,
+            txNow,
+            parity.store.organizationId,
+            String(owedNotices[index])
+          ),
+          { skip: "series_stopped" },
+          `${parity.label}: series_stopped comes before every other rule`
+        );
+      }
+      codesSeen.add("series_stopped");
       assert.deepEqual(
         [...codesSeen].sort(),
         [...ACTIVATION_NOTICE_REREAD_REASONS].sort(),
@@ -2729,7 +3202,7 @@ async function run() {
       const txNow = await transactionNow(client);
       const a3Created = at(txNow, -10 * DAY - HOUR);
       // a store that breaks every rule from one on answers that one: the order of the domain, rule by rule
-      const chainCodes = ACTIVATION_NOTICE_REREAD_REASONS.slice(2);
+      const chainCodes = ACTIVATION_NOTICE_REREAD_REASONS.slice(3);
       const chain: [string, Store, string][] = [];
       for (const [index, code] of chainCodes.entries()) {
         const store = await breakingStore(
@@ -2785,6 +3258,14 @@ async function run() {
         await stillOwed(client, ahead, old.organizationId, oldNotice),
         { skip: "expired" },
         "expired comes before series_window_passed"
+      );
+      await client.query(
+        "INSERT INTO public.activation_series_stops (reason) VALUES ('complaint')"
+      );
+      assert.deepEqual(
+        await stillOwed(client, ahead, old.organizationId, oldNotice),
+        { skip: "series_stopped" },
+        "series_stopped comes before expired, the first of the other codes"
       );
     });
 
@@ -2902,6 +3383,1364 @@ async function run() {
       "AC-7c.13 and AC-7c.1 (database side): one store per rule, each also asked to the candidates at 10:00 of São Paulo, which leave it out (or answer it expired) where the re-read of its owed notice answers the code: expired, series_window_passed (a store past 14 days of the database's clock whose a2 is still within 3 days), activated, opted_out, billing_relation (trial used, Pro), store_not_active (suspended, closed), privacy_request_open, internal_store, not_first_owner (second store of the person, a co-owner who is not the founder), email_not_verified, state_changed (an a1 once the store has a product, an a3 whose a2 was skipped); the controls the candidates answer due (a1 of the eligible store, a store whose case is only a support case, a2 with a product, a3 after the a2 went out) get {step, hasProduct, store} with the raw name, and only they get the name; the codes answered are exactly ACTIVATION_NOTICE_REREAD_REASONS of @polaris/domain/activation/notices, and a store that breaks every rule from activated on answers that one, in the domain's order, and a store of 14 days less 2 minutes that breaks them all answers activated at the database's clock, series_window_passed 5 minutes ahead and expired once its notice is 3 days past its trigger; no answer carries an address or a person; null for a notice sent, failed or skipped, asked for another store, unknown, or without store or notice; the caller's clock counts within 10 minutes of the database's (6 minutes ahead expires a notice that the database's clock still owes) and is replaced farther (11 minutes and 20 days ahead, 20 days behind)"
     );
 
+    // 12. the stop of the series, the inbox and the suppression (migration 0135, AC-9.2, AC-9.3, AC-9.4, AC-9.5, AC-9.5b,
+    // AC-9.6, AC-9.8 and AC-9.9)
+    const RECORD_EVENT_FUNCTION =
+      "public.activation_record_email_event(text, text, text, bytea[])";
+    const SUPPRESSED_FUNCTION =
+      "public.activation_address_suppressed(bytea, text, bytea, text, timestamptz)";
+    const RELEASE_FUNCTION = "public.activation_release_stop(uuid, text)";
+    const SERIES_FUNCTIONS = [
+      RECORD_EVENT_FUNCTION,
+      SUPPRESSED_FUNCTION,
+      RELEASE_FUNCTION,
+    ] as const;
+    const STOP_TABLE_COLUMN = {
+      activation_email_events: "kind",
+      activation_email_suppressions: "reason",
+      activation_series_stop_releases: "note",
+      activation_series_stops: "reason",
+    } as const;
+    const KEY_NOW = "0000aaaa";
+    const KEY_OLD = "0000bbbb";
+    const NOTE = "released after the cause was read in the panel";
+    const hmacOf = () => randomBytes(32);
+    const hex = (bytes: Buffer) => bytes.toString("hex");
+    const eventIdOf = () => `gate-${randomUUID()}`;
+    const monthsAgo = (months: number) =>
+      `((now() AT TIME ZONE 'UTC') - interval '${months} months') AT TIME ZONE 'UTC'`;
+    const refuses = async (
+      client: Client,
+      state: string,
+      label: string,
+      work: () => Promise<unknown>
+    ) => {
+      await client.query("SAVEPOINT refusal");
+      try {
+        await expectSqlState(work, state, label);
+      } finally {
+        await client.query("ROLLBACK TO SAVEPOINT refusal");
+      }
+    };
+    const recordEvent = (
+      client: Client,
+      eventId: string | null,
+      kind: string | null,
+      keyId: string | null,
+      hmacs: (string | null)[] | null
+    ) =>
+      withGateRole(client, BILLING_RUNTIME, async () => {
+        const answer = await client.query<{ outcome: unknown }>(
+          ACTIVATION_EMAIL_EVENT_STATEMENT,
+          [eventId, kind, keyId, hmacs]
+        );
+        return answer.rows[0]?.outcome;
+      });
+    const askSuppressed = (
+      client: Client,
+      current: string | null,
+      currentKey: string | null,
+      previous: string | null,
+      previousKey: string | null,
+      now: Date | null
+    ) =>
+      withGateRole(client, BILLING_RUNTIME, async () => {
+        const answer = await client.query<{ suppressed: boolean }>(
+          ACTIVATION_ADDRESS_SUPPRESSED_STATEMENT,
+          [current, currentKey, previous, previousKey, now?.toISOString()]
+        );
+        return answer.rows[0]?.suppressed;
+      });
+    const activeStops = async (client: Client) =>
+      Number(
+        (
+          await client.query<{ n: string }>(
+            "SELECT count(*) AS n FROM public.activation_series_stops WHERE released_at IS NULL"
+          )
+        ).rows[0]?.n
+      );
+    const activeStopId = async (client: Client) =>
+      String(
+        (
+          await client.query<{ id: string }>(
+            "SELECT id FROM public.activation_series_stops WHERE released_at IS NULL"
+          )
+        ).rows[0]?.id
+      );
+    const suppressionRows = async (client: Client, hmac: Buffer) =>
+      (
+        await client.query<{
+          key_id: string | null;
+          reason: string;
+          recorded_at: Date;
+        }>(
+          "SELECT reason, key_id, recorded_at FROM public.activation_email_suppressions WHERE address_hmac = $1 ORDER BY reason",
+          [hmac]
+        )
+      ).rows;
+    const seedSuppression = (
+      client: Client,
+      hmac: Buffer,
+      reason: "bounce" | "complaint",
+      keyId: string | null,
+      recordedAt: string
+    ) =>
+      client.query(
+        `INSERT INTO public.activation_email_suppressions (address_hmac, reason, key_id, recorded_at)
+         VALUES ($1, $2, $3, ${recordedAt})`,
+        [hmac, reason, keyId]
+      );
+    const openStop = async (client: Client) => {
+      await recordEvent(client, eventIdOf(), "complaint", KEY_NOW, [
+        hex(hmacOf()),
+      ]);
+      return activeStopId(client);
+    };
+    const release = (
+      client: Client,
+      stopId: string | null,
+      note: string | null
+    ) =>
+      withGateRole(client, NOTICE_OWNER, async () => {
+        const answer = await client.query<{ released: boolean }>(
+          "SELECT public.activation_release_stop($1::uuid, $2) AS released",
+          [stopId, note]
+        );
+        return answer.rows[0]?.released;
+      });
+    const asOwnerOfSeries = <T>(client: Client, work: () => Promise<T>) =>
+      withGateRole(client, NOTICE_OWNER, work);
+
+    // the catalog: kinds, owner, fixed search_path, no dynamic SQL, and who executes what
+    const stopFunctions = await owner.pool.query<{
+      config: string[];
+      definer: boolean;
+      owner: string;
+      result: string;
+      signature: string;
+      source: string;
+      volatility: string;
+    }>(
+      `SELECT p.oid::regprocedure::text AS signature, p.prosecdef AS definer, p.proowner::regrole::text AS owner,
+              p.provolatile AS volatility, p.proconfig AS config, p.prosrc AS source, p.prorettype::regtype::text AS result
+         FROM pg_catalog.pg_proc AS p WHERE p.oid = ANY ($1::regprocedure[])
+        ORDER BY p.oid::regprocedure::text COLLATE "C"`,
+      [[...SERIES_FUNCTIONS]]
+    );
+    assert.deepEqual(
+      stopFunctions.rows.map((row) => [row.signature, row.result]),
+      [
+        [
+          "activation_address_suppressed(bytea,text,bytea,text,timestamp with time zone)",
+          "boolean",
+        ],
+        ["activation_record_email_event(text,text,text,bytea[])", "jsonb"],
+        ["activation_release_stop(uuid,text)", "boolean"],
+      ],
+      "the three functions of 0135 and what each answers"
+    );
+    for (const row of stopFunctions.rows) {
+      assert.equal(row.definer, true, `${row.signature}: SECURITY DEFINER`);
+      assert.equal(row.owner, NOTICE_OWNER, `${row.signature}: owner`);
+      assert.equal(row.volatility, "v", `${row.signature}: volatile`);
+      assert.deepEqual(
+        row.config,
+        ["search_path=pg_catalog, public, pg_temp"],
+        `${row.signature}: fixed search_path ending in pg_temp`
+      );
+      assert.doesNotMatch(
+        row.source,
+        DYNAMIC_SQL,
+        `${row.signature}: no dynamic SQL`
+      );
+    }
+    for (const signature of SERIES_FUNCTIONS) {
+      const reach = await owner.pool.query<{ role: string; run: boolean }>(
+        `SELECT r.role, pg_catalog.has_function_privilege(r.role, $1, 'EXECUTE') AS run
+           FROM (SELECT 'public'::text AS role
+                  UNION ALL
+                 SELECT rolname::text FROM pg_catalog.pg_roles
+                  WHERE rolname LIKE 'polaris\\_%' AND NOT rolcanlogin) AS r
+          ORDER BY r.role COLLATE "C"`,
+        [signature]
+      );
+      const expected =
+        signature === RELEASE_FUNCTION
+          ? [NOTICE_OWNER]
+          : [NOTICE_OWNER, BILLING_RUNTIME];
+      assert.deepEqual(
+        reach.rows.filter((row) => row.run).map((row) => row.role),
+        expected,
+        `${signature}: of PUBLIC and every polaris_* group only the expected roles execute it`
+      );
+      const acl = await owner.pool.query<{ grantee: string }>(
+        `SELECT DISTINCT a.grantee::regrole::text AS grantee
+           FROM pg_catalog.pg_proc AS p, pg_catalog.aclexplode(p.proacl) AS a
+          WHERE p.oid = $1::regprocedure ORDER BY 1`,
+        [signature]
+      );
+      assert.deepEqual(
+        acl.rows.map((row) => row.grantee).sort(),
+        [...expected].sort(),
+        `${signature}: its ACL names no one else`
+      );
+    }
+    const membersOfOwner = await owner.pool.query(
+      `SELECT 1 FROM pg_catalog.pg_auth_members AS m
+        WHERE m.roleid = $1::regrole AND (m.set_option OR m.inherit_option)`,
+      [NOTICE_OWNER]
+    );
+    assert.equal(
+      membersOfOwner.rowCount,
+      0,
+      "no role, the owner of the database included, can SET or INHERIT the owner of the series"
+    );
+
+    // the tables: forced row security, no runtime, the guards `ALWAYS`
+    for (const table of Object.keys(
+      STOP_TABLE_COLUMN
+    ) as (keyof typeof STOP_TABLE_COLUMN)[]) {
+      const flags = await owner.pool.query<{ force: boolean; rls: boolean }>(
+        "SELECT relrowsecurity AS rls, relforcerowsecurity AS force FROM pg_catalog.pg_class WHERE oid = $1::regclass",
+        [`public.${table}`]
+      );
+      assert.deepEqual(
+        flags.rows,
+        [{ force: true, rls: true }],
+        `${table}: row security enabled and forced`
+      );
+      const reaching = await owner.pool.query<{ role: string }>(
+        `SELECT r.role FROM (SELECT 'public'::text AS role
+                              UNION ALL
+                             SELECT rolname::text FROM pg_catalog.pg_roles
+                              WHERE rolname LIKE 'polaris\\_%' AND NOT rolcanlogin AND rolname <> $2) AS r
+          WHERE pg_catalog.has_table_privilege(r.role, $1, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+             OR pg_catalog.has_any_column_privilege(r.role, $1, 'SELECT, INSERT, UPDATE, REFERENCES')`,
+        [`public.${table}`, NOTICE_OWNER]
+      );
+      assert.deepEqual(
+        reaching.rows,
+        [],
+        `${table}: no PUBLIC nor polaris_* group but the owner of the series reaches it, the billing runtime included`
+      );
+      const aclRoles = await owner.pool.query<{ role: string }>(
+        `SELECT DISTINCT a.grantee::regrole::text AS role
+           FROM pg_catalog.pg_class AS c, pg_catalog.aclexplode(c.relacl) AS a
+          WHERE c.oid = $1::regclass AND a.grantee <> c.relowner
+          UNION
+         SELECT DISTINCT a.grantee::regrole::text
+           FROM pg_catalog.pg_attribute AS t, pg_catalog.aclexplode(t.attacl) AS a
+          WHERE t.attrelid = $1::regclass AND t.attacl IS NOT NULL`,
+        [`public.${table}`]
+      );
+      assert.deepEqual(
+        aclRoles.rows.map((row) => row.role),
+        [NOTICE_OWNER],
+        `${table}: its ACL names only the owner of the series`
+      );
+    }
+    const stopTriggers = await owner.pool.query<{
+      enabled: string;
+      name: string;
+      table: string;
+    }>(
+      `SELECT g.tgname AS name, g.tgrelid::regclass::text AS table, g.tgenabled AS enabled
+         FROM pg_catalog.pg_trigger AS g
+        WHERE g.tgrelid = ANY ($1::regclass[]) AND NOT g.tgisinternal
+        ORDER BY g.tgname COLLATE "C"`,
+      [
+        [
+          "public.activation_series_stops",
+          "public.activation_series_stop_releases",
+        ],
+      ]
+    );
+    assert.deepEqual(
+      stopTriggers.rows.map((row) => `${row.name}:${row.table}:${row.enabled}`),
+      [
+        "activation_series_stop_releases_no_change:activation_series_stop_releases:A",
+        "activation_series_stop_releases_no_truncate:activation_series_stop_releases:A",
+        "activation_series_stops_guard:activation_series_stops:A",
+        "activation_series_stops_no_delete:activation_series_stops:A",
+        "activation_series_stops_no_truncate:activation_series_stops:A",
+      ],
+      "the stop has its guard, and neither it nor its releases can be deleted or truncated: all ALWAYS triggers"
+    );
+    tests.push(
+      "AC-9.5 and AC-9.5b (catalog): activation_record_email_event, activation_address_suppressed and activation_release_stop are SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL; of PUBLIC and every polaris_* group only the billing runtime executes the first two and only the owner of the series the release (their ACLs name no one else), and no role can SET or INHERIT that owner; the three new tables and the suppressions have row security enabled and forced, are reached by no PUBLIC nor polaris_* group but the owner of the series (the billing runtime has no privilege left on the suppressions, by table or by column) and their ACLs name only it; the guard of the stop and the refusals of its releases are ALWAYS triggers"
+    );
+
+    // AC-9.2: the checks of the tables refuse what the functions never send (no address, no body)
+    await scenario(async (client) => {
+      const stop = await openStop(client);
+      const refusals: [string, string, unknown[]][] = [
+        [
+          "an event id with @",
+          "INSERT INTO public.activation_email_events (event_id, kind) VALUES ($1, 'bounce')",
+          ["a@b.example-id"],
+        ],
+        [
+          "an event id too short",
+          "INSERT INTO public.activation_email_events (event_id, kind) VALUES ($1, 'bounce')",
+          ["short"],
+        ],
+        [
+          "an event kind that is not handled",
+          "INSERT INTO public.activation_email_events (event_id, kind) VALUES ($1, 'delivered')",
+          [eventIdOf()],
+        ],
+        [
+          "a key id in capitals",
+          "INSERT INTO public.activation_email_suppressions (address_hmac, reason, key_id) VALUES (decode(repeat('ab', 32), 'hex'), 'bounce', $1)",
+          ["ABCDEF01"],
+        ],
+        [
+          "a key id that is not 8 characters",
+          "INSERT INTO public.activation_email_suppressions (address_hmac, reason, key_id) VALUES (decode(repeat('ab', 32), 'hex'), 'bounce', $1)",
+          ["abc"],
+        ],
+        [
+          "a note with @",
+          "INSERT INTO public.activation_series_stop_releases (stop_id, note) VALUES ($1, 'released for ana@example.com')",
+          [stop],
+        ],
+        [
+          "a note of 9 characters",
+          "INSERT INTO public.activation_series_stop_releases (stop_id, note) VALUES ($1, '123456789')",
+          [stop],
+        ],
+        [
+          "a note with a control character",
+          "INSERT INTO public.activation_series_stop_releases (stop_id, note) VALUES ($1, E'released\\nfor a reason')",
+          [stop],
+        ],
+        [
+          "a released_by with @",
+          "INSERT INTO public.activation_series_stop_releases (stop_id, note, released_by) VALUES ($1, 'released after reading', 'ana@x')",
+          [stop],
+        ],
+        [
+          "a stop for another reason",
+          "INSERT INTO public.activation_series_stops (reason) VALUES ('bounce')",
+          [],
+        ],
+      ];
+      for (const [label, statement, values] of refusals) {
+        await refuses(client, "23514", `the table refuses ${label}`, () =>
+          client.query(statement, values)
+        );
+      }
+      await refuses(client, "23505", "a second active stop", () =>
+        client.query(
+          "INSERT INTO public.activation_series_stops (reason) VALUES ('complaint')"
+        )
+      );
+    });
+    tests.push(
+      "AC-9.2: the tables refuse an event id with @ or of the wrong length, an event kind other than bounce and complaint, a key id that is not 8 lower-case hexadecimal characters, a note with @, of 9 characters or with a control character, a released_by with @, a stop for another reason (23514), and a second active stop (23505)"
+    );
+
+    // AC-9.2 and AC-9.6: the events, the suppressions and the stop
+    await scenario(async (client) => {
+      const first = hmacOf();
+      const second = hmacOf();
+      const bounceId = eventIdOf();
+      assert.deepEqual(
+        await recordEvent(client, bounceId, "bounce", KEY_NOW, [hex(first)]),
+        { duplicate: false, stopped: false, suppressed: 1 },
+        "a bounce suppresses the address and stops nothing"
+      );
+      assert.equal(await activeStops(client), 0, "a bounce stops no series");
+      assert.deepEqual(
+        await recordEvent(client, bounceId, "bounce", KEY_NOW, [hex(first)]),
+        { duplicate: true },
+        "the same event twice is answered duplicate"
+      );
+      assert.equal(
+        (await suppressionRows(client, first)).length,
+        1,
+        "one suppression for the same event twice"
+      );
+      assert.deepEqual(
+        await recordEvent(client, bounceId, "complaint", KEY_NOW, [
+          hex(second),
+        ]),
+        { duplicate: true },
+        "an event id already received does nothing a second time, whatever it says this time"
+      );
+      assert.deepEqual(
+        await suppressionRows(client, second),
+        [],
+        "nothing was recorded for the repeat"
+      );
+      assert.equal(await activeStops(client), 0, "and no stop was opened");
+      const complaintId = eventIdOf();
+      assert.deepEqual(
+        await recordEvent(client, complaintId, "complaint", KEY_NOW, [
+          hex(second),
+        ]),
+        { duplicate: false, stopped: true, suppressed: 1 },
+        "a complaint suppresses the address and stops the series"
+      );
+      assert.equal(await activeStops(client), 1, "one active stop");
+      assert.deepEqual(
+        (await suppressionRows(client, second)).map((row) => [
+          row.reason,
+          row.key_id,
+        ]),
+        [["complaint", KEY_NOW]],
+        "the suppression of the complaint, with the identifier of its key"
+      );
+      assert.deepEqual(
+        await recordEvent(client, eventIdOf(), "complaint", KEY_NOW, [
+          hex(hmacOf()),
+        ]),
+        { duplicate: false, stopped: false, suppressed: 1 },
+        "a second complaint while a stop stands suppresses but opens no other stop"
+      );
+      assert.equal(await activeStops(client), 1, "still one active stop");
+      const inbox = await client.query<{ n: string }>(
+        "SELECT count(*) AS n FROM public.activation_email_events WHERE event_id = ANY ($1)",
+        [[bounceId, complaintId]]
+      );
+      assert.equal(Number(inbox.rows[0]?.n), 2, "one inbox row per event id");
+      const sameAddress = hmacOf();
+      await recordEvent(client, eventIdOf(), "bounce", KEY_NOW, [
+        hex(sameAddress),
+      ]);
+      await recordEvent(client, eventIdOf(), "complaint", KEY_NOW, [
+        hex(sameAddress),
+      ]);
+      assert.deepEqual(
+        (await suppressionRows(client, sameAddress)).map((row) => row.reason),
+        ["bounce", "complaint"],
+        "the same address, from another account or another event, keeps one row per reason"
+      );
+    });
+    await scenario(async (client) => {
+      assert.deepEqual(
+        await recordEvent(client, eventIdOf(), "complaint", KEY_NOW, []),
+        { duplicate: false, stopped: true, suppressed: 0 },
+        "a complaint whose address cannot be normalized (no HMAC) still stops the series"
+      );
+      assert.equal(await activeStops(client), 1, "an active stop");
+      const none = await client.query<{ n: string }>(
+        "SELECT count(*) AS n FROM public.activation_email_suppressions WHERE key_id = $1",
+        [KEY_NOW]
+      );
+      assert.equal(Number(none.rows[0]?.n), 0, "and no suppression");
+    });
+    await scenario(async (client) => {
+      const good = hex(hmacOf());
+      const cases: [
+        string,
+        string | null,
+        string | null,
+        string | null,
+        (string | null)[] | null,
+      ][] = [
+        ["a null event id", null, "bounce", KEY_NOW, [good]],
+        ["an event id with @", "a@b.example-id", "bounce", KEY_NOW, [good]],
+        ["an event id too short", "short", "bounce", KEY_NOW, [good]],
+        ["a null kind", eventIdOf(), null, KEY_NOW, [good]],
+        [
+          "a kind the series does not record",
+          eventIdOf(),
+          "delivered",
+          KEY_NOW,
+          [good],
+        ],
+        ["a null key id", eventIdOf(), "bounce", null, [good]],
+        ["a key id in capitals", eventIdOf(), "bounce", "ABCDEF01", [good]],
+        [
+          "an HMAC of 31 bytes",
+          eventIdOf(),
+          "bounce",
+          KEY_NOW,
+          [good.slice(2)],
+        ],
+        [
+          "a null HMAC in the list",
+          eventIdOf(),
+          "bounce",
+          KEY_NOW,
+          [good, null],
+        ],
+        [
+          "51 HMACs",
+          eventIdOf(),
+          "bounce",
+          KEY_NOW,
+          Array.from({ length: 51 }, () => hex(hmacOf())),
+        ],
+      ];
+      for (const [label, eventId, kind, keyId, hmacs] of cases) {
+        await refuses(client, "22023", `refused: ${label}`, () =>
+          recordEvent(client, eventId, kind, keyId, hmacs)
+        );
+      }
+      await refuses(client, "22023", "refused: a null list of HMACs", () =>
+        withGateRole(client, BILLING_RUNTIME, () =>
+          client.query(
+            "SELECT public.activation_record_email_event($1, 'bounce', $2, NULL::bytea[])",
+            [eventIdOf(), KEY_NOW]
+          )
+        )
+      );
+      assert.equal(
+        (await client.query("SELECT 1 FROM public.activation_email_events"))
+          .rowCount,
+        0,
+        "a refused call leaves no event in the inbox"
+      );
+      assert.deepEqual(
+        await recordEvent(
+          client,
+          eventIdOf(),
+          "bounce",
+          KEY_NOW,
+          Array.from({ length: 50 }, () => hex(hmacOf()))
+        ),
+        { duplicate: false, stopped: false, suppressed: 50 },
+        "50 HMACs are the most one event records"
+      );
+    });
+    await scenario(async (client) => {
+      const expired = hmacOf();
+      const valid = hmacOf();
+      await seedSuppression(client, expired, "bounce", KEY_OLD, monthsAgo(13));
+      await seedSuppression(client, valid, "bounce", KEY_OLD, monthsAgo(1));
+      const [validBefore] = await suppressionRows(client, valid);
+      const transactionInstant = await transactionNow(client);
+      assert.deepEqual(
+        await recordEvent(client, eventIdOf(), "bounce", KEY_NOW, [
+          hex(expired),
+          hex(valid),
+        ]),
+        { duplicate: false, stopped: false, suppressed: 1 },
+        "a new bounce renews an address whose suppression expired and counts only that one"
+      );
+      const [renewed] = await suppressionRows(client, expired);
+      assert.equal(renewed?.key_id, KEY_NOW, "the renewed row has the new key");
+      assert.equal(
+        renewed?.recorded_at.getTime(),
+        transactionInstant.getTime(),
+        "and the date of the new event"
+      );
+      assert.deepEqual(
+        await suppressionRows(client, valid),
+        [validBefore],
+        "a suppression still in force keeps its date and its key"
+      );
+    });
+    tests.push(
+      "AC-9.2 and AC-9.6: a bounce suppresses the address and stops nothing; a complaint suppresses it and opens one stop, and a second complaint while it stands suppresses and opens no other; the same event id twice (even with another kind or another address) is answered duplicate and changes nothing; the same address keeps one row per reason; a complaint with no HMAC still stops the series; 22023 (and no inbox row) for a null or malformed event id, a kind other than bounce and complaint, a null or malformed key id, a null list, an HMAC of 31 bytes, a null HMAC or 51 of them, with 50 accepted; a bounce renews a suppression that expired and keeps the date and key of one in force"
+    );
+
+    // the privileges of the logins: the billing runtime executes the two, the others none, and nobody the release
+    const otherGroups = [
+      "polaris_catalog_runtime",
+      "polaris_admin_runtime",
+      "polaris_privacy_runtime",
+      "polaris_outbox_runtime",
+    ];
+    const groupLogins: [string, string][] = [
+      [tenantUrl, runtimeRole],
+      [authUrl, AUTH_RUNTIME],
+    ];
+    for (const group of otherGroups) {
+      groupLogins.push([await login(group, "polaris_candidates_stop"), group]);
+    }
+    for (const [url, role] of [
+      ...groupLogins,
+      [billingUrl, BILLING_RUNTIME],
+    ] as const) {
+      await as(url, async (client) => {
+        await setLoginRole(client, role, "session");
+        await expectSqlState(
+          () =>
+            client.query(
+              "SELECT public.activation_release_stop(gen_random_uuid(), 'a note long enough')"
+            ),
+          "42501",
+          `${role} does not execute the release`
+        );
+        if (role !== BILLING_RUNTIME) {
+          await expectSqlState(
+            () =>
+              client.query(
+                "SELECT public.activation_record_email_event('gate-event-000', 'bounce', '0000aaaa', ARRAY[]::bytea[])"
+              ),
+            "42501",
+            `${role} does not record an event`
+          );
+          await expectSqlState(
+            () =>
+              client.query(
+                "SELECT public.activation_address_suppressed(decode(repeat('ab', 32), 'hex'), '0000aaaa', NULL, NULL, now())"
+              ),
+            "42501",
+            `${role} does not check an address`
+          );
+        }
+      });
+    }
+    await as(billingUrl, async (client) => {
+      await setLoginRole(client, BILLING_RUNTIME, "session");
+      for (const table of Object.keys(
+        STOP_TABLE_COLUMN
+      ) as (keyof typeof STOP_TABLE_COLUMN)[]) {
+        const column = STOP_TABLE_COLUMN[table];
+        for (const statement of [
+          `SELECT * FROM public.${table}`,
+          `INSERT INTO public.${table} DEFAULT VALUES`,
+          `UPDATE public.${table} SET ${column} = ${column}`,
+          `DELETE FROM public.${table}`,
+        ]) {
+          await expectSqlState(
+            () => client.query(statement),
+            "42501",
+            `a billing login is refused "${statement}"`
+          );
+        }
+      }
+      assert.deepEqual(
+        (
+          await client.query(
+            "SELECT public.activation_address_suppressed(decode(repeat('ab', 32), 'hex'), '0000aaaa', NULL, NULL, now()) AS s"
+          )
+        ).rows,
+        [{ s: false }],
+        "a billing login checks an address through the function"
+      );
+    });
+    tests.push(
+      "AC-9.5b: a login of each runtime group (tenant, authentication, catalog, Admin, privacy, outbox, billing) is refused the release (42501); of those only the billing login executes the recording of an event and the check of an address, and is refused every direct SELECT, INSERT, UPDATE and DELETE on the suppressions, the stops, their releases and the inbox (42501)"
+    );
+
+    // AC-9.3 and AC-9.4: a stop that stands answers nothing, whatever the switch says
+    await scenario(async (client) => {
+      const store = await newStore(client, { createdAt: at(ten, -26 * HOUR) });
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), store),
+        ["a1:due"],
+        "the store is eligible before the complaint"
+      );
+      const complainer = hmacOf();
+      await recordEvent(client, eventIdOf(), "complaint", KEY_NOW, [
+        hex(complainer),
+      ]);
+      const stopId = await activeStopId(client);
+      // a second store whose a1 is already recorded as owed: the re-read has a notice to answer for
+      const recorded = await newStore(client, {
+        createdAt: at(ten, -26 * HOUR),
+      });
+      const noticeId = await owe(client, recorded, "a1", at(ten, -2 * HOUR));
+      for (const [label, enabledSince] of [
+        ["with the instant of the switch set", at(ten, -30 * DAY)],
+        ["with the instant zeroed (the sweep saw the switch off)", null],
+        ["with the instant set again", at(ten, -DAY)],
+        ["zeroed again", null],
+        ["set once more", at(ten, -30 * DAY)],
+      ] as const) {
+        await client.query(
+          "UPDATE public.activation_series_state SET enabled_since = $1, updated_at = now()",
+          [enabledSince]
+        );
+        assert.deepEqual(
+          await candidates(client, ten),
+          [],
+          `a stop that stands: the candidates answer nothing ${label}`
+        );
+      }
+      assert.deepEqual(
+        await stillOwed(
+          client,
+          await transactionNow(client),
+          recorded.organizationId,
+          noticeId
+        ),
+        { skip: "series_stopped" },
+        "and the re-read answers series_stopped"
+      );
+      assert.deepEqual(
+        await release(client, stopId, NOTE),
+        true,
+        "the release of the stop that stands"
+      );
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), store),
+        ["a1:due"],
+        "after the release the candidates come back, the backlog still inside its window included"
+      );
+      assert.equal(
+        (await suppressionRows(client, complainer)).length,
+        1,
+        "the suppression of whoever complained is not touched by the release"
+      );
+      assert.deepEqual(
+        await recordEvent(client, eventIdOf(), "complaint", KEY_NOW, [
+          hex(hmacOf()),
+        ]),
+        { duplicate: false, stopped: true, suppressed: 1 },
+        "a complaint after the release stops the series again"
+      );
+      assert.notEqual(await activeStopId(client), stopId, "with another stop");
+      assert.deepEqual(
+        await candidates(client, ten),
+        [],
+        "and the candidates answer nothing again"
+      );
+      // the inbox: the delivery that stopped the series, sent again by the provider after the release, does nothing
+      const again = eventIdOf();
+      await release(client, await activeStopId(client), NOTE);
+      await recordEvent(client, again, "complaint", KEY_NOW, [hex(hmacOf())]);
+      await release(client, await activeStopId(client), NOTE);
+      assert.deepEqual(
+        await recordEvent(client, again, "complaint", KEY_NOW, [hex(hmacOf())]),
+        { duplicate: true },
+        "a resend of an old complaint with the same id does not stop the series after a release"
+      );
+      assert.equal(await activeStops(client), 0, "no stop stands");
+    });
+    tests.push(
+      "AC-9.3 and AC-9.4: with a stop standing the candidates answer nothing for an eligible store whatever the instant of the switch (set, zeroed, set again, zeroed again, set once more); the re-read of its owed notice answers series_stopped; after the release the candidates come back for the same store, the suppression of whoever complained is untouched, a complaint after it stops the series again with another stop, and a resend of an old complaint (same event id) after the release does not"
+    );
+
+    // AC-9.5: the release, only by the named step, with the record
+    await scenario(async (client) => {
+      const stopId = await openStop(client);
+      assert.equal(
+        await release(client, null, NOTE),
+        false,
+        "a null id releases nothing"
+      );
+      assert.equal(
+        await release(client, randomUUID(), NOTE),
+        false,
+        "an unknown id releases nothing"
+      );
+      for (const [label, note] of [
+        ["a null note", null],
+        ["a note of 9 characters", "123456789"],
+        ["a note of 201 characters", "x".repeat(201)],
+        ["a note with @", "released after ana@example.com asked"],
+        [
+          "a note with a control character",
+          "released after\tthe cause was read",
+        ],
+      ] as const) {
+        await refuses(client, "22023", `refused: ${label}`, () =>
+          release(client, stopId, note)
+        );
+      }
+      assert.equal(await activeStops(client), 1, "nothing changed so far");
+      assert.equal(
+        (
+          await client.query(
+            "SELECT 1 FROM public.activation_series_stop_releases"
+          )
+        ).rowCount,
+        0,
+        "and no record was written"
+      );
+      const complainerRows = await client.query<{ n: string }>(
+        "SELECT count(*) AS n FROM public.activation_email_suppressions WHERE key_id = $1",
+        [KEY_NOW]
+      );
+      assert.equal(await release(client, stopId, NOTE), true, "the release");
+      const records = await client.query<{
+        released_at: Date;
+        released_by: string;
+        stop_released_at: Date;
+        note: string;
+      }>(
+        `SELECT r.note, r.released_by, r.released_at, s.released_at AS stop_released_at
+           FROM public.activation_series_stop_releases AS r
+           JOIN public.activation_series_stops AS s ON s.id = r.stop_id WHERE r.stop_id = $1`,
+        [stopId]
+      );
+      const sessionUser = (
+        await client.query<{ login: string }>("SELECT session_user AS login")
+      ).rows[0]?.login;
+      assert.equal(records.rowCount, 1, "one record of the release");
+      assert.equal(records.rows[0]?.note, NOTE, "with the note");
+      assert.equal(
+        records.rows[0]?.released_by,
+        sessionUser,
+        "released_by is the login of the connection (session_user), not the owner the function runs as"
+      );
+      assert.equal(
+        records.rows[0]?.released_at.getTime(),
+        records.rows[0]?.stop_released_at.getTime(),
+        "the instant of the record is the one of the release"
+      );
+      assert.equal(await activeStops(client), 0, "the stop is released");
+      assert.equal(
+        await release(client, stopId, NOTE),
+        false,
+        "a stop already released is not released again"
+      );
+      assert.deepEqual(
+        Number(
+          (
+            await client.query<{ n: string }>(
+              "SELECT count(*) AS n FROM public.activation_email_suppressions WHERE key_id = $1",
+              [KEY_NOW]
+            )
+          ).rows[0]?.n
+        ),
+        Number(complainerRows.rows[0]?.n),
+        "the suppression is intact after the release"
+      );
+      assert.equal(
+        await release(client, await openStop(client), "ten chars!"),
+        true,
+        "a note of exactly 10 characters is accepted"
+      );
+      assert.equal(
+        await release(client, await openStop(client), "x".repeat(200)),
+        true,
+        "and one of 200"
+      );
+    });
+    // nobody releases a stop by hand: the guard asks for the record, made at that same instant
+    await scenario(async (client) => {
+      const stopId = await openStop(client);
+      await refuses(client, "23514", "a release without its record", () =>
+        client.query(
+          "UPDATE public.activation_series_stops SET released_at = now() WHERE id = $1",
+          [stopId]
+        )
+      );
+      await refuses(
+        client,
+        "23514",
+        "a release without its record, by the owner of the series",
+        () =>
+          asOwnerOfSeries(client, () =>
+            client.query(
+              "UPDATE public.activation_series_stops SET released_at = now() WHERE id = $1",
+              [stopId]
+            )
+          )
+      );
+      await client.query(
+        "INSERT INTO public.activation_series_stop_releases (stop_id, note, released_at) VALUES ($1, $2, now() - interval '1 minute')",
+        [stopId, NOTE]
+      );
+      await refuses(
+        client,
+        "23514",
+        "a release whose record is of another instant",
+        () =>
+          client.query(
+            "UPDATE public.activation_series_stops SET released_at = now() WHERE id = $1",
+            [stopId]
+          )
+      );
+      for (const [label, statement] of [
+        [
+          "its reason",
+          "UPDATE public.activation_series_stops SET reason = reason || 'x' WHERE id = $1",
+        ],
+        [
+          "its instant",
+          "UPDATE public.activation_series_stops SET stopped_at = stopped_at + interval '1 hour' WHERE id = $1",
+        ],
+        [
+          "its id",
+          "UPDATE public.activation_series_stops SET id = gen_random_uuid() WHERE id = $1",
+        ],
+        [
+          "a delete",
+          "DELETE FROM public.activation_series_stops WHERE id = $1",
+        ],
+      ] as const) {
+        await refuses(client, "23514", `refused: ${label}`, () =>
+          client.query(statement, [stopId])
+        );
+      }
+      await refuses(client, "23514", "a truncate of the stops", () =>
+        client.query("TRUNCATE public.activation_series_stops CASCADE")
+      );
+      for (const [label, statement] of [
+        [
+          "an update of a release",
+          "UPDATE public.activation_series_stop_releases SET note = note || 'x' WHERE stop_id = $1",
+        ],
+        [
+          "a delete of a release",
+          "DELETE FROM public.activation_series_stop_releases WHERE stop_id = $1",
+        ],
+      ] as const) {
+        await refuses(client, "23514", `refused: ${label}`, () =>
+          client.query(statement, [stopId])
+        );
+      }
+      await refuses(client, "23514", "a truncate of the releases", () =>
+        client.query("TRUNCATE public.activation_series_stop_releases")
+      );
+      await asOwnerOfSeries(client, async () => {
+        await refuses(
+          client,
+          "42501",
+          "the owner of the series cannot delete a stop",
+          () =>
+            client.query(
+              "DELETE FROM public.activation_series_stops WHERE id = $1",
+              [stopId]
+            )
+        );
+        await refuses(client, "42501", "nor update a release", () =>
+          client.query(
+            "UPDATE public.activation_series_stop_releases SET released_at = now()"
+          )
+        );
+        await refuses(client, "42501", "nor choose who released", () =>
+          client.query(
+            "INSERT INTO public.activation_series_stop_releases (stop_id, note, released_by) VALUES ($1, $2, 'someone')",
+            [stopId, NOTE]
+          )
+        );
+        await refuses(client, "42501", "nor read the note", () =>
+          client.query(
+            "SELECT note FROM public.activation_series_stop_releases"
+          )
+        );
+      });
+    });
+    tests.push(
+      "AC-9.5: the release is the named step only: null and unknown ids answer false and change nothing; a null note, one of 9 or 201 characters, with @ or a control character is 22023 and leaves no record; the release answers true, writes one record with the note and the session_user of the connection (the login, not the owner the function runs as) at the instant of the release, leaves the suppression intact, and is false for a stop already released; notes of 10 and 200 characters are accepted; a direct UPDATE of released_at without a record, with the record of another instant, by the owner of the database or by the owner of the series, is refused (23514), and so are an update of the reason, the instant or the id, a delete and a truncate of the stops, an update, a delete and a truncate of the releases; the owner of the series is refused a delete of a stop, an update of a release, a released_by of its choice and a read of the note (42501)"
+    );
+
+    // AC-9.8 and AC-9.9: the suppression of an address, its 12 months and its re-keying
+    await scenario(async (client) => {
+      const instant = await transactionNow(client);
+      const current = hmacOf();
+      // a row under the current key: found, nothing moves
+      await seedSuppression(client, current, "bounce", KEY_NOW, monthsAgo(2));
+      assert.equal(
+        await askSuppressed(client, hex(current), KEY_NOW, null, null, instant),
+        true,
+        "found under the current key"
+      );
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(hmacOf()),
+          KEY_NOW,
+          null,
+          null,
+          instant
+        ),
+        false,
+        "an address never suppressed is not"
+      );
+      // only under the previous key: found, moved to the current one with its date
+      const moved = hmacOf();
+      const movedTo = hmacOf();
+      await seedSuppression(client, moved, "bounce", KEY_OLD, monthsAgo(5));
+      const [movedBefore] = await suppressionRows(client, moved);
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(movedTo),
+          KEY_NOW,
+          hex(moved),
+          KEY_OLD,
+          instant
+        ),
+        true,
+        "found under the previous key"
+      );
+      assert.deepEqual(
+        await suppressionRows(client, moved),
+        [],
+        "the old row is gone"
+      );
+      assert.deepEqual(
+        await suppressionRows(client, movedTo),
+        [
+          {
+            key_id: KEY_NOW,
+            reason: "bounce",
+            recorded_at: movedBefore?.recorded_at,
+          },
+        ],
+        "re-keyed under the current key with the original date"
+      );
+      assert.equal(
+        Number(
+          (
+            await client.query<{ n: string }>(
+              "SELECT count(*) AS n FROM public.activation_email_suppressions WHERE key_id = $1 AND address_hmac = ANY ($2)",
+              [KEY_OLD, [moved, movedTo]]
+            )
+          ).rows[0]?.n
+        ),
+        0,
+        "no row is left under the old key"
+      );
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(movedTo),
+          KEY_NOW,
+          hex(moved),
+          KEY_OLD,
+          instant
+        ),
+        true,
+        "asked again, it is found under the current key"
+      );
+      // both reasons under the previous key move one by one
+      const both = hmacOf();
+      const bothTo = hmacOf();
+      await seedSuppression(client, both, "bounce", KEY_OLD, monthsAgo(3));
+      await seedSuppression(client, both, "complaint", KEY_OLD, monthsAgo(4));
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(bothTo),
+          KEY_NOW,
+          hex(both),
+          KEY_OLD,
+          instant
+        ),
+        true
+      );
+      assert.deepEqual(
+        (await suppressionRows(client, bothTo)).map((row) => [
+          row.reason,
+          row.key_id,
+        ]),
+        [
+          ["bounce", KEY_NOW],
+          ["complaint", KEY_NOW],
+        ],
+        "a bounce and a complaint under the previous key both move"
+      );
+      assert.deepEqual(await suppressionRows(client, both), []);
+      // under both keys: one row remains, with the older date, whichever key has it
+      for (const [label, currentMonths, previousMonths, olderMonths] of [
+        ["the previous row is the older", 2, 5, 5],
+        ["the current row is the older", 6, 2, 6],
+      ] as const) {
+        const keptHmac = hmacOf();
+        const oldHmac = hmacOf();
+        await seedSuppression(
+          client,
+          keptHmac,
+          "bounce",
+          KEY_NOW,
+          monthsAgo(currentMonths)
+        );
+        await seedSuppression(
+          client,
+          oldHmac,
+          "bounce",
+          KEY_OLD,
+          monthsAgo(previousMonths)
+        );
+        const expectedDate = (
+          await client.query<{ at: Date }>(
+            `SELECT ${monthsAgo(olderMonths)} AS at`
+          )
+        ).rows[0]?.at;
+        assert.equal(
+          await askSuppressed(
+            client,
+            hex(keptHmac),
+            KEY_NOW,
+            hex(oldHmac),
+            KEY_OLD,
+            instant
+          ),
+          true
+        );
+        assert.deepEqual(
+          await suppressionRows(client, oldHmac),
+          [],
+          `${label}: the old row is gone`
+        );
+        assert.deepEqual(
+          (await suppressionRows(client, keptHmac)).map((row) => [
+            row.key_id,
+            row.recorded_at.getTime(),
+          ]),
+          [[KEY_NOW, expectedDate?.getTime()]],
+          `${label}: one row, with the older date`
+        );
+      }
+      // the row under the current key expired and the one under the previous is in force: the one in force wins
+      const renewedHmac = hmacOf();
+      const renewedOld = hmacOf();
+      await seedSuppression(
+        client,
+        renewedHmac,
+        "bounce",
+        KEY_NOW,
+        monthsAgo(13)
+      );
+      await seedSuppression(
+        client,
+        renewedOld,
+        "bounce",
+        KEY_OLD,
+        monthsAgo(2)
+      );
+      const [renewedExpected] = await suppressionRows(client, renewedOld);
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(renewedHmac),
+          KEY_NOW,
+          hex(renewedOld),
+          KEY_OLD,
+          instant
+        ),
+        true
+      );
+      assert.deepEqual(
+        (await suppressionRows(client, renewedHmac)).map((row) =>
+          row.recorded_at.getTime()
+        ),
+        [renewedExpected?.recorded_at.getTime()],
+        "an expired row under the current key does not shorten the one in force"
+      );
+      // a row that expired under the previous key is neither found nor moved
+      const lapsed = hmacOf();
+      await seedSuppression(client, lapsed, "bounce", KEY_OLD, monthsAgo(13));
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(hmacOf()),
+          KEY_NOW,
+          hex(lapsed),
+          KEY_OLD,
+          instant
+        ),
+        false,
+        "an expired suppression is not one"
+      );
+      assert.equal(
+        (await suppressionRows(client, lapsed)).length,
+        1,
+        "and it is not re-keyed"
+      );
+    });
+    await scenario(async (client) => {
+      const instant = await transactionNow(client);
+      // AC-9.9: 12 months from the recording, in UTC, to the second
+      const edge = hmacOf();
+      const inside = hmacOf();
+      // measured from the instant the call is asked with (a JavaScript date has no microseconds)
+      const twelveBefore = `(('${instant.toISOString()}'::timestamptz AT TIME ZONE 'UTC') - interval '12 months') AT TIME ZONE 'UTC'`;
+      await seedSuppression(client, edge, "bounce", KEY_NOW, twelveBefore);
+      await seedSuppression(
+        client,
+        inside,
+        "complaint",
+        KEY_NOW,
+        `(${twelveBefore}) + interval '1 second'`
+      );
+      assert.equal(
+        await askSuppressed(client, hex(edge), KEY_NOW, null, null, instant),
+        false,
+        "exactly 12 months already counts as expired"
+      );
+      assert.equal(
+        await askSuppressed(client, hex(inside), KEY_NOW, null, null, instant),
+        true,
+        "a second short of 12 months is still in force"
+      );
+      // the same in a database whose session is not in UTC: the days of the zone do not move the edge
+      await client.query("SET LOCAL TimeZone = 'America/Sao_Paulo'");
+      assert.equal(
+        await askSuppressed(client, hex(edge), KEY_NOW, null, null, instant),
+        false
+      );
+      assert.equal(
+        await askSuppressed(client, hex(inside), KEY_NOW, null, null, instant),
+        true
+      );
+      await client.query("SET LOCAL TimeZone = 'UTC'");
+      // the account and the store are gone and the suppression is not: it has no key to either
+      const keyless = await client.query<{ n: string }>(
+        `SELECT count(*) AS n FROM pg_catalog.pg_constraint
+          WHERE conrelid = 'public.activation_email_suppressions'::regclass AND contype = 'f'`
+      );
+      assert.equal(
+        Number(keyless.rows[0]?.n),
+        0,
+        "no foreign key ties a suppression to an account or a store"
+      );
+      // a clock a year ahead or behind does not free nor keep an address: the database's replaces it
+      const future = new Date(instant.getTime() + 365 * DAY);
+      const past = new Date(instant.getTime() - 365 * DAY);
+      const lapsed = hmacOf();
+      await seedSuppression(client, lapsed, "bounce", KEY_NOW, monthsAgo(13));
+      assert.equal(
+        await askSuppressed(client, hex(inside), KEY_NOW, null, null, future),
+        true,
+        "a clock a year ahead still finds a suppression in force"
+      );
+      assert.equal(
+        await askSuppressed(client, hex(lapsed), KEY_NOW, null, null, past),
+        false,
+        "a clock a year behind does not revive an expired one"
+      );
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(inside),
+          KEY_NOW,
+          null,
+          null,
+          new Date(instant.getTime() + 9 * MINUTE)
+        ),
+        false,
+        "a clock 9 minutes ahead is the caller's: a suppression a second short of 12 months has expired at it"
+      );
+      assert.equal(
+        await askSuppressed(
+          client,
+          hex(inside),
+          KEY_NOW,
+          null,
+          null,
+          new Date(instant.getTime() + 11 * MINUTE)
+        ),
+        true,
+        "11 minutes ahead is replaced by the database's clock, at which it is in force"
+      );
+    });
+    // AC-9.8: a caller cannot move a row to an address it does not hold, nor free an address by the re-keying
+    await scenario(async (client) => {
+      const instant = await transactionNow(client);
+      const held = hmacOf();
+      await seedSuppression(client, held, "complaint", KEY_OLD, monthsAgo(1));
+      const garbage = hmacOf();
+      const before = Number(
+        (
+          await client.query<{ n: string }>(
+            "SELECT count(*) AS n FROM public.activation_email_suppressions WHERE address_hmac = ANY ($1)",
+            [[held, garbage]]
+          )
+        ).rows[0]?.n
+      );
+      await askSuppressed(
+        client,
+        hex(garbage),
+        KEY_NOW,
+        hex(held),
+        KEY_OLD,
+        instant
+      );
+      const after = Number(
+        (
+          await client.query<{ n: string }>(
+            "SELECT count(*) AS n FROM public.activation_email_suppressions WHERE address_hmac = ANY ($1)",
+            [[held, garbage]]
+          )
+        ).rows[0]?.n
+      );
+      assert.equal(before, 1);
+      assert.equal(
+        after,
+        before,
+        "a random current HMAC with an existing previous one moves the row and does not erase the suppression"
+      );
+      const good = hex(hmacOf());
+      const other = hex(hmacOf());
+      const refusals: [
+        string,
+        string | null,
+        string | null,
+        string | null,
+        string | null,
+        Date | null,
+      ][] = [
+        ["a null current HMAC", null, KEY_NOW, null, null, instant],
+        [
+          "a current HMAC of 31 bytes",
+          good.slice(2),
+          KEY_NOW,
+          null,
+          null,
+          instant,
+        ],
+        ["a null current key id", good, null, null, null, instant],
+        ["a current key id in capitals", good, "ABCDEF01", null, null, instant],
+        ["a current key id too short", good, "abc", null, null, instant],
+        ["a previous HMAC with no key id", good, KEY_NOW, other, null, instant],
+        [
+          "a previous key id with no HMAC",
+          good,
+          KEY_NOW,
+          null,
+          KEY_OLD,
+          instant,
+        ],
+        [
+          "a previous HMAC of 31 bytes",
+          good,
+          KEY_NOW,
+          other.slice(2),
+          KEY_OLD,
+          instant,
+        ],
+        [
+          "a previous key id that is not hexadecimal",
+          good,
+          KEY_NOW,
+          other,
+          "zzzzzzzz",
+          instant,
+        ],
+        [
+          "the same key id for the current and the previous",
+          good,
+          KEY_NOW,
+          other,
+          KEY_NOW,
+          instant,
+        ],
+        [
+          "the same HMAC for the current and the previous",
+          good,
+          KEY_NOW,
+          good,
+          KEY_OLD,
+          instant,
+        ],
+        ["a null clock", good, KEY_NOW, null, null, null],
+      ];
+      for (const [
+        label,
+        current,
+        currentKey,
+        previousHmac,
+        previousKey,
+        now,
+      ] of refusals) {
+        await refuses(client, "22023", `refused: ${label}`, () =>
+          askSuppressed(
+            client,
+            current,
+            currentKey,
+            previousHmac,
+            previousKey,
+            now
+          )
+        );
+      }
+    });
+    tests.push(
+      "AC-9.8 and AC-9.9: activation_address_suppressed finds a suppression under the current key; one only under the previous key (a bounce, and a bounce and a complaint together) moves to the current key keeping its date and leaves no row under the old key; one under both keys keeps a single row with the older date whichever key had it, and an expired row under the current key never shortens one in force; an expired row under the previous key is neither found nor moved; exactly 12 months from the recording counts as expired and a second less as in force, in a session in UTC and in São Paulo; no foreign key ties a suppression to an account or a store; a clock a year ahead still finds a suppression in force and a clock a year behind does not revive an expired one, 9 minutes ahead is the caller's and 11 the database's; a random current HMAC with an existing previous one moves the row and does not lower count(*); 22023 for a null or 31-byte HMAC, a null or malformed key id, a previous HMAC and key id not given together, equal key ids, equal HMACs and a null clock"
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -2916,8 +4755,7 @@ async function run() {
       )
     );
   } finally {
-    for (const [role, group] of logins) {
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

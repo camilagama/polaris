@@ -139,6 +139,7 @@ describe("request classification", () => {
     ["POST", "/rpc/sale/get", "read"],
     ["POST", "/rpc/sale/getCustomerLink", "read"],
     ["POST", "/rpc/customer/findPossibleDuplicates", "read"],
+    ["POST", "/rpc/customer/get", "read"],
     ["POST", "/rpc/system/ping", "read"],
     // reads whose names the old pattern took for writes
     ["POST", "/rpc/sync/pull", "read"],

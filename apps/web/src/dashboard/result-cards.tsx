@@ -1,3 +1,4 @@
+import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
@@ -9,11 +10,9 @@ import {
   type KpiRange,
   KpiTile,
 } from "@/ui/kpi-card";
-import {
-  type KpiReading,
-  unknownDaysFit,
-  unknownDaysText,
-} from "../home/home-kpis";
+import type { KpiReading } from "../home/home-kpis";
+import { IncompleteSign, incompleteDetail } from "../home/home-kpi-cards";
+import { salesCountText } from "../home/home-model";
 import { formatBrlAmount } from "../lib/format";
 import {
   MASKED_SPOKEN,
@@ -28,9 +27,15 @@ import { useIsMobile } from "../lib/use-mobile";
 import {
   formatPercentOrDash,
   isIncompleteEstimate,
-  NO_KNOWN_COST_RESULT,
+  NO_SALES_UNTIL_DAY,
 } from "./dashboard-model";
-import { resultKpis, untilText } from "./result-kpis";
+import {
+  type MissingDays,
+  type MissingInput,
+  missingShort,
+} from "./missing-input";
+import { type ResultKpis, resultKpis, untilText } from "./result-kpis";
+import { type Period, periodRangeLabel } from "./result-period";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
 export function IncompleteBadge() {
@@ -49,7 +54,7 @@ export function IncompleteBadge() {
 const NO_COST_MARGIN = "Sem custo informado";
 
 /** What the result says while a day with no cost is read, in place of the dash: the cause, not "sem valor". */
-const NO_COST_DAY = "sem custo neste dia";
+const NO_COST_DAY = (input: MissingInput) => `${missingShort(input)} neste dia`;
 
 /**
  * What the result says in place of the dash when the day under the pointer is itself a day with no cost (undefined
@@ -57,10 +62,7 @@ const NO_COST_DAY = "sem custo neste dia";
  * running total is unknown, but its cost is not what is missing).
  */
 export function noCostDayText(
-  kpis: {
-    days: readonly { operatingResult?: string | null }[];
-    monthly: boolean;
-  },
+  kpis: Pick<ResultKpis, "days" | "monthly" | "result">,
   index: number | null,
   noCost: boolean
 ): string | undefined {
@@ -68,12 +70,16 @@ export function noCostDayText(
     return undefined;
   }
   const day = kpis.days[Math.min(index, kpis.days.length - 1)];
-  return day?.operatingResult === null ? NO_COST_DAY : undefined;
+  return day?.operatingResult === null
+    ? NO_COST_DAY(
+        kpis.result.kind === "incomplete" ? kpis.result.input : "cost"
+      )
+    : undefined;
 }
 
 /**
- * The warning of an estimate that is not whole, on a row of its own under the support line of the tile (the badge, the
- * cause when no cost is known, and the days with no cost beside it when the line fits: a warning is not hidden).
+ * The sign of an estimate that is not whole, on the one support line of the tile, and what it adds after the rest of the
+ * line (the cause when no cost is known, else the days with no cost when they fit the words): a warning is not hidden.
  */
 export function resultWarning({
   incomplete,
@@ -81,30 +87,30 @@ export function resultWarning({
   noCost,
 }: {
   incomplete: boolean;
-  missing: { total: number; unknown: number } | null;
+  missing: MissingDays | null;
   noCost: boolean;
 }) {
-  return incomplete ? (
-    <>
-      <IncompleteBadge />
-      {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
-      {!noCost && missing && unknownDaysFit(missing.unknown, missing.total) ? (
-        <span data-kpi-unknown="">
-          {unknownDaysText(missing.unknown, missing.total)}
-        </span>
-      ) : null}
-    </>
-  ) : null;
+  return incomplete
+    ? {
+        warning: <IncompleteSign />,
+        warningDetail: incompleteDetail({ missing, noCost }),
+      }
+    : {};
 }
 
 /** No day: the same array on every render, so a copy without the series does not redo the memoized cards. */
 const NO_DAYS: readonly never[] = [];
 
-/** What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. */
+/**
+ * What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. A day with
+ * no sale yet in a period that has sales says so after the amount, in the words of the support line.
+ */
 function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
   const amount =
     reading.value === null ? "sem valor" : formatBrlAmount(reading.value);
-  const text = `${prefix}: ${amount}`;
+  const noSales =
+    reading.count === NO_SALES_UNTIL_DAY ? `. ${NO_SALES_UNTIL_DAY}` : "";
+  const text = `${prefix}: ${amount}${noSales}`;
   return hidden ? maskMoney(text, MASKED_SPOKEN) : text;
 }
 
@@ -123,13 +129,86 @@ type SparkColor =
   | "var(--chart-ticket)"
   | "var(--destructive)";
 
+/**
+ * The way from the sales card to the Histórico: the whole card is the target. The button is an arrow at the end of the
+ * title row, and its `::after` covers the tile (the button stays static, so the cover is measured against the tile);
+ * the (i) and the keyboard control of the sparkline stay above it (`z-10`), as the title of the Resultado card of the
+ * Início does. Its name says what it opens and the dates, from the first day to today, the ones of the pill it opens.
+ * The count on the support line is text, as on the Início, so the line stays one line.
+ */
+function SalesCover({
+  count,
+  onOpen,
+  period,
+  today,
+}: {
+  count: number;
+  onOpen: (period: Period) => void;
+  period: Period;
+  today: string;
+}) {
+  const label = count === 1 ? "Ver a venda" : `Ver as ${salesCountText(count)}`;
+  const handleClick = useCallback(() => onOpen(period), [onOpen, period]);
+  return (
+    <button
+      aria-label={`${label} de ${periodRangeLabel(period, today)} no Histórico`}
+      className="focus-ring -my-1 inline-flex size-6 touch:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground after:absolute after:inset-0 after:rounded-xl hover:text-foreground focus-visible:-outline-offset-2"
+      data-kpi-sales-link=""
+      onClick={handleClick}
+      type="button"
+    >
+      <ArrowRightIcon aria-hidden="true" className="size-4" />
+    </button>
+  );
+}
+
+/**
+ * The cover of the sales card when the count is the server's for the whole period (none while a day is read on the
+ * sparkline, whose count is another, nor with no sale, no connection or a copy of the device). The period is from its
+ * first day to today, since nothing is sold after it.
+ */
+function salesCover({
+  count,
+  onOpen,
+  period,
+  reading,
+  today,
+}: {
+  count: number;
+  onOpen: ((period: Period) => void) | null;
+  period: Period;
+  reading: boolean;
+  today: string;
+}) {
+  const to = period.to < today ? period.to : today;
+  if (onOpen && !reading && count > 0 && period.from <= to) {
+    return (
+      <SalesCover
+        count={count}
+        onOpen={onOpen}
+        period={{ from: period.from, to }}
+        today={today}
+      />
+    );
+  }
+  return null;
+}
+
 interface ResultCardsProps {
   /** The days of the period before, read for the chips; null while not read (or not readable): no chip. */
   comparison: ComparisonDays | null;
+  /** Opens the Histórico on the period of the sales card; null: the count stays text (no connection, or not the server's figures). */
+  onOpenSales: ((period: Period) => void) | null;
   /** The same days as `dailySales` read them: the chips of sales and ticket; null while not read (or not readable). */
   salesComparison: ComparisonSales | null;
   summary: StoredPeriodSummary;
   today: string;
+}
+
+/** The cards of the Resultado, with the day under the pointer kept here. */
+export function ResultCards(props: ResultCardsProps) {
+  const [index, setIndex] = useState<number | null>(null);
+  return <ResultCardsView {...props} index={index} onIndex={setIndex} />;
 }
 
 /**
@@ -138,12 +217,18 @@ interface ResultCardsProps {
  * of the goods known (`cogsCoverageOf` is "none") the server's figures are the sales, never an estimate, so the result
  * and the margin show a dash and the badge.
  */
-export function ResultCards({
+export function ResultCardsView({
   comparison,
+  index,
+  onIndex,
+  onOpenSales,
   salesComparison,
   summary,
   today,
-}: ResultCardsProps) {
+}: ResultCardsProps & {
+  index: number | null;
+  onIndex: (index: number | null) => void;
+}) {
   const still = useIsMobile();
   const [hidden] = useHiddenValues();
   const { cards, quality } = summary;
@@ -156,12 +241,12 @@ export function ResultCards({
         period: summary.period,
         previous: comparison,
         previousSales: salesComparison,
+        quality,
         today,
       }),
-    [cards, comparison, daily, salesComparison, summary.period, today]
+    [cards, comparison, daily, quality, salesComparison, summary.period, today]
   );
-  const [index, setIndex] = useState<number | null>(null);
-  const clear = useCallback(() => setIndex(null), []);
+  const clear = useCallback(() => onIndex(null), [onIndex]);
   const last = kpis.days.length - 1;
   const read = kpis.read(index);
   const until = untilText(kpis.days[Math.min(index ?? last, last)], today);
@@ -172,7 +257,7 @@ export function ResultCards({
     label,
     max: last,
     onBlur: clear,
-    onChange: setIndex,
+    onChange: onIndex,
     value: index ?? last,
     valueText: spoken(until, reading, hidden),
   });
@@ -185,7 +270,7 @@ export function ResultCards({
       color={color}
       domain={domain}
       height={SPARK_HEIGHT}
-      onRead={setIndex}
+      onRead={onIndex}
       readIndex={index}
       still={still}
       values={values}
@@ -212,7 +297,7 @@ export function ResultCards({
         help={{ about: "Resultado estimado", text: read.result.help }}
         id="result-kpi-result"
         strip
-        notice={resultWarning({ incomplete, missing, noCost })}
+        {...resultWarning({ incomplete, missing, noCost })}
         {...(kpis.series.result && drawn && !noCost
           ? {
               range: range(
@@ -240,9 +325,20 @@ export function ResultCards({
         chip={chipOf(read.sales)}
         date={date}
         entity="sales"
-        help={{ about: salesName, text: read.sales.help }}
+        help={{
+          about: salesName,
+          text: `${read.sales.help} ${read.sales.count}.`,
+        }}
         id="result-kpi-sales"
-        note={read.sales.count}
+        cover={salesCover({
+          count: cards.salesCount,
+          onOpen: onOpenSales,
+          period: summary.period,
+          reading: index !== null,
+          today,
+        })}
+        oneLine
+        warningDetail={read.sales.count}
         strip
         {...(drawn
           ? {
@@ -310,7 +406,7 @@ function MarginCard({
           }
         />
       }
-      notice={incomplete ? <IncompleteBadge /> : null}
+      warning={incomplete ? <IncompleteSign /> : null}
     />
   );
 }

@@ -3,7 +3,6 @@ import type {
   ProductVariantConfigurationReadModel,
   ProductVariantOptionName,
 } from "@polaris/contracts";
-import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
 import ListPlusIcon from "lucide-react/dist/esm/icons/list-plus";
 import {
   type FormEvent,
@@ -12,11 +11,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { AddRowButton } from "@/lib/add-row-button";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { FieldLegend, FieldSet } from "@/ui/field";
+import { FieldGroup } from "@/ui/field-group";
 import { Label } from "@/ui/label";
 import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -27,8 +28,11 @@ import { useHoldSwap } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
 import {
   LimitHelp,
+  NearLimitNotice,
+  useFreeableLine,
   useLimitFocus,
   useLimitHelp,
+  useNearLimit,
 } from "../subscription/limit-help";
 import {
   isLimitReached,
@@ -156,38 +160,41 @@ function CombinationRow({
       onValueChange(index, name, value),
     [index, onValueChange]
   );
+  const labelId = `product-variant-${productId}-${index}-label`;
   return (
-    <li className="grid gap-3 rounded-lg border border-border p-3">
-      <div className="flex items-center justify-between gap-2">
-        <Badge>Combinação {index + 1}</Badge>
-        <Button
-          aria-label={`Remover combinação ${index + 1}`}
-          disabled={isPending}
-          onClick={handleRemove}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Remover
-        </Button>
-      </div>
-      <div className="grid gap-3 min-[30rem]:grid-cols-2">
-        {optionNames.map((name) => (
-          <SelectField
-            disabled={isPending || optionValues[name].length === 0}
-            id={`product-variant-${productId}-${index}-${name}`}
-            key={name}
-            label={optionLabel(name)}
-            onChange={handleChange(name)}
-            options={optionValues[name].map((option) => ({
-              id: option,
-              label: option,
-            }))}
-            placeholder="Selecione"
-            value={variant.values[name] ?? ""}
-          />
-        ))}
-      </div>
+    <li>
+      <FieldGroup aria-labelledby={labelId}>
+        <div className="flex items-center justify-between gap-2">
+          <Badge id={labelId}>Combinação {index + 1}</Badge>
+          <Button
+            aria-label={`Remover combinação ${index + 1}`}
+            disabled={isPending}
+            onClick={handleRemove}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Remover
+          </Button>
+        </div>
+        <div className="grid gap-3 min-[30rem]:grid-cols-2">
+          {optionNames.map((name) => (
+            <SelectField
+              disabled={isPending || optionValues[name].length === 0}
+              id={`product-variant-${productId}-${index}-${name}`}
+              key={name}
+              label={optionLabel(name)}
+              onChange={handleChange(name)}
+              options={optionValues[name].map((option) => ({
+                id: option,
+                label: option,
+              }))}
+              placeholder="Selecione"
+              value={variant.values[name] ?? ""}
+            />
+          ))}
+        </div>
+      </FieldGroup>
     </li>
   );
 }
@@ -214,6 +221,14 @@ function AllCombinationsNotice({
       </AlertDescription>
     </Alert>
   );
+}
+
+/** The warning that the limit is close and the refusal's help never go together: either one is on screen. */
+function refusalIsShown(
+  saveError: string | null,
+  notice: AllCombinationsNoticeView | null
+): boolean {
+  return saveError === VARIANT_LIMIT_REACHED || (notice?.help ?? null) !== null;
 }
 
 /** A read that hangs falls back to the product's limit, as a failed one: the form waits for it with every field off. */
@@ -366,6 +381,9 @@ export function ProductVariantConfigurationForm({
   const limitHelp = useLimitHelp();
   const saveErrorRef = useRef<HTMLDivElement>(null);
   const focusLimit = useLimitFocus(saveErrorRef);
+  // a save swaps this form for the saved variants, so the warning is read once; the list behind the dialog reads its own
+  const nearLimit = useNearLimit("variants");
+  const freeableLine = useFreeableLine();
   // a failure of the warning's button, said under the warning
   const [clearError, setClearError] = useState<string | null>(null);
   // what the warning's button did, said after it: the SKU that was erased
@@ -458,6 +476,20 @@ export function ProductVariantConfigurationForm({
     [clearGenerateNotice]
   );
 
+  // the index of the new row is only known after the render that draws it, so the focus leaves from an effect, not from the tap
+  const focusNewRow = useRef<boolean>(false);
+  useEffect(() => {
+    if (!focusNewRow.current) {
+      return;
+    }
+    focusNewRow.current = false;
+    const [firstField] = optionNames;
+    if (firstField) {
+      const id = `product-variant-${product.id}-${variants.length - 1}-${firstField}`;
+      focusLater(() => document.getElementById(id)?.focus());
+    }
+  });
+
   const handleAddCombination = useCallback(() => {
     if (!validation.canAdd) {
       return;
@@ -469,6 +501,7 @@ export function ProductVariantConfigurationForm({
     setVariants((current) => [...current, { values }]);
     setSaveError(null);
     clearGenerateNotice();
+    focusNewRow.current = true;
   }, [clearGenerateNotice, optionNames, validation.canAdd]);
 
   const handleValueChange = useCallback(
@@ -684,28 +717,36 @@ export function ProductVariantConfigurationForm({
         </Badge>
       </div>
 
-      {variants.length > 0 ? (
-        <ol className="grid gap-3">
-          {variants.map((variant, index) => (
-            <CombinationRow
-              index={index}
-              isPending={busy}
-              // combinations have no identity before they are saved: the position is the key
-              key={index}
-              onRemove={handleRemoveCombination}
-              onValueChange={handleValueChange}
-              optionNames={optionNames}
-              optionValues={optionValues}
-              productId={product.id}
-              variant={variant}
-            />
-          ))}
-        </ol>
-      ) : (
-        <p className="text-muted-foreground text-support">
-          Nenhuma combinação adicionada.
-        </p>
-      )}
+      <div className="grid gap-3">
+        {variants.length > 0 ? (
+          <ol className="grid gap-3">
+            {variants.map((variant, index) => (
+              <CombinationRow
+                index={index}
+                isPending={busy}
+                // combinations have no identity before they are saved: the position is the key
+                key={index}
+                onRemove={handleRemoveCombination}
+                onValueChange={handleValueChange}
+                optionNames={optionNames}
+                optionValues={optionValues}
+                productId={product.id}
+                variant={variant}
+              />
+            ))}
+          </ol>
+        ) : (
+          <p className="text-muted-foreground text-support">
+            Nenhuma combinação adicionada.
+          </p>
+        )}
+        <AddRowButton
+          disabled={!validation.canAdd || busy}
+          onClick={handleAddCombination}
+        >
+          Adicionar combinação
+        </AddRowButton>
+      </div>
 
       {!validation.combinationsAreUnique && variants.length > 1 ? (
         <Alert variant="destructive">
@@ -730,16 +771,6 @@ export function ProductVariantConfigurationForm({
       <div className="flex flex-col gap-3 min-[30rem]:flex-row min-[30rem]:justify-end">
         <Button
           className={WRAPPING_ACTION}
-          disabled={!validation.canAdd || busy}
-          onClick={handleAddCombination}
-          type="button"
-          variant="outline"
-        >
-          <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
-          Adicionar combinação
-        </Button>
-        <Button
-          className={WRAPPING_ACTION}
           disabled={!allCombinations.canAdd}
           onClick={allCombinations.add}
           type="button"
@@ -761,6 +792,11 @@ export function ProductVariantConfigurationForm({
           {isPending ? "Salvando…" : "Salvar variantes"}
         </Button>
       </div>
+      <NearLimitNotice
+        freeable={freeableLine}
+        hidden={refusalIsShown(saveError, allCombinations.notice)}
+        view={nearLimit}
+      />
     </form>
   );
 }

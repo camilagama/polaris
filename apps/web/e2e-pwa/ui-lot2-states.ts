@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page } from "@playwright/test";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -13,7 +14,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * `e2e/lote-2-telas.e2e.ts` and `e2e/usabilidade-lote-1.e2e.ts`, and in the captures of the pull request.
  */
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
-const DAY = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-15T12:00:00.000Z");
+const DAY = new Date(NOW.getTime() - 86_400_000).toISOString();
 const id = (n: number) =>
   `0199c2d0-0000-7000-8000-${String(n).padStart(12, "0")}`;
 
@@ -27,6 +29,7 @@ const STRIP = "Esta tela precisa de conexão.";
 
 /** Starts the runtime of the lab for the screen and waits until it is ready. */
 async function startLab(page: Page, screen: string) {
+  await page.clock.setFixedTime(NOW);
   await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
@@ -35,19 +38,6 @@ async function startLab(page: Page, screen: string) {
     .getByTestId("message")
     .filter({ hasText: "Iniciar: ok (ready)" })
     .waitFor({ timeout: 20_000 });
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
 }
 
 const heading = (page: Page, name: string) =>
@@ -129,6 +119,49 @@ async function register(page: Page, name: string, phone: string) {
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
 }
 
+const NOTICE_FOCUS_TIMEOUT_MS = 10_000;
+
+/**
+ * A save closes the form, and only then does the page move the focus to the notice of the result. Measuring the Tab
+ * order before that moves it would start the walk from the old position and skip what is above the notice. The wait
+ * fails with what holds the focus instead of the bare timeout of the page, so a screen that stopped moving the focus
+ * to the notice reads as that, not as a hang.
+ */
+async function noticeHoldsFocus(page: Page, name: string) {
+  const notice = `Cliente “${name}”`;
+  try {
+    await page.waitForFunction(
+      (text) => {
+        const active = document.activeElement;
+        return (
+          active instanceof HTMLElement &&
+          active !== document.body &&
+          active.tabIndex === -1 &&
+          (active.textContent ?? "").includes(text)
+        );
+      },
+      notice,
+      { timeout: NOTICE_FOCUS_TIMEOUT_MS }
+    );
+  } catch (error) {
+    if (!(error instanceof Error && error.name === "TimeoutError")) {
+      throw error;
+    }
+    const focused = await page.evaluate(() => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || active === document.body) {
+        return "nothing (the focus is on the body)";
+      }
+      const text = (active.textContent ?? "").replace(/\s+/g, " ").trim();
+      return `<${active.tagName.toLowerCase()}> tabindex=${active.tabIndex} "${text.slice(0, 80)}"`;
+    });
+    throw new Error(
+      `The screen did not move the focus to the notice of the result (${notice}) within ${NOTICE_FOCUS_TIMEOUT_MS} ms. Focused element: ${focused}.`,
+      { cause: error }
+    );
+  }
+}
+
 /** The customers that the server has confirmed: no row says "Aguardando envio" any more. */
 const noPendingRow = (page: Page) =>
   page.waitForFunction(
@@ -158,6 +191,10 @@ export const customerStates = {
     );
     await page.getByText("Bruno Carvalho").first().waitFor();
     await noPendingRow(page);
+    await noticeHoldsFocus(
+      page,
+      "Bruno Carvalho de Albuquerque Montenegro Filho"
+    );
     await showScreenAlone(page);
   },
 
@@ -168,6 +205,7 @@ export const customerStates = {
     await page.getByText("Sem conexão.", { exact: true }).waitFor();
     await register(page, "Bia Souza", "11900000002");
     await page.getByText("Aguardando envio").waitFor();
+    await noticeHoldsFocus(page, "Bia Souza");
     await showScreenAlone(page);
   },
 };

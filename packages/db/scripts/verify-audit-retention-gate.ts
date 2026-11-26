@@ -24,7 +24,11 @@ import { createDatabase } from "../src/client";
 import { createCustomer } from "../src/customer-repository";
 import { requestOrganizationClosure } from "../src/organization-closure-repository";
 import { createPrivacyMaintenanceClient } from "../src/privacy-maintenance";
-import { withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  rollbackAndRelease,
+  withGateRole,
+} from "./gate-roles";
 import { assertSuperuserCasesProved } from "./gate-runs";
 import {
   createTenantFixture,
@@ -91,7 +95,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 4 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const memberships: string[] = [];
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
@@ -109,16 +113,21 @@ async function run() {
     options: { commit?: boolean } = {}
   ): Promise<T> {
     const client = await owner.pool.connect();
+    const inRole = () => withGateRole(client, role, () => work(client));
     try {
-      await client.query("BEGIN");
-      const result = await withGateRole(client, role, () => work(client));
-      await client.query(options.commit === false ? "ROLLBACK" : "COMMIT");
-      return result;
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
+      let outcome: T;
+      if (options.commit === false) {
+        outcome = await inRolledBackTransaction(client, inRole);
+      } else {
+        await client.query("BEGIN");
+        outcome = await inRole();
+        await client.query("COMMIT");
+      }
       client.release();
+      return outcome;
+    } catch (error) {
+      await rollbackAndRelease(client);
+      throw error;
     }
   }
 
@@ -131,8 +140,7 @@ async function run() {
       await client.query("BEGIN");
       return await work(client);
     } finally {
-      await client.query("ROLLBACK").catch(() => undefined);
-      client.release();
+      await rollbackAndRelease(client);
     }
   }
 
@@ -489,7 +497,7 @@ async function run() {
         `CREATE ROLE "${name}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${name}"`);
-      logins.push([name, group]);
+      logins.push(name);
       return temporaryRuntimeUrl(adminUrl, name, password);
     };
     const tenantUrl = await newLogin(runtimeRole, "polaris_audit_tenant");
@@ -1364,9 +1372,8 @@ async function run() {
         .query(`REVOKE ${owned} FROM CURRENT_USER`)
         .catch(() => undefined);
     }
-    for (const [loginRole, group] of logins) {
+    for (const loginRole of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${loginRole}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await owner.pool.end();

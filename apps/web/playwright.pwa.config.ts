@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import {
   PWA_ORIGIN,
   PWA_PORT,
+  reportersFor,
   reuseExistingServer,
   workersFrom,
 } from "./e2e/run-settings";
@@ -12,6 +13,25 @@ const inCI = Boolean(process.env.CI);
 const PHONE_ONLY = ["**/motion-level.e2e.ts", "**/dialog-voltar.e2e.ts"];
 /** The visual regression: only in its project, with the browser of the pinned image (`scripts/visual-browser.ts`). */
 const VISUAL = ["**/ui-visual.e2e.ts"];
+/**
+ * The reloads with the worker in control: the worker is the same on a phone, and 300 reloads cost too much twice. The
+ * `ui-*` files below set their own viewport and touch and skip the Pixel 5 project in `beforeEach`; a skipped test still
+ * counts as listed and as run for the shard guard (`scripts/ci-shard-coverage.mjs`), so listing them here keeps the
+ * phone count to the tests that check something.
+ */
+const DESKTOP_ONLY = [
+  "**/recarga-com-worker.e2e.ts",
+  "**/ui-guardrails/*.e2e.ts",
+  "**/ui-sem-caixa-alta.e2e.ts",
+  "**/ui-icones.e2e.ts",
+  "**/ui-botao-atualizar.e2e.ts",
+  "**/ui-abas-padrao.e2e.ts",
+  "**/ui-acao-no-titulo.e2e.ts",
+  "**/ui-acoes-na-linha-do-titulo.e2e.ts",
+  "**/ui-vao-contagem.e2e.ts",
+  "**/ui-mesmo-botao.e2e.ts",
+  "**/entrada-duas-metades.e2e.ts",
+];
 
 export default defineConfig({
   forbidOnly: inCI,
@@ -24,7 +44,7 @@ export default defineConfig({
     },
     {
       name: "chromium-mobile-emulated",
-      testIgnore: [...PHONE_ONLY, ...VISUAL],
+      testIgnore: [...PHONE_ONLY, ...VISUAL, ...DESKTOP_ONLY],
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
     // The levels of motion on a phone: a touch screen of 360×740, the phone of the design. The file proves
@@ -48,7 +68,7 @@ export default defineConfig({
       use: { browserName: "chromium", connectOptions: visualConnectOptions() },
     },
   ],
-  reporter: "list",
+  reporter: reportersFor("pwa"),
   retries: inCI ? 1 : 0,
   testDir: "./e2e-pwa",
   testMatch: "**/*.e2e.ts",

@@ -7,9 +7,12 @@ import type {
 import { CategoryInUseError } from "@polaris/domain/catalog/category";
 import {
   InvalidVariantListPriceError,
+  PRODUCT_DELETE_LIMIT_PER_HOUR,
   ProductDefaultVariantSkuConflictError,
   ProductIdConflictError,
   ProductDefaultVariantStockHistoryConflictError,
+  ProductDeleteRateLimitedError,
+  ProductLifecycleError,
   ProductStockNotEmptyError,
   ProductVariantConfigurationError,
   ProductVariantSkuConflictError,
@@ -877,6 +880,94 @@ describe("product RPCs", () => {
         organizationId: identity.organizationId,
       })
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("maps deleting an active product to the lifecycle conflict reason", async () => {
+    const router = createRpcRouter({
+      deleteProduct: () =>
+        Promise.reject(new ProductLifecycleError("delete", "active")),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.delete({
+        expectedVersion: 1,
+        id: productRow.id,
+        organizationId: identity.organizationId,
+      })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "product_lifecycle_conflict" },
+    });
+  });
+
+  it("answers 429 with the limit and when the next slot opens when the hourly cap is hit", async () => {
+    const router = createRpcRouter({
+      deleteProduct: () =>
+        Promise.reject(new ProductDeleteRateLimitedError(1234.2)),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.delete({
+        expectedVersion: 1,
+        id: productRow.id,
+        organizationId: identity.organizationId,
+      })
+    ).rejects.toMatchObject({
+      code: "TOO_MANY_REQUESTS",
+      status: 429,
+      data: {
+        limit: PRODUCT_DELETE_LIMIT_PER_HOUR,
+        reason: "product_delete_rate_limited",
+        retryAfterSeconds: 1235,
+      },
+    });
+  });
+
+  it("leaves the isolation level of the deletion path to the default, never REPEATABLE READ", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const router = createRpcRouter({
+      deleteProduct: async () => ({
+        changed: true,
+        product: {
+          ...productRow,
+          deletedAt: new Date("2026-10-10T12:00:00.000Z"),
+          version: 2,
+        },
+      }),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => {
+        requests.push(input as unknown as Record<string, unknown>);
+        return tenantContext(input);
+      },
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await client.product.delete({
+      expectedVersion: 1,
+      id: productRow.id,
+      organizationId: identity.organizationId,
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).not.toHaveProperty("isolationLevel");
   });
 
   it("maps a category tombstone blocked by products to a conflict", async () => {

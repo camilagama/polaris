@@ -110,12 +110,27 @@ const GRANTS_PRO: Readonly<Record<BillingState, boolean>> = {
   trialing: true,
 };
 
+const DAY_MS = 24 * HOUR_MS;
+const SAO_PAULO_SHIFT_MS = 3 * HOUR_MS;
+
+/** A trial lasts until 06:00 in São Paulo of the day after its stored end (AC-47). */
+function modelAccessEnd(facts: BillingFacts): number | null {
+  if (!GRANTS_PRO[facts.state] || facts.accessEndsAt === null) {
+    return null;
+  }
+  const end = facts.accessEndsAt.getTime();
+  if (facts.state !== "trialing") {
+    return end;
+  }
+  const localDayStart =
+    Math.floor((end - SAO_PAULO_SHIFT_MS) / DAY_MS) * DAY_MS +
+    SAO_PAULO_SHIFT_MS;
+  return localDayStart + DAY_MS + 6 * HOUR_MS;
+}
+
 function modelPlan(facts: BillingFacts): PlanId {
-  return GRANTS_PRO[facts.state] &&
-    facts.accessEndsAt !== null &&
-    NOW.getTime() < facts.accessEndsAt.getTime()
-    ? "pro"
-    : "free";
+  const end = modelAccessEnd(facts);
+  return end !== null && NOW.getTime() < end ? "pro" : "free";
 }
 
 function activeGrants(grants: readonly EntitlementGrant[]): EntitlementGrant[] {
@@ -183,7 +198,7 @@ describe("resolved entitlements (ENT-2 to ENT-4)", () => {
             facts.state === "free_over_limit" && plan === "free"
           );
           expect(resolved.accessEndsAt?.getTime() ?? null).toBe(
-            plan === "pro" ? (facts.accessEndsAt?.getTime() ?? null) : null
+            plan === "pro" ? modelAccessEnd(facts) : null
           );
         }
       )
@@ -241,6 +256,7 @@ describe("resolved entitlements (ENT-2 to ENT-4)", () => {
           // a copy of the end date, never the record's own object
           if (resolved.accessEndsAt && facts.accessEndsAt) {
             expect(resolved.accessEndsAt).not.toBe(facts.accessEndsAt);
+            expect(resolved.accessEndsAt.getTime()).toBe(modelAccessEnd(facts));
           }
           // with no grants, the resolved values are exactly the plan's
           const bare = resolveEntitlements({ catalog: plans, facts, now: NOW });

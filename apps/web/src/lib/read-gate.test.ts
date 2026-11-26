@@ -2,6 +2,7 @@ import { polarisContract } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { createConnection } from "./connection";
 import { callKind, createReadGate, READ_PROCEDURES } from "./read-gate";
+import { READ_PROCEDURES as PAGE_READ_PROCEDURES } from "./read-procedures";
 
 const MARK = "0199c2d0-0000-7000-8000-000000000001";
 
@@ -125,6 +126,27 @@ describe("what a call is", () => {
     expect(missing).toEqual([]);
   });
 
+  it("every read the page can send is in the line, except the ones it never sends", () => {
+    // `system/ping` is a health probe of the contract that no screen or worker of the page calls
+    const NEVER_SENT_BY_THE_PAGE: readonly string[] = ["system/ping"];
+
+    const outOfTheLine = PAGE_READ_PROCEDURES.filter(
+      (path) =>
+        !(READ_PROCEDURES.has(path) || NEVER_SENT_BY_THE_PAGE.includes(path))
+    );
+    expect(outOfTheLine).toEqual([]);
+
+    for (const path of NEVER_SENT_BY_THE_PAGE) {
+      expect(PAGE_READ_PROCEDURES, path).toContain(path);
+      expect(READ_PROCEDURES.has(path), path).toBe(false);
+    }
+    expect(
+      [...READ_PROCEDURES].filter(
+        (path) => !PAGE_READ_PROCEDURES.includes(path)
+      )
+    ).toEqual([]);
+  });
+
   it("no write of the outbox or of a screen is in the list", () => {
     for (const write of [
       "sync/push",
@@ -231,27 +253,6 @@ describe("the session first", () => {
       "/rpc/report/periodSummary",
       "/rpc/goal/list",
     ]);
-  });
-
-  it("a lookup outside the connection's fetch (the shell's e-mail) holds them too, and its answer is not classified", async () => {
-    const t = network();
-    let answer: (response: Response) => void = () => undefined;
-    const lookup = t.connection.sessionFirst(
-      () =>
-        new Promise<Response>((resolve) => {
-          answer = resolve;
-        })
-    );
-    t.call("/rpc/report/periodSummary");
-    await flush();
-    expect(t.sent).toEqual([]);
-
-    // a portal's page: no mark, and still no doubt about the connection
-    answer(new Response("<html></html>", { status: 200 }));
-    await expect(lookup).resolves.toBeInstanceOf(Response);
-    await flush();
-    expect(t.sent).toEqual(["/rpc/report/periodSummary"]);
-    expect(t.connection.isOnline()).toBe(true);
   });
 
   it("a session lookup that hangs holds the reads 5 s at most", async () => {

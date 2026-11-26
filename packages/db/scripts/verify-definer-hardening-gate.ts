@@ -15,7 +15,7 @@ import {
   MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
-import { withGateRole } from "./gate-roles";
+import { inRolledBackTransaction, withGateRole } from "./gate-roles";
 import { assertSuperuserCasesProved } from "./gate-runs";
 import {
   assertOwnerRolesClean,
@@ -150,15 +150,6 @@ async function run() {
   const renamedProbe = `gate_definer_renamed_${suffix()}`;
   const creator = `gate_definer_creator_${suffix()}`;
   const fuzzTag = suffix();
-  // runs the body in a transaction that is always rolled back: what it creates (roles, grants, functions, policies) is undone
-  const inRolledBackTransaction = async (body: () => Promise<void>) => {
-    await client.query("BEGIN");
-    try {
-      await body();
-    } finally {
-      await client.query("ROLLBACK");
-    }
-  };
 
   try {
     const server = await client.query<{
@@ -192,6 +183,31 @@ async function run() {
     assert.ok(Number(runtimeRoles.rows[0]?.count) > 0);
     tests.push(
       `all ${definers.rows[0]?.count} SECURITY DEFINER functions fix a search_path that ends in pg_temp and none is executable by PUBLIC; none of the ${runtimeRoles.rows[0]?.count} runtime roles has TEMPORARY on the database or CREATE on schema public`
+    );
+    // the one DEFINER the tenant runtime calls inside its entry (begin_tenant_request): among those checked above, and
+    // with exactly its owner, its pinned path and the tenant runtime as the only executor
+    const pendingHelper = await client.query<{
+      config: string[] | null;
+      executors: string[];
+      owner: string;
+    }>(
+      `SELECT p.proconfig AS config, p.proowner::regrole::text AS owner,
+              ARRAY(
+                SELECT a.grantee::regrole::text FROM aclexplode(p.proacl) AS a
+                 WHERE a.privilege_type = 'EXECUTE' AND a.grantee <> p.proowner ORDER BY 1
+              ) AS executors
+         FROM pg_proc p
+        WHERE p.oid = 'public.legal_acceptance_pending(text, integer, integer)'::regprocedure AND p.prosecdef`
+    );
+    assert.deepEqual(pendingHelper.rows, [
+      {
+        config: ["search_path=pg_catalog, pg_temp"],
+        executors: ["polaris_pr11_runtime"],
+        owner: "polaris_legal_acceptance_owner",
+      },
+    ]);
+    tests.push(
+      "legal_acceptance_pending, the DEFINER the tenant entry calls, is one of them: owned by polaris_legal_acceptance_owner, search_path = pg_catalog, pg_temp, EXECUTE for polaris_pr11_runtime only"
     );
 
     // the gate can fail: a definer function with no search_path and the default ACL
@@ -229,7 +245,7 @@ async function run() {
     assert.deepEqual(kept.foreignOwner, [`public.${probe}() (${gateUser})`]);
     assertClean({ ...kept, foreignOwner: [] });
     // the control: the same function moved to an owner role, the way the migrations move one, is clean
-    await inRolledBackTransaction(async () => {
+    await inRolledBackTransaction(client, async () => {
       await client.query(`GRANT CREATE ON SCHEMA public TO ${CONTROL_OWNER}`);
       await client.query(
         `GRANT ${CONTROL_OWNER} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
@@ -246,7 +262,7 @@ async function run() {
       "a SECURITY DEFINER function with no search_path (or one that does not end in pg_temp) and with EXECUTE for PUBLIC is reported by the gate, and passes once fixed"
     );
     // a throwaway role that creates a definer function and keeps it is named in foreignOwner; moved to an owner role, it is clean
-    await inRolledBackTransaction(async () => {
+    await inRolledBackTransaction(client, async () => {
       await client.query(
         `CREATE ROLE ${creator} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
       );
@@ -298,7 +314,7 @@ async function run() {
     // the scope of the owners: a policy that reads app.owner_scope.* is TO one owner role and reads no runtime setting, and an owner's
     // policy reads no runtime setting, with no exception (0097 moved the last two, of polaris_device_session_owner, to its scope); policies on a
     // throwaway table, rolled back
-    await inRolledBackTransaction(async () => {
+    await inRolledBackTransaction(client, async () => {
       const table = `${probe}_scope`;
       await client.query(`CREATE TABLE public.${table} (id integer)`);
       const scopeFindings = async (
@@ -508,7 +524,7 @@ async function run() {
 
     // row security on every table a polaris_* role uses (tableWithoutRowSecurity), a policy for every grant under FORCE
     // (rowSecurityWithoutPolicy), with role inheritance, and a writer for every owner scope (scopeWithoutWriter); rolled back
-    await inRolledBackTransaction(async () => {
+    await inRolledBackTransaction(client, async () => {
       const table = `${probe}_rls`;
       const group = `polaris_gate_rlsgroup_${suffix()}`;
       const member = `polaris_gate_rlsmember_${suffix()}`;
@@ -1430,13 +1446,10 @@ async function run() {
         READER_NAME,
       ],
     ] as const) {
-      await client.query("BEGIN");
-      try {
+      await inRolledBackTransaction(client, async () => {
         await client.query(statement);
         await assert.rejects(assertOwnerRolesClean(client), floor);
-      } finally {
-        await client.query("ROLLBACK");
-      }
+      });
     }
     await assertOwnerRolesClean(client);
     tests.push(
@@ -1481,7 +1494,7 @@ async function run() {
         allowSuperuser: isSuperuser,
         ...(isSuperuser ? { databaseOwner: originalOwner } : {}),
       });
-      await inRolledBackTransaction(async () => {
+      await inRolledBackTransaction(client, async () => {
         await client.query(
           [
             ...drawn.names.map(

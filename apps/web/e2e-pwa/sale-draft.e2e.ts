@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { ORGANIZATION, serveHome } from "./ui-home-states";
+import { NOW, ORGANIZATION, serveHome } from "./ui-home-states";
 import { CONFIRMED_SALE } from "./ui-sale-states";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -15,7 +15,7 @@ import { WORKER_MARK } from "./worker-mark";
  */
 const SHIRT_OPTION = /Camiseta do teste/;
 const PROFILE_OPTION = /Maquininha do balcão/;
-const DRAFT_KEY = `polaris.sale.draft.v1:${ORGANIZATION.id}`;
+const DRAFT_KEY = `polaris.sale.draft.v2:${ORGANIZATION.id}`;
 const ATTEMPT_KEY = `polaris.sale.attempt.v1:${ORGANIZATION.id}`;
 const CONFIRMED_REGION = /Venda confirmada/;
 const SUBMIT_NAME = /Confirmar venda|Tentar novamente/;
@@ -218,6 +218,7 @@ test("AC-1, AC-5 e AC-7: a venda montada volta por Vender e por Nova venda, e o 
     "occurredAtLocal",
     "payment",
     "profile",
+    "split",
   ]);
 });
 
@@ -289,7 +290,9 @@ test("AC-7: Limpar venda pede confirmação com itens, e sem itens limpa em um t
   const clear = page.getByRole("button", { exact: true, name: "Limpar venda" });
   await clear.click();
   const dialog = page.getByRole("dialog", { name: "Limpar venda?" });
-  await expect(dialog).toContainText("Isso tira o item da venda.");
+  await expect(dialog).toContainText(
+    "Isso tira da venda 1 linha e 2 unidades."
+  );
   await dialog.getByRole("button", { name: "Cancelar" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(
@@ -469,6 +472,9 @@ test("AC-3 e AC-6: a venda confirmada nunca volta como rascunho", async ({
   await buildCart(page);
   await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
   await page.getByRole("region", { name: CONFIRMED_REGION }).waitFor();
+  await expect(
+    page.getByRole("region", { name: CONFIRMED_REGION })
+  ).toBeFocused();
   expect(await storageKeys(page, "sessionStorage")).not.toContain(DRAFT_KEY);
 
   await goHome(page);
@@ -512,19 +518,20 @@ test("AC-3: trocar de loja apaga a venda da loja deixada e a tentativa resolvida
   await serveTwoStores(page, testInfo);
   await openSale(page);
   await buildCart(page);
+  await page.clock.setFixedTime(NOW);
   await page.evaluate(
-    (key) =>
+    ({ at, key }) =>
       window.sessionStorage.setItem(
         key,
         JSON.stringify({
           commandId: "0199c2d0-0000-7000-8000-0000000000e1",
-          occurredAt: new Date().toISOString(),
-          recordedAt: new Date().toISOString(),
+          occurredAt: at,
+          recordedAt: at,
           signature: "{}",
           unsettled: false,
         })
       ),
-    ATTEMPT_KEY
+    { at: NOW.toISOString(), key: ATTEMPT_KEY }
   );
 
   await chooseStore(page, "Outra loja");
@@ -573,3 +580,142 @@ test("AC-3 e AC-6: trocar de loja e voltar com a resposta perdida: o mesmo carri
   await expect.poll(() => sent.length).toBe(2);
   expect(sent[1]).toEqual(sent[0]);
 });
+
+const REMOVE_NAME = /^Remover/;
+const HOUR = 60 * 60 * 1000;
+const CLOCK_NOW = NOW;
+const SEEDED_STARTED_AT = new Date(
+  CLOCK_NOW.getTime() - 3 * HOUR
+).toISOString();
+const SEEDED_UPDATED_AT = new Date(CLOCK_NOW.getTime() - HOUR).toISOString();
+const EDITED_AT = new Date(CLOCK_NOW.getTime() + 30 * 60 * 1000);
+
+/** One shirt at the old list price on the first line and a blank second line, with the stamps the test knows. */
+const SEEDED_DRAFT = {
+  form: {
+    adjustments: [],
+    items: [
+      {
+        chargedUnitPrice: "50,00",
+        draftId: "draft-seed-1",
+        label: "Camiseta do teste · Azul",
+        listedUnitPrice: "50,00",
+        productId: SHIRT.productId,
+        quantity: "2",
+        variantId: SHIRT.variantId,
+      },
+      {
+        chargedUnitPrice: "",
+        draftId: "draft-seed-2",
+        label: "",
+        listedUnitPrice: "",
+        productId: "",
+        quantity: "1",
+        variantId: "",
+      },
+    ],
+    occurredAtLocal: "",
+    payment: {
+      anticipationRequested: false,
+      installmentPlan: "",
+      installments: "",
+      method: "",
+    },
+    profile: { choice: "", reviewNotice: null, seenVersion: null },
+    split: null,
+  },
+  startedAt: SEEDED_STARTED_AT,
+  updatedAt: SEEDED_UPDATED_AT,
+};
+
+async function storedStamps(page: Page) {
+  const raw = await page.evaluate(
+    (key) => window.sessionStorage.getItem(key),
+    DRAFT_KEY
+  );
+  expect(raw).not.toBeNull();
+  const draft = JSON.parse(raw ?? "{}") as {
+    startedAt: string;
+    updatedAt?: string;
+  };
+  return { startedAt: draft.startedAt, updatedAt: draft.updatedAt };
+}
+
+const SEEDED_EDITS: {
+  act: (page: Page) => Promise<void>;
+  name: string;
+}[] = [
+  {
+    act: (page) =>
+      itemOne(page).getByRole("button", { name: "Mais uma unidade" }).click(),
+    name: "mudar a quantidade",
+  },
+  {
+    act: (page) => itemOne(page).getByLabel("Preço cobrado").fill("45,00"),
+    name: "mudar o preço cobrado",
+  },
+  {
+    act: (page) =>
+      page
+        .getByRole("radiogroup", { name: "Método de pagamento" })
+        .getByRole("radio", { name: "Pix" })
+        .check(),
+    name: "trocar o método de pagamento",
+  },
+  {
+    act: (page) =>
+      page
+        .getByRole("group", { exact: true, name: "Item 2" })
+        .getByRole("button", { name: REMOVE_NAME })
+        .click(),
+    name: "tirar a linha",
+  },
+];
+
+for (const edit of SEEDED_EDITS) {
+  test(`AC-2: o updatedAt do rascunho só anda quando a pessoa muda a venda (${edit.name})`, async ({
+    page,
+  }) => {
+    const catalog = await serveSale(page);
+    await page.clock.setFixedTime(CLOCK_NOW);
+    await page.goto("/");
+    await page.evaluate(
+      ([key, draft]) => window.sessionStorage.setItem(key, draft),
+      [DRAFT_KEY, JSON.stringify(SEEDED_DRAFT)] as const
+    );
+
+    // the list price of the shirt changed: the reread of the variants writes the draft again with the new price
+    catalog.entries = [{ ...SHIRT, listPrice: "38.00", version: 2 }];
+    const reread = page.waitForResponse("**/rpc/inventory/listBalances");
+    await openSale(page);
+    await reread;
+    await expect(
+      page.locator("[aria-live]").filter({ hasText: "preço de tabela" })
+    ).toBeVisible();
+    await expect(itemOne(page).getByLabel("Preço cobrado")).toHaveValue(
+      "38,00"
+    );
+    await expect
+      .poll(async () => {
+        const stored = JSON.parse(
+          (await page.evaluate(
+            (key) => window.sessionStorage.getItem(key),
+            DRAFT_KEY
+          )) ?? "{}"
+        ) as { form?: { items?: { chargedUnitPrice: string }[] } };
+        return stored.form?.items?.[0]?.chargedUnitPrice;
+      })
+      .toBe("38,00");
+    expect(await storedStamps(page)).toEqual({
+      startedAt: SEEDED_STARTED_AT,
+      updatedAt: SEEDED_UPDATED_AT,
+    });
+
+    await page.clock.setFixedTime(EDITED_AT);
+    await edit.act(page);
+    await expect
+      .poll(async () => (await storedStamps(page)).updatedAt)
+      .toBe(EDITED_AT.toISOString());
+    expect((await storedStamps(page)).startedAt).toBe(SEEDED_STARTED_AT);
+  });
+}

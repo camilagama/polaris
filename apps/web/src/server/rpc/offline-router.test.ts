@@ -13,7 +13,7 @@ import {
   buildOfflineLeaseClaims,
   OfflineLeaseNotAvailableError,
 } from "@polaris/domain/offline/offline-lease";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { verifyOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -24,12 +24,22 @@ import {
 } from "./offline-handlers";
 import { createRpcRouter } from "./router";
 
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
 const grantId = "0199c2d0-0000-7000-8000-0000000000a1";
 const sessionId = "session-row-17";
 const session = {
-  session: { createdAt: new Date(), id: sessionId },
+  session: { createdAt: new Date(NOW), id: sessionId },
   user: { emailVerified: true, id: "session-user-17" },
 };
 const identity = {
@@ -226,7 +236,7 @@ describe("device procedures", () => {
     const staleSession = {
       ...session,
       session: {
-        createdAt: new Date(Date.now() - 16 * 60 * 1000),
+        createdAt: new Date(NOW.getTime() - 16 * 60 * 1000),
         id: sessionId,
       },
     };
@@ -312,7 +322,7 @@ describe("device procedures", () => {
           {
             ...session,
             session: {
-              createdAt: new Date(Date.now() - 16 * 60 * 1000),
+              createdAt: new Date(NOW.getTime() - 16 * 60 * 1000),
               id: sessionId,
             },
           }
@@ -461,7 +471,7 @@ describe("device.revokeCurrent (Sair revokes this device)", () => {
   const staleSession = {
     ...session,
     session: {
-      createdAt: new Date(Date.now() - 16 * 60 * 1000),
+      createdAt: new Date(NOW.getTime() - 16 * 60 * 1000),
       id: sessionId,
     },
   };

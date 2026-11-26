@@ -21,11 +21,15 @@ const {
   signInAgainButtonId,
 } = await import("./attention-panel");
 type AttentionPanelProps = import("./attention-panel").AttentionPanelProps;
+
 import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
-import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
+import {
+  PLAN_REFUSED_REASON,
+  SERVER_START_FAILED_REASON,
+} from "./runtime/offline-runtime";
 
 const AMOUNT = /R\$\s?\d/;
-const HOME_LINK = /<a [^>]*href="\/"[^>]*>Voltar ao Início<\/a>/;
+const HOME_LINK = /<a aria-label="Voltar para o Início"[^>]*href="\/"/;
 const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
 const none = () => undefined;
 const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
@@ -404,6 +408,13 @@ describe("Pendências without the offline mode", () => {
       expect(out).not.toContain(OFFLINE_PLAN_REASON);
     }
   );
+
+  it("does not blame the browser when the server failed at the start", () => {
+    const out = html(SERVER_START_FAILED_REASON);
+    expect(out).toContain(OFFLINE_NEUTRAL_REASON);
+    expect(out).not.toContain(OFFLINE_BROWSER_REASON);
+    expect(out).not.toContain(OFFLINE_PLAN_REASON);
+  });
 
   it("uses the words of Aparelhos for the browser", () => {
     expect(

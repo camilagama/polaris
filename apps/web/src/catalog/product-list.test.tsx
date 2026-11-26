@@ -1,7 +1,10 @@
+// @vitest-environment happy-dom
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
 import type { PendingProduct } from "../offline/product-create";
 import { lockedReasonFor, ProductList } from "./product-list";
@@ -11,8 +14,8 @@ import { ThumbnailLoader } from "./thumbnail-queue";
 
 /**
  * The list of the products screen, drawn without a browser: what each state says and what each row carries. The
- * menu opens in a popup (Base UI), so its items are proved in the browser (e2e/products-screen.e2e.ts); here is the
- * trigger, its name and whether it is off.
+ * static drawing shows the menu's trigger, its name and whether it is off; the items of the popup (Base UI) are
+ * opened in a DOM below, and the e2e (e2e/products-screen.e2e.ts) proves them in the browser.
  */
 const product = (
   n: number,
@@ -79,9 +82,11 @@ const noop = () => undefined;
 type Props = ComponentProps<typeof ProductList>;
 const base: Props = {
   categories: [clothes],
+  count: "",
   isLoading: false,
   isOffline: false,
   onArchive: noop,
+  onDelete: noop,
   onEdit: noop,
   onManageMedia: noop,
   onManageVariants: noop,
@@ -119,12 +124,38 @@ const pending = (
   variantId: "00000000-0000-4000-8000-000000000002",
 });
 
+const TITLE_H2 = /<h2[^>]*>Produtos cadastrados<\/h2>/;
+const LIST_NAMED_BY_TITLE = /<ul aria-labelledby="product-list-title"/;
+const COUNT_LINE = /aria-live="polite"[^>]*data-list-count="">2 produtos</;
+
 describe("estados da lista", () => {
-  it("carregando diz que carrega, como status, e não mostra a lista nem o convite", () => {
+  it("carregando mantém a moldura e o título, mostra o esqueleto e diz que carrega só para o leitor de tela", () => {
     const markup = html({ isLoading: true });
-    expect(markup).toContain('role="status"');
-    expect(markup).toContain("Carregando produtos…");
+    expect(markup).toContain('data-list-block=""');
+    expect(markup).toContain(">Produtos cadastrados</h2>");
+    expect(markup).toContain(
+      '<p class="sr-only" role="status">Carregando…</p>'
+    );
+    expect(markup).toContain('data-slot="skeleton"');
+    expect(markup).not.toContain("Carregando produtos…");
     expect(markup).not.toContain("Nenhum produto ainda");
+  });
+
+  it("com produtos, a lista é a ListBlock: o título nomeia a lista e a contagem fica ao lado dele, sem ser título", () => {
+    const markup = html({
+      count: "2 produtos",
+      products: [product(1), product(2)],
+      total: 2,
+    });
+    expect(markup).toMatch(TITLE_H2);
+    expect(markup).toMatch(LIST_NAMED_BY_TITLE);
+    expect(markup).toMatch(COUNT_LINE);
+    expect(markup).not.toContain('aria-label="Produtos"');
+  });
+
+  it("sem produto nenhum, o vazio de verdade e o dos arquivados ficam sem moldura", () => {
+    expect(html()).not.toContain('data-list-block=""');
+    expect(html({ status: "archived" })).not.toContain('data-list-block=""');
   });
 
   it("sem produto nenhum convida a cadastrar o primeiro, com o botão", () => {
@@ -143,6 +174,8 @@ describe("estados da lista", () => {
   it("com produtos e uma busca que não casa, diz o que foi buscado em vez de dizer que não há produtos", () => {
     const markup = html({ query: " tenis ", total: 3 });
     expect(markup).toContain("Nenhum produto com “tenis”.");
+    expect(markup).toContain('data-state="filtered-empty"');
+    expect(markup).toContain(">Produtos cadastrados</h2>");
     expect(markup).not.toContain("Nenhum produto ainda");
   });
 });
@@ -422,5 +455,64 @@ describe("a capa na lista, atrás da flag", () => {
     const off = html({ products: [saved], syncStates, total: 1 });
     expect(on).toContain("pb-2.5 pl-13");
     expect(off).toContain("pb-2.5 pl-12");
+  });
+});
+
+describe("itens do menu de Excluir…", () => {
+  afterEach(cleanup);
+
+  const user = userEvent.setup();
+  const NAME = "Jaqueta";
+
+  async function openMenu(props: Partial<Props>) {
+    render(<ProductList {...base} {...props} />);
+    await user.click(
+      screen.getByRole("button", { name: `Mais ações para ${NAME}` })
+    );
+  }
+
+  const row = (status: "active" | "archived") => [
+    product(1, { name: NAME, status }),
+  ];
+
+  it("o produto arquivado tem Excluir… no menu, com Restaurar e sem Arquivar", async () => {
+    await openMenu({ products: row("archived"), status: "archived", total: 1 });
+    expect(screen.getByRole("menuitem", { name: "Excluir…" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Restaurar" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Arquivar" })).toBeNull();
+  });
+
+  it("o produto ativo não tem Excluir… no menu", async () => {
+    await openMenu({ products: row("active"), total: 1 });
+    expect(screen.getByRole("menuitem", { name: "Arquivar" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Excluir…" })).toBeNull();
+  });
+
+  it("sem conexão o Excluir… fica desligado", async () => {
+    await openMenu({
+      isOffline: true,
+      products: row("archived"),
+      status: "archived",
+      total: 1,
+    });
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Excluir…" })
+        .getAttribute("aria-disabled")
+    ).toBe("true");
+  });
+
+  it("com conexão o Excluir… liga e chama onDelete com o produto", async () => {
+    const asked: string[] = [];
+    await openMenu({
+      onDelete: (asking) => asked.push(asking.name),
+      products: row("archived"),
+      status: "archived",
+      total: 1,
+    });
+    const item = screen.getByRole("menuitem", { name: "Excluir…" });
+    expect(item.getAttribute("aria-disabled")).not.toBe("true");
+    await user.click(item);
+    expect(asked).toEqual([NAME]);
   });
 });

@@ -12,9 +12,14 @@ import { formatCalendarDate } from "../../privacy/closure-notice-email";
 
 const DAY_MS = 86_400_000;
 
-/** The store's name in a subject: one line, at most 24 characters and "…" (AC-17); the whole name goes in the body. */
 const SUBJECT_STORE_MAX = 24;
 
+/**
+ * The store's name cut to one line of at most 24 graphemes, with "…" when it was longer (AC-17).
+ * The billing e-mails use it in the subject and carry the whole name in the body; the activation notices
+ * use it for the cut name wherever the store appears in the body, the footer and the preview, and their subject
+ * never names the store (ADR 0106).
+ */
 export function subjectStore(name: string): string {
   const line = name.replaceAll(/\s+/g, " ").trim();
   // by grapheme, so an emoji made of several code points is never cut in half

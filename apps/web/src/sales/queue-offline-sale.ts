@@ -13,7 +13,10 @@ type ConfirmRequest = Extract<PreparedConfirmation, { ok: true }>["request"];
  * connection is back, taking the stock under its own locks; a sale it cannot
  * fit is refused there and waits in Pendências, never silently dropped.
  */
-/** The device command carries no typed date: its two times are one instant. */
+/**
+ * What the device command cannot carry: a typed date (its two times are one instant). A sale paid in parts is
+ * carried with its parts, each with the profile the device saw for it.
+ */
 export class DeviceSaleNotCarriableError extends Error {
   constructor() {
     super("device_sale_not_carriable");
@@ -50,8 +53,9 @@ export async function queueOfflineSale(input: {
     now: () => new Date(request.occurredAt),
     organizationId: request.organizationId,
     outbox: stores.outbox,
-    payment: request.payment,
-    paymentProfile: request.paymentProfile,
+    ...(request.payments === undefined
+      ? { payment: request.payment, paymentProfile: request.paymentProfile }
+      : { payments: request.payments }),
     reader: stores.writer,
   });
   return {

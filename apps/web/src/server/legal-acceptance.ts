@@ -92,6 +92,20 @@ export function isLegalAcceptanceEnforced(bindings: WorkerBindings): boolean {
   return bindings.LEGAL_ACCEPTANCE_ENFORCED === "true";
 }
 
+/**
+ * Whether this request must have the versions in force accepted: the control is on and the request is not exempt. The
+ * only source of that decision, for the check of the authentication and for the one at the entry of a tenant
+ * transaction alike.
+ */
+export function isLegalAcceptanceRequired(
+  bindings: WorkerBindings,
+  request: Request
+): boolean {
+  return (
+    isLegalAcceptanceEnforced(bindings) && !isExemptFromLegalAcceptance(request)
+  );
+}
+
 /** The highest version of each document the user accepted. A failure throws: the control fails closed. */
 export async function readAcceptedLegalVersions(
   connection: LegalAcceptanceQueryable,
@@ -115,7 +129,14 @@ export async function readAcceptedLegalVersions(
 export function pendingLegalAcceptance(
   accepted: AcceptedLegalVersions
 ): PendingLegalAcceptance[] {
-  return pendingLegalDocuments(accepted).map((document) => ({
+  return pendingLegalAcceptanceOf(pendingLegalDocuments(accepted));
+}
+
+/** The pending documents, each with the version in force: the body of the refusal, wherever the check ran. */
+export function pendingLegalAcceptanceOf(
+  documents: readonly LegalDocumentId[]
+): PendingLegalAcceptance[] {
+  return documents.map((document) => ({
     document,
     version: LEGAL_DOCUMENTS[document].version,
   }));

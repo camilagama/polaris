@@ -180,7 +180,7 @@ describe("main menu", () => {
 });
 
 describe("tabs", () => {
-  it("gives Produtos, Resultado and Configurações their tabs, in order", () => {
+  it("gives Produtos, Resultado, Configurações and Minha conta their tabs, in order", () => {
     expect(
       Object.fromEntries(
         Object.entries(SCREEN_TABS).map(([screen, tabs]) => [
@@ -189,14 +189,13 @@ describe("tabs", () => {
         ])
       )
     ).toEqual({
+      account: ["Senha", "Aparelhos"],
       dashboard: ["Resultado", "Metas"],
       products: ["Produtos", "Categorias"],
       settings: [
         "Formas de receber",
         "Catálogo público",
-        "Aparelhos",
         "Assinatura",
-        "Senha",
         "Seus dados",
       ],
     });
@@ -208,20 +207,25 @@ describe("tabs", () => {
       "categorias"
     );
     expect(requestedTab("products", "?aba=metas").value).toBe("produtos");
-    expect(requestedTab("settings", "?aba=senha&x=1").value).toBe("senha");
+    expect(requestedTab("account", "?aba=aparelhos&x=1").value).toBe(
+      "aparelhos"
+    );
+    expect(requestedTab("settings", "?aba=senha").value).toBe(
+      "formas-de-receber"
+    );
     expect(requestedTab("dashboard", "?aba=despesas").value).toBe("resultado");
   });
 
   it("rewrites the address for a value that is no tab, and for a tab this person does not have", () => {
-    const has = ["formas-de-receber", "catalogo-publico", "senha"];
+    const has = ["formas-de-receber", "catalogo-publico", "assinatura"];
     // none, or a tab that is there: the address already says it
     expect(openedTab("settings", "", has)).toEqual({
       rewrite: false,
       value: "formas-de-receber",
     });
-    expect(openedTab("settings", "?aba=senha", has)).toEqual({
+    expect(openedTab("settings", "?aba=assinatura", has)).toEqual({
       rewrite: false,
-      value: "senha",
+      value: "assinatura",
     });
     // `?aba=xyz` names no tab: the first one opens and the address says so
     expect(openedTab("settings", "?aba=xyz", has)).toEqual({
@@ -229,11 +233,19 @@ describe("tabs", () => {
       value: "formas-de-receber",
     });
     expect(openedTab("settings", "?aba=", has).rewrite).toBe(true);
-    // a tab of the screen that this person does not have (Aparelhos without the offline runtime)
-    expect(openedTab("settings", "?aba=aparelhos", has)).toEqual({
+    // a tab of the screen that this person does not have (Seus dados without `organization:export`)
+    expect(openedTab("settings", "?aba=seus-dados", has)).toEqual({
       rewrite: true,
       value: "formas-de-receber",
     });
+    // Minha conta: Senha asked with only Aparelhos, the first one that is there opens
+    expect(openedTab("account", "?aba=senha", ["aparelhos"])).toEqual({
+      rewrite: true,
+      value: "aparelhos",
+    });
+    expect(openedTab("account", "", ["senha", "aparelhos"]).rewrite).toBe(
+      false
+    );
     // the goals link of the Início wins over `aba`; the Resultado rewrites that one itself
     const result = ["resultado", "metas"];
     expect(openedTab("dashboard", "?meta=nova", result)).toEqual({
@@ -269,7 +281,11 @@ describe("tabs", () => {
     expect(
       addressWithTab("/dashboard?aba=metas&x=1", "dashboard", "resultado")
     ).toBe("/dashboard?x=1");
-    expect(tabHref("settings", "senha")).toBe("/configuracoes?aba=senha");
+    expect(tabHref("account", "senha")).toBe("/conta");
+    expect(tabHref("account", "aparelhos")).toBe("/conta?aba=aparelhos");
+    expect(tabHref("settings", "assinatura")).toBe(
+      "/configuracoes?aba=assinatura"
+    );
     expect(tabHref("settings", "formas-de-receber")).toBe("/configuracoes");
     expect(tabHref("products", "categorias")).toBe("/products?aba=categorias");
   });
@@ -288,7 +304,9 @@ describe("tabs", () => {
     expect(namesTab("settings", "?aba=")).toBe(false);
     expect(namesTab("settings", "?aba=xyz")).toBe(false);
     expect(namesTab("settings", "?aba=formas-de-receber")).toBe(true);
-    expect(namesTab("settings", "?x=1&aba=senha")).toBe(true);
+    expect(namesTab("settings", "?x=1&aba=assinatura")).toBe(true);
+    expect(namesTab("settings", "?aba=senha")).toBe(false);
+    expect(namesTab("account", "?aba=senha")).toBe(true);
     expect(namesTab("settings", "?aba=resultado")).toBe(false);
   });
 });
@@ -303,7 +321,7 @@ describe("Configurações on a phone", () => {
         navId: "settings",
         onlineOnly: false,
         screen: "settings",
-        title: "Configurações",
+        title: "Configurações da loja",
       });
     }
   });
@@ -347,18 +365,15 @@ describe("listedTabs", () => {
     ]);
   });
 
-  it("holds the place of a reserved tab between its neighbours, and drops it once it is a tab of the person", () => {
-    const waiting = ["formas-de-receber", "catalogo-publico", "seus-dados"];
-    expect(values(listedTabs("settings", waiting, ["senha"]))).toEqual([
-      ["formas-de-receber", false],
-      ["catalogo-publico", false],
+  it("holds the place of a reserved tab before its neighbour, and drops it once it is a tab of the person", () => {
+    expect(values(listedTabs("account", ["aparelhos"], ["senha"]))).toEqual([
       ["senha", true],
-      ["seus-dados", false],
+      ["aparelhos", false],
     ]);
     expect(
-      values(listedTabs("settings", [...waiting, "senha"], ["senha"]))
+      values(listedTabs("account", ["senha", "aparelhos"], ["senha"]))
     ).toContainEqual(["senha", false]);
-    expect(values(listedTabs("settings", waiting))).not.toContainEqual([
+    expect(values(listedTabs("account", ["aparelhos"]))).not.toContainEqual([
       "senha",
       true,
     ]);
@@ -380,12 +395,38 @@ describe("the addresses of the screens that became tabs (map § 6)", () => {
       )
     ).toEqual({
       "/categories": "/products?aba=categorias",
-      "/conta/seguranca": "/configuracoes?aba=senha",
-      "/devices": "/configuracoes?aba=aparelhos",
+      "/conta/seguranca": "/conta",
+      "/devices": "/conta?aba=aparelhos",
       "/payment-profiles": "/configuracoes",
       "/public-catalog": "/configuracoes?aba=catalogo-publico",
       "/subscription": "/configuracoes?aba=assinatura",
     });
+  });
+
+  it("take the tabs that moved to Minha conta, from where they were in Configurações, with the rest of the query and the hash", () => {
+    expect(legacyAddress("/configuracoes", "?aba=senha", "")).toBe("/conta");
+    expect(legacyAddress("/configuracoes", "?aba=aparelhos", "")).toBe(
+      "/conta?aba=aparelhos"
+    );
+    expect(legacyAddress("/configuracoes", "?aba=aparelhos&x=1", "#topo")).toBe(
+      "/conta?aba=aparelhos&x=1#topo"
+    );
+    expect(legacyAddress("/configuracoes", "?aba=senha", "", true)).toBe(
+      "/conta"
+    );
+  });
+
+  it("leave the tabs that stayed in Configurações, and the return of the checkout with them, where they are", () => {
+    for (const search of [
+      "",
+      "?aba=assinatura",
+      "?aba=assinatura&retorno=concluida",
+      "?aba=assinatura&retorno=cancelada",
+      "?aba=assinatura&retorno=expirada",
+      "?aba=seus-dados",
+    ]) {
+      expect(legacyAddress("/configuracoes", search, "")).toBeNull();
+    }
   });
 
   it("name the first tab of Configurações on a phone, where the address without a tab is its list", () => {
@@ -505,7 +546,13 @@ describe("resolveRoute", () => {
       id: "payment-profiles",
       navId: "settings",
       screen: "settings",
-      title: "Configurações",
+      title: "Configurações da loja",
+    });
+    expect(resolveRoute("/conta")).toMatchObject({
+      id: "account-security",
+      navId: null,
+      screen: "account",
+      title: "Minha conta",
     });
   });
 
@@ -525,7 +572,7 @@ describe("resolveRoute", () => {
     for (const [path, search] of [
       ["/configuracoes", ""],
       ["/configuracoes", "?aba=catalogo-publico"],
-      ["/configuracoes", "?aba=senha"],
+      ["/conta", ""],
       ["/configuracoes", "?aba=assinatura"],
       ["/expenses", ""],
       ["/products", "?aba=categorias"],
@@ -542,7 +589,7 @@ describe("resolveRoute", () => {
       ["/customers", ""],
       ["/dashboard", ""],
       ["/dashboard", "?aba=metas"],
-      ["/configuracoes", "?aba=aparelhos"],
+      ["/conta", "?aba=aparelhos"],
     ] as const) {
       expect(resolveRoute(path, search)).toMatchObject({ onlineOnly: false });
     }
@@ -550,7 +597,6 @@ describe("resolveRoute", () => {
 
   it("tells the connection notice which online-only screens hold a form to type in", () => {
     for (const [path, search] of [
-      ["/configuracoes", ""],
       ["/expenses", ""],
       ["/products", "?aba=categorias"],
     ] as const) {
@@ -558,8 +604,10 @@ describe("resolveRoute", () => {
         connectionForm: true,
       });
     }
-    // the catalog declares its form once it loaded; the sale detail is read first
+    // the catalog and Formas de receber declare their form once they loaded; the sale detail is read first
     for (const [path, search] of [
+      ["/configuracoes", ""],
+      ["/configuracoes", "?aba=formas-de-receber"],
       ["/configuracoes", "?aba=catalogo-publico"],
       ["/sales/detail", ""],
     ] as const) {
@@ -641,7 +689,7 @@ describe("the sign-in route", () => {
     for (const path of ["/redefinir-senha/abc", "/toString", "/__proto__"]) {
       expect(entryPageFor(path)).toBeNull();
     }
-    expect(resolveRoute("/configuracoes", "?aba=senha")).toMatchObject({
+    expect(resolveRoute("/conta", "?aba=senha")).toMatchObject({
       id: "account-security",
       kind: "page",
     });
@@ -706,9 +754,10 @@ describe("the screen key of an error report", () => {
     expect(screenKeyOf("/configuracoes", "?aba=formas-de-receber", true)).toBe(
       "settings:formas-de-receber"
     );
-    expect(screenKeyOf("/configuracoes", "?aba=senha", true)).toBe(
-      "settings:senha"
+    expect(screenKeyOf("/conta", "?aba=aparelhos", true)).toBe(
+      "account:aparelhos"
     );
+    expect(screenKeyOf("/conta", "", true)).toBe("account:senha");
     expect(screenKeyOf("/sales", "", true)).toBe("sale");
   });
 

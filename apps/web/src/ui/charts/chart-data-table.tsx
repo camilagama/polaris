@@ -57,9 +57,10 @@ const HIDDEN =
 
 /* an automatic table layout never goes below the widest word of each column, so five columns made a table wider than a
    phone and every box of it past the screen; a fixed layout holds the table to the width of its wrapper and the text
-   breaks inside the cell */
+   breaks inside the cell; the amount of `Money` does not break (its "R$" stays with the number) and, in Geist Mono, is
+   wider than a narrow fixed column, so in this table, which nobody sees, it is set in Geist */
 const HIDDEN_TABLE =
-  "table-fixed [overflow-wrap:anywhere] [&_td]:px-0 [&_th]:px-0";
+  "table-fixed [overflow-wrap:anywhere] [&_span]:font-sans [&_td]:px-0 [&_th]:px-0";
 
 /**
  * The day-by-day numbers of a chart as a real table: invisible on the screen (clipped to one pixel, out of the tab order) and
@@ -136,7 +137,8 @@ export function ChartDataTable({
                   <td
                     className={cn(
                       "px-2 py-2.5",
-                      columns[index]?.numeric && "text-right tabular-nums",
+                      columns[index]?.numeric &&
+                        cn("text-right tabular-nums", visible && "font-mono"),
                       !hiddenValues &&
                         row.negativeCells?.includes(index) &&
                         "text-destructive",
@@ -158,6 +160,7 @@ export function ChartDataTable({
               <td
                 className={cn(
                   "px-2 py-2.5 text-right tabular-nums",
+                  visible && "font-mono",
                   stacked && STACK_FOOT
                 )}
                 colSpan={columns.length}

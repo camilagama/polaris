@@ -6,6 +6,7 @@ import {
   firstAccessStates,
   legalStates,
 } from "./ui-account-states";
+import { openSaleAction } from "./sale-detail-fixture";
 import { attentionStates, deviceStates } from "./ui-device-states";
 import { entryStates, settle } from "./ui-entry-states";
 import { expenseStates } from "./ui-expense-states";
@@ -42,7 +43,7 @@ export interface UiScreen {
   sourceDirs: string[];
 }
 
-export type UiCheck = "overflow" | "touch" | "axe" | "focus";
+export type UiCheck = "overflow" | "touch" | "axe" | "focus" | "names";
 
 export const VIEWPORTS = {
   "320": { height: 640, width: 320 },
@@ -70,7 +71,7 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
 
 /**
  * Each check runs only on the axes that can change its result, declared once here (docs/runbooks/testes-de-tela.md);
- * `ui-guardrails.e2e.ts` builds its tests from this map, one page load per distinct context, and runs on it every
+ * `ui-guardrails/screen-checks.ts` builds its tests from this map, one page load per distinct context, and runs on it every
  * check that lists the context. A new check, or a new axis for one, is a line here: the cost of the CI grows with
  * the contexts listed, not with the product of widths, themes and pointers.
  *
@@ -78,7 +79,9 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
  *   check loads anyway); the theme does not move a box;
  * - touch (2): the areas of 44 px exist with a coarse pointer, at the two phone widths and on a tablet;
  * - axe (3): the contrast is the theme's, and the phone is the width where the layout is tightest;
- * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse.
+ * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse;
+ * - names (10): the markup of the phone (tab bar, sheet) and of the wide screen (side menu) differ, so both, in the
+ *   contexts that the other checks already load.
  *
  * Motion (5) is not here: it needs no axis, it runs once per state in `MOTION_CONTEXT`. Colors only in OKLCH and
  * tokens (4) is a source test, with no context (`scripts/ui-source-rules.test.ts`).
@@ -86,6 +89,7 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
 export const CHECK_CONTEXTS: Record<UiCheck, readonly UiContext[]> = {
   axe: [light("360", true), { theme: "escuro", touch: true, viewport: "360" }],
   focus: [light("1280", false)],
+  names: [light("360", true), light("1280", false)],
   overflow: [
     light("320", true),
     light("360", true),
@@ -145,6 +149,30 @@ async function escapeUntilGone(page: Page, surface: Locator) {
   await surface.first().waitFor({ state: "detached" });
 }
 
+/**
+ * The panels that open and close here move with CSS animations the page clock does not drive: wait two frames for the
+ * animation the click started to be running, then for the page to have no finite one running. The endless ones (the
+ * skeleton pulse) never stop and are not what the panel does, so they do not count.
+ */
+async function waitForAnimationsToEnd(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      })
+  );
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== "running" ||
+          animation.effect?.getComputedTiming().iterations ===
+            Number.POSITIVE_INFINITY
+      )
+  );
+}
+
 async function exerciseGallery(page: Page) {
   await openAndClose(
     page,
@@ -185,14 +213,14 @@ async function exerciseGallery(page: Page) {
   const recurring = page.getByRole("button", { name: "Despesas recorrentes" });
   await recurring.click();
   await page.getByText("Aluguel e internet, todo dia 5.").waitFor();
-  await page.waitForTimeout(300);
+  await waitForAnimationsToEnd(page);
   await recurring.click();
   await page
     .getByText("Aluguel e internet, todo dia 5.")
     .waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Mostrar aviso" }).click();
   await page.getByText("Venda registrada").waitFor();
-  await page.waitForTimeout(300);
+  await waitForAnimationsToEnd(page);
 }
 
 /** The files of the sale screen on the new interface: the other screens of `src/sales` are still the old CSS. */
@@ -222,6 +250,7 @@ const saleScreen = (
 
 /** The files of the products screen on the new interface, with the images panel. */
 const PRODUCT_SOURCES = [
+  "src/catalog/product-delete-dialog.tsx",
   "src/catalog/product-dialog.tsx",
   "src/catalog/product-fields.tsx",
   "src/catalog/product-form.tsx",
@@ -457,7 +486,7 @@ async function exerciseHomePanels(page: Page) {
   const sheet = page.getByRole("dialog", { name: "Mais" });
   await more.click();
   await sheet.waitFor();
-  await page.waitForTimeout(300);
+  await waitForAnimationsToEnd(page);
   await page.keyboard.press("Escape");
   await sheet.waitFor({ state: "hidden" });
 }
@@ -479,9 +508,10 @@ const historyScreen = (
   sourceDirs: HISTORY_SOURCES,
 });
 
-/** The files of the sale detail (with its return, cancellation and customer panels). */
+/** The files of the sale detail (with its menu of actions and its return, cancellation and customer dialogs). */
 const SALE_DETAIL_SOURCES = [
   "src/sales/operation-failure-notice.tsx",
+  "src/sales/sale-actions-menu.tsx",
   "src/sales/sale-cancel-panel.tsx",
   "src/sales/sale-customer-panel.tsx",
   "src/sales/sale-detail-page.tsx",
@@ -517,9 +547,7 @@ async function exerciseCancelReason(page: Page) {
 
 async function exerciseSaleCustomer(page: Page) {
   // the customer is chosen in a form dialog: opened, the list of customers opened and closed inside it, then closed
-  await page
-    .getByRole("button", { exact: true, name: "Trocar cliente" })
-    .click();
+  await openSaleAction(page, "Trocar cliente");
   const choose = page.getByRole("dialog", { name: "Trocar cliente" });
   await choose.waitFor();
   await openAndClose(
@@ -529,16 +557,17 @@ async function exerciseSaleCustomer(page: Page) {
   );
   await page.keyboard.press("Escape");
   await choose.waitFor({ state: "detached" });
-  await openAndClose(
-    page,
-    { name: "Remover cliente", role: "button" },
-    { role: "dialog" }
-  );
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Remover cliente" })
+    .click();
+  await page.getByRole("dialog").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "detached" });
 }
 
 /** The files of the stock screen on the new interface (the logic files of `src/inventory` have no markup). */
 const STOCK_SOURCES = [
-  "src/app-shell/action-strip.tsx",
   "src/inventory/inventory-page.tsx",
   "src/inventory/stock-command-panel.tsx",
   "src/inventory/stock-panel-fields.tsx",
@@ -571,7 +600,6 @@ const DEVICE_SOURCES = [
   "src/offline/runtime/devices-page.tsx",
 ];
 const ATTENTION_SOURCES = [
-  "src/app-shell/action-strip.tsx",
   "src/offline/attention-panel.tsx",
   "src/offline/runtime/attention-page.tsx",
 ];
@@ -715,6 +743,7 @@ const SUBSCRIPTION_SOURCES = [
   "src/subscription",
   "src/app-shell/grace-notice.tsx",
   "src/app-shell/menu-progress.tsx",
+  "src/ui/plan-card.tsx",
 ];
 
 const subscriptionScreen = (
@@ -971,6 +1000,7 @@ export const SCREENS: UiScreen[] = [
   productScreen("produto aberto sem internet", productStates.offline),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
   productScreen("imagens, remoção pedindo confirmação", productStates.media),
+  productScreen("excluir arquivado", productStates.deleteArchived),
   productScreen(
     "imagens, recorte da imagem escolhida",
     productStates.mediaCrop
@@ -1006,4 +1036,5 @@ export const SCREENS: UiScreen[] = [
   attentionScreen("descartando", attentionStates.discarding),
   attentionScreen("vazio", attentionStates.empty),
   attentionScreen("sem offline", attentionStates.unavailable),
+  saleScreen("pagamento dividido", saleStates.split),
 ];

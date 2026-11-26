@@ -9,9 +9,17 @@ import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
 import { createOfflineProduct } from "../product-create";
 import { FakeCatalogServer, FakeWriter } from "../test-support";
+import {
+  RECOGNIZING_SLOW_TEXT,
+  recognitionState,
+  recognitionText,
+} from "./devices-model";
 import { logoutDependencies } from "./logout-dependencies";
 import {
   type DataChannel,
+  DEVICE_CHECK_BACK_ONLINE_MS,
+  DEVICE_CHECK_RETRY_STEPS_MS,
+  isBrowserFailure,
   type KeyValueStore,
   NoSessionForDiscardError,
   OfflineRuntime,
@@ -19,14 +27,19 @@ import {
   PLAN_REFUSED_REASON,
   type RuntimeApi,
   type RuntimeDependencies,
+  type RuntimeSnapshot,
+  SERVER_START_FAILED_REASON,
+  SESSION_RECHECK_MS,
   SessionUnreachableError,
 } from "./offline-runtime";
+import { MAX_TICK_MS } from "./sync-scheduler";
 import { syncStatusLabel } from "./sync-status";
 
 const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
 const organizationId = "org-1";
 const HOUR = 3_600_000;
+const WORLD_START = new Date("2026-10-14T12:00:00.000Z");
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -51,17 +64,22 @@ function world(options: { leaseHours?: number } = {}) {
   const network = { online: true };
   /** Whether a queue database exists on the browser, apart from the namespaces the registry lists. */
   const disk = { failure: undefined as Error | undefined, outbox: false };
-  let clock = new Date("2026-10-14T12:00:00.000Z");
+  let clock = new Date(WORLD_START);
   const calls = {
+    deviceIsMine: 0,
     issueLease: 0,
     pull: 0,
     push: 0,
     registerDevice: 0,
     sessionUser: 0,
   };
+  const sessionFresh: boolean[] = [];
   const labels: (string | null)[] = [];
+  const expectedUsers: (string | undefined)[] = [];
   const owners = new Map<string, string>();
-  const session: { signedIn: boolean; user: string } = {
+  /** `id` is the session row the get-session names; null is an answer without one (the start never skips the check). */
+  const session: { id: string | null; signedIn: boolean; user: string } = {
+    id: null,
     signedIn: true,
     user: userId,
   };
@@ -69,7 +87,7 @@ function world(options: { leaseHours?: number } = {}) {
     /** The server cannot say whose a device is (down, timed out). */
     deviceIsMine: boolean;
     /** What asking whose a device is throws, if anything (wins over `deviceIsMine`). */
-    deviceIsMineError?: Error;
+    deviceIsMineError?: Error | undefined;
     /** What asking who is signed in throws, if anything. */
     sessionUser?: Error;
     issueLease: Error[];
@@ -82,6 +100,10 @@ function world(options: { leaseHours?: number } = {}) {
     pushData?: Record<string, unknown> | undefined;
     /** The server answers every pushed command as rejected, with this code. */
     rejectCode?: string | undefined;
+    /** What every pull throws, after `beforePullError` ran, if anything. */
+    pullError?: unknown;
+    /** Runs inside the pull that is about to fail (the session or the queue changes while it is on its way). */
+    beforePullError?: (() => Promise<void> | void) | undefined;
   } = {
     deviceIsMine: false,
     issueLease: [],
@@ -164,6 +186,10 @@ function world(options: { leaseHours?: number } = {}) {
   countedSource.pull = async (cursor, limit) => {
     calls.pull += 1;
     await gates.pull;
+    if (failures.pullError !== undefined) {
+      await failures.beforePullError?.();
+      throw failures.pullError;
+    }
     const release = await gates.readGate?.acquire(pullSignal);
     try {
       return await server.pull(cursor, limit);
@@ -173,6 +199,7 @@ function world(options: { leaseHours?: number } = {}) {
   };
   const api: RuntimeApi = {
     deviceIsMine: (deviceId) => {
+      calls.deviceIsMine += 1;
       if (failures.deviceIsMineError) {
         return Promise.reject(failures.deviceIsMineError);
       }
@@ -227,13 +254,27 @@ function world(options: { leaseHours?: number } = {}) {
       owners.set(id, session.user);
       return Promise.resolve(id);
     },
-    sessionUserId: () => {
+    sessionUserId: (lookup) => {
       calls.sessionUser += 1;
+      sessionFresh.push(lookup?.fresh === true);
       return failures.sessionUser
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
     },
-    source: (_organizationId, signal) => {
+    signedInSession: () => {
+      calls.sessionUser += 1;
+      sessionFresh.push(true);
+      if (failures.sessionUser) {
+        return Promise.reject(failures.sessionUser);
+      }
+      return Promise.resolve(
+        session.signedIn
+          ? { sessionId: session.id, userId: session.user }
+          : null
+      );
+    },
+    source: (_organizationId, signal, expectedUserId) => {
+      expectedUsers.push(expectedUserId);
       pullSignal = signal;
       return countedSource;
     },
@@ -312,9 +353,14 @@ function world(options: { leaseHours?: number } = {}) {
     advance: (hours: number) => {
       clock = new Date(clock.getTime() + hours * HOUR);
     },
+    advanceMs: (ms: number) => {
+      clock = new Date(clock.getTime() + ms);
+    },
+    api,
     calls,
     closed,
     disk,
+    expectedUsers,
     failures,
     /** Fires every live timer that is due by the clock, as the browser would. */
     fireDueTimers: () => {
@@ -336,11 +382,41 @@ function world(options: { leaseHours?: number } = {}) {
     make,
     network,
     purged,
+    /** The server revokes the device: it is nobody's any more. */
+    revoke: (deviceId: string) => {
+      owners.delete(deviceId);
+    },
     server,
     session,
+    sessionFresh,
     stores,
     wiped,
   };
+}
+
+/** One lock per name across runtimes, `ifAvailable` like navigator.locks. */
+function sharedLock() {
+  const held = new Set<string>();
+  return async (name: string, task: () => Promise<void>) => {
+    if (held.has(name)) {
+      return false;
+    }
+    held.add(name);
+    try {
+      await task();
+      return true;
+    } finally {
+      held.delete(name);
+    }
+  };
+}
+
+function deferred() {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
 }
 
 async function queueProduct(runtime: OfflineRuntime, name: string, n: number) {
@@ -401,6 +477,55 @@ describe("starting", () => {
     expect(w.calls).toEqual(online); // nothing was asked of the server
   });
 
+  it("reopened over a queue on disk, the first ready snapshot already counts it: the chip never says synced over waiting work", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    w.network.online = false;
+    await queueProduct(first, "Camiseta", 1);
+    await first.stop();
+
+    const second = w.make();
+    const ready: RuntimeSnapshot["counts"][] = [];
+    second.subscribe(() => {
+      const snapshot = second.getSnapshot();
+      if (snapshot.phase === "ready") {
+        ready.push(snapshot.counts);
+      }
+    });
+    await second.start(organizationId);
+
+    expect(ready.length).toBeGreaterThan(0);
+    expect(ready).toEqual(
+      ready.map(() => ({ pending: 1, rejected: 0, sending: 0 }))
+    );
+  });
+
+  it("reopened expired over a queue on disk, the expired snapshot already counts it", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    w.network.online = false;
+    await queueProduct(first, "Camiseta", 1);
+    await first.stop();
+    w.advance(73);
+
+    const second = w.make();
+    const expired: RuntimeSnapshot["counts"][] = [];
+    second.subscribe(() => {
+      const snapshot = second.getSnapshot();
+      if (snapshot.phase === "expired") {
+        expired.push(snapshot.counts);
+      }
+    });
+    await second.start(organizationId);
+
+    expect(expired.length).toBeGreaterThan(0);
+    expect(expired).toEqual(
+      expired.map(() => ({ pending: 1, rejected: 0, sending: 0 }))
+    );
+  });
+
   it("is unavailable, with the reason, when it cannot start without a network", async () => {
     const w = world();
     w.network.online = false;
@@ -459,10 +584,369 @@ describe("starting", () => {
     );
     const runtime = w.make();
     await runtime.start(organizationId);
-    expect(runtime.getSnapshot().phase).not.toBe("ready");
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: PLAN_REFUSED_REASON,
+    });
     expect(w.calls.issueLease).toBe(1);
     expect(w.calls.registerDevice).toBe(1);
     expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
+  });
+
+  describe("issueLease at start that the server could not answer, with no usable lease", () => {
+    const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+
+    async function deviceWithoutLease() {
+      const w = world();
+      await w.make().start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      w.keyValues.remove(leaseKeyName);
+      return { device, w };
+    }
+
+    const serverFailureCodes = new Set([
+      "BAD_GATEWAY",
+      "GATEWAY_TIMEOUT",
+      "INTERNAL_SERVER_ERROR",
+      "SERVICE_UNAVAILABLE",
+      "TIMEOUT",
+    ]);
+
+    const unanswered: [string, () => Error][] = [
+      [
+        "a 503 with an oRPC code",
+        () =>
+          Object.assign(new Error("unavailable"), {
+            code: "SERVICE_UNAVAILABLE",
+            status: 503,
+          }),
+      ],
+      [
+        "a 500 with an oRPC code",
+        () =>
+          Object.assign(new Error("boom"), {
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500,
+          }),
+      ],
+      [
+        "a 500 with an oRPC code and a reason of its own",
+        () =>
+          Object.assign(new Error("boom"), {
+            code: "INTERNAL_SERVER_ERROR",
+            data: { reason: "lease_signing_failed" },
+            status: 500,
+          }),
+      ],
+      [
+        "a 5xx with no oRPC code",
+        () => Object.assign(new Error("bad gateway"), { status: 502 }),
+      ],
+      [
+        "a 429",
+        () =>
+          Object.assign(new Error("slow down"), {
+            code: "TOO_MANY_REQUESTS",
+            status: 429,
+          }),
+      ],
+      [
+        "a 4xx outside the definite ones",
+        () =>
+          Object.assign(new Error("unprocessable"), {
+            code: "UNPROCESSABLE_CONTENT",
+            status: 422,
+          }),
+      ],
+      ["a network failure", () => new TypeError("Failed to fetch")],
+    ];
+
+    it.each(unanswered)(
+      "%s keeps the device: nothing is removed and nothing is registered again",
+      async (_name, failure) => {
+        const { device, w } = await deviceWithoutLease();
+        const registered = w.calls.registerDevice;
+        const remove = vi.spyOn(w.keyValues, "remove");
+        const error = failure();
+        w.failures.issueLease.push(error);
+
+        const runtime = w.make();
+        await runtime.start(organizationId);
+
+        expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+        expect(runtime.getSnapshot()).toMatchObject({
+          bootstrapped: false,
+          phase: "unavailable",
+          reason: serverFailureCodes.has(
+            (error as { code?: string }).code ?? ""
+          )
+            ? SERVER_START_FAILED_REASON
+            : error.message,
+        });
+        expect(runtime.context()).toBeNull();
+      }
+    );
+
+    it("a server that keeps failing never mints a device per opening", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const down = () =>
+        Object.assign(new Error("unavailable"), {
+          code: "SERVICE_UNAVAILABLE",
+          status: 503,
+        });
+      w.failures.issueLease.push(down());
+      await w.make().start(organizationId);
+      w.failures.issueLease.push(down());
+      await w.make().start(organizationId);
+      w.failures.issueLease.push(down());
+      await w.make().start(organizationId);
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+
+      const back = w.make();
+      await back.start(organizationId);
+      expect(back.getSnapshot().phase).toBe("ready");
+      expect(back.context()?.deviceId).toBe(device);
+    });
+
+    it.each([
+      ["a CONFLICT with device_revoked", "CONFLICT", 409, "device_revoked"],
+      ["a NOT_FOUND", "NOT_FOUND", 404, undefined],
+      ["a FORBIDDEN", "FORBIDDEN", 403, undefined],
+    ] as const)(
+      "%s is an explicit refusal of the device: it is forgotten and another is registered",
+      async (_name, code, status, reason) => {
+        const { device, w } = await deviceWithoutLease();
+        const registered = w.calls.registerDevice;
+        const remove = vi.spyOn(w.keyValues, "remove");
+        w.failures.issueLease.push(
+          Object.assign(new Error("refused"), {
+            code,
+            data: reason ? { reason } : undefined,
+            status,
+          })
+        );
+
+        const runtime = w.make();
+        await runtime.start(organizationId);
+
+        expect(remove).toHaveBeenCalledWith("polaris.offline.device");
+        expect(w.calls.registerDevice).toBe(registered + 1);
+        expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
+        expect(runtime.getSnapshot().phase).toBe("ready");
+      }
+    );
+
+    it("a FORBIDDEN registers exactly one other device, never more", async () => {
+      const { w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      w.failures.issueLease.push(
+        Object.assign(new Error("refused"), { code: "FORBIDDEN", status: 403 }),
+        Object.assign(new Error("refused"), { code: "FORBIDDEN", status: 403 })
+      );
+
+      const runtime = w.make();
+      await runtime.start(organizationId);
+
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(runtime.getSnapshot().phase).toBe("unavailable");
+    });
+
+    it("a lease for somebody else forgets the device and registers exactly one other", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      let asked = 0;
+      const runtime = w.make(null, {
+        api: {
+          ...w.api,
+          issueLease: async (deviceId, org) => {
+            asked += 1;
+            if (asked > 1) {
+              return w.api.issueLease(deviceId, org);
+            }
+            w.session.user = "somebody-else";
+            try {
+              return await w.api.issueLease(deviceId, org);
+            } finally {
+              w.session.user = userId;
+            }
+          },
+        },
+      });
+      await runtime.start(organizationId);
+
+      expect(remove).toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
+      expect(runtime.getSnapshot().phase).toBe("ready");
+    });
+
+    const localFailures: [string, Partial<RuntimeDependencies>][] = [
+      [
+        "a DOMException from opening the stores",
+        {
+          openStores: () =>
+            Promise.reject(new DOMException("quota", "QuotaExceededError")),
+        },
+      ],
+      [
+        "a DOMException from the namespace",
+        {
+          namespaceFor: () =>
+            Promise.reject(new DOMException("blocked", "InvalidStateError")),
+        },
+      ],
+      [
+        "an Error with no oRPC code from opening the stores",
+        { openStores: () => Promise.reject(new Error("opfs_failed")) },
+      ],
+    ];
+
+    it.each(localFailures)(
+      "%s keeps the device and the key: nothing is removed, nothing is registered, the start ends unavailable",
+      async (_name, broken) => {
+        const { device, w } = await deviceWithoutLease();
+        const registered = w.calls.registerDevice;
+        const remove = vi.spyOn(w.keyValues, "remove");
+
+        const runtime = w.make(null, broken);
+        await runtime.start(organizationId);
+
+        expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+        expect(runtime.context()).toBeNull();
+      }
+    );
+
+    it("a lease the server issued that cannot be read keeps the device and the key: nothing is registered, the start ends unavailable", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const runtime = w.make(null, {
+        api: {
+          ...w.api,
+          issueLease: async (deviceId, org) => ({
+            ...(await w.api.issueLease(deviceId, org)),
+            lease: "not-a-lease",
+          }),
+        },
+      });
+      await runtime.start(organizationId);
+
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "lease_unreadable",
+      });
+      expect(runtime.context()).toBeNull();
+    });
+
+    it("this person's own lease that arrives ended by a device clock ahead of its exp keeps the device: nothing is forgotten, nothing is registered, no other lease is asked", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const asked = w.calls.issueLease;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const ahead = new Date(WORLD_START.getTime() + 100 * HOUR);
+      const runtime = w.make(null, { now: () => ahead });
+      await runtime.start(organizationId);
+
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.calls.issueLease).toBe(asked + 1);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+      expect(w.keyValues.read(leaseKeyName)).toBeNull();
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "lease_expired_on_arrival",
+      });
+      expect(runtime.context()).toBeNull();
+    });
+
+    it("with this person's own cached lease already ended, a lease that also arrives ended opens the expired state: the device and the cached lease stay", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      const cached = w.keyValues.read(leaseKeyName);
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const ahead = new Date(WORLD_START.getTime() + 100 * HOUR);
+      const runtime = w.make(null, { now: () => ahead });
+      await runtime.start(organizationId);
+
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+      expect(w.keyValues.read(leaseKeyName)).toBe(cached);
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "expired",
+        reason: "offline_access_expired",
+      });
+    });
+
+    it("a readable lease of another user still forgets the device, even when it also reads as ended", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const ahead = new Date(WORLD_START.getTime() + 100 * HOUR);
+      let asked = 0;
+      const runtime = w.make(null, {
+        api: {
+          ...w.api,
+          issueLease: async (deviceId, org) => {
+            asked += 1;
+            w.session.user = asked === 1 ? "somebody-else" : userId;
+            try {
+              return await w.api.issueLease(deviceId, org);
+            } finally {
+              w.session.user = userId;
+            }
+          },
+        },
+        now: () => ahead,
+      });
+      await runtime.start(organizationId);
+
+      expect(remove).toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
+    });
+
+    it("a persistent 403 of the first read keeps the device: no opening registers another", async () => {
+      const w = world();
+      w.failures.pullError = Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+        status: 403,
+      });
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const first = w.make();
+      await first.start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      const registered = w.calls.registerDevice;
+      expect(registered).toBe(1);
+      expect(first.getSnapshot().phase).toBe("unavailable");
+
+      const reopen = async () => {
+        const runtime = w.make();
+        await runtime.start(organizationId);
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+        expect(runtime.context()).toBeNull();
+      };
+      await reopen();
+      await reopen();
+      await reopen();
+
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+    });
   });
 
   it("a plan refusal is the reason of the unavailable phase, and any other failure is not", async () => {
@@ -492,6 +976,24 @@ describe("starting", () => {
     const second = other.make();
     await second.start(organizationId);
     expect(second.getSnapshot().reason).not.toBe(PLAN_REFUSED_REASON);
+  });
+
+  it("a failure of the server at the start is not the browser's: the runtime says so and the device screen does not blame the browser", async () => {
+    const w = world();
+    w.failures.issueLease.push(
+      Object.assign(new Error("boom"), {
+        code: "INTERNAL_SERVER_ERROR",
+        status: 500,
+      })
+    );
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const { phase, reason } = runtime.getSnapshot();
+    expect(phase).toBe("unavailable");
+    expect(reason).toBe(SERVER_START_FAILED_REASON);
+    const state = recognitionState(false, phase, reason);
+    expect(state).toBe("slow");
+    expect(recognitionText(state, phase, reason)).toBe(RECOGNIZING_SLOW_TEXT);
   });
 
   it("a second user of the same browser gets their own device, lease and namespace, and the first user's work is left alone", async () => {
@@ -540,22 +1042,21 @@ describe("starting", () => {
     await queueProduct(first, "Do primeiro usuário", 1);
     await first.stop(); // the session ended without a logout: the lease and the data stay
 
+    const registered = w.calls.registerDevice;
     w.session.user = "user-2";
     w.failures.deviceIsMine = true;
     const second = w.make();
     await second.start(organizationId);
 
-    // the first user's device is not lent on the strength of a failed question
-    expect(second.getSnapshot().phase).toBe("ready");
-    expect(second.context()?.deviceId).not.toBe(uuid(701));
-    expect(second.getSnapshot().counts.pending).toBe(0);
+    // the first user's device is not lent on the strength of a failed question, and nothing is opened or registered
+    expect(second.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "device_check_unavailable",
+    });
+    expect(second.context()).toBeNull();
+    expect(w.calls.registerDevice).toBe(registered);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(uuid(701));
     expect(w.stores.has(`user-1-${organizationId}`)).toBe(true);
-    expect(w.stores.get(`user-1-${organizationId}`)?.outbox).not.toBe(
-      second.context()?.outbox
-    );
-    expect(second.context()?.lease).not.toBe(
-      w.keyValues.read(`polaris.offline.lease.user-1.${organizationId}`)
-    );
     // the first user's lease is still theirs alone
     expect(
       JSON.parse(
@@ -579,7 +1080,7 @@ describe("starting", () => {
     w.keyValues.write("polaris.offline.session-user", "user-2");
     const intruder = w.make();
     await intruder.start(organizationId);
-    expect(intruder.getSnapshot().phase).not.toBe("ready");
+    expect(intruder.getSnapshot().phase).toBe("unavailable");
     expect(intruder.context()).toBeNull();
     expect(w.stores.has("user-2-org-1")).toBe(false);
   });
@@ -640,6 +1141,340 @@ describe("starting", () => {
     expect(w.wiped).toEqual([]);
   });
 
+  describe("device.check that the server could not answer, with no lease that proves the device", () => {
+    const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+
+    const unanswered: [string, () => Error][] = [
+      [
+        "a 503",
+        () =>
+          Object.assign(new Error("unavailable"), {
+            code: "SERVICE_UNAVAILABLE",
+            status: 503,
+          }),
+      ],
+      [
+        "a 500",
+        () =>
+          Object.assign(new Error("boom"), {
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500,
+          }),
+      ],
+      ["a network failure", () => new TypeError("Failed to fetch")],
+      [
+        "a timeout",
+        () => new DOMException("The operation timed out", "TimeoutError"),
+      ],
+    ];
+
+    it.each(unanswered)(
+      "%s keeps the device and the lease, registers nothing and starts unavailable",
+      async (_name, failure) => {
+        const w = world();
+        await w.make().start(organizationId);
+        const device = w.keyValues.read("polaris.offline.device");
+        const registered = w.calls.registerDevice;
+        const issued = w.calls.issueLease;
+        w.keyValues.remove(leaseKeyName);
+
+        w.failures.deviceIsMineError = failure();
+        const runtime = w.make();
+        await runtime.start(organizationId);
+
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.calls.issueLease).toBe(issued);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+        expect(runtime.context()).toBeNull();
+        expect(runtime.getSnapshot()).toMatchObject({
+          legalAcceptanceRequired: false,
+          phase: "unavailable",
+          reason: "device_check_unavailable",
+          sessionRefused: false,
+        });
+        expect(w.wiped).toEqual([]);
+      }
+    );
+
+    it("the next opening, with the server back, reuses the same device", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      const registered = w.calls.registerDevice;
+      w.keyValues.remove(leaseKeyName);
+
+      w.failures.deviceIsMineError = Object.assign(new Error("unavailable"), {
+        code: "SERVICE_UNAVAILABLE",
+        status: 503,
+      });
+      await w.make().start(organizationId);
+      w.failures.deviceIsMineError = undefined;
+
+      const back = w.make();
+      await back.start(organizationId);
+      expect(back.getSnapshot().phase).toBe("ready");
+      expect(back.context()?.deviceId).toBe(device);
+      expect(w.calls.registerDevice).toBe(registered);
+    });
+
+    describe("coming back by itself once the server or the network answers again", () => {
+      const down = () =>
+        Object.assign(new Error("unavailable"), {
+          code: "SERVICE_UNAVAILABLE",
+          status: 503,
+        });
+
+      async function stuckOnDeviceCheck() {
+        const w = world();
+        const first = w.make();
+        await first.start(organizationId);
+        await first.stop();
+        w.keyValues.remove(leaseKeyName);
+        w.failures.deviceIsMineError = down();
+        const runtime = w.make();
+        await runtime.start(organizationId);
+        expect(runtime.getSnapshot()).toMatchObject({
+          phase: "unavailable",
+          reason: "device_check_unavailable",
+        });
+        return { runtime, w };
+      }
+
+      async function tick(
+        w: ReturnType<typeof world>,
+        ms: number,
+        checks: number
+      ) {
+        w.advanceMs(ms);
+        w.fireDueTimers();
+        await vi.waitFor(() => expect(w.calls.deviceIsMine).toBe(checks));
+        await vi.waitFor(() => expect(w.liveTimers().length).toBe(1));
+      }
+
+      it("the online event asks the device check again and, answered, the runtime is ready", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const registered = w.calls.registerDevice;
+        const checks = w.calls.deviceIsMine;
+        w.failures.deviceIsMineError = undefined;
+
+        w.network.online = false;
+        runtime.connectionChanged();
+        w.network.online = true;
+        runtime.connectionChanged();
+        expect(w.calls.deviceIsMine).toBe(checks);
+
+        w.advanceMs(DEVICE_CHECK_BACK_ONLINE_MS);
+        w.fireDueTimers();
+        await vi.waitFor(() =>
+          expect(runtime.getSnapshot().phase).toBe("ready")
+        );
+        expect(w.calls.deviceIsMine).toBe(checks + 1);
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(runtime.context()?.deviceId).toBe(uuid(701));
+        expect(runtime.getSnapshot().reason).toBeNull();
+        w.advanceMs(1_000_000);
+        w.fireDueTimers();
+        expect(w.calls.deviceIsMine).toBe(checks + 1);
+      });
+
+      it("the timed retry grows step by step up to a ceiling and never asks sooner", async () => {
+        const { w } = await stuckOnDeviceCheck();
+        const steps = [
+          ...DEVICE_CHECK_RETRY_STEPS_MS,
+          DEVICE_CHECK_RETRY_STEPS_MS.at(-1),
+          DEVICE_CHECK_RETRY_STEPS_MS.at(-1),
+        ] as number[];
+        let checks = w.calls.deviceIsMine;
+
+        for (const step of steps) {
+          w.advanceMs(step - 1);
+          w.fireDueTimers();
+          expect(w.calls.deviceIsMine).toBe(checks);
+          checks += 1;
+          // biome-ignore lint/performance/noAwaitInLoops: each try follows the one before
+          await tick(w, 1, checks);
+        }
+        expect(steps.slice(-3)).toEqual([300_000, 300_000, 300_000]);
+      });
+
+      it("the retry never registers a device, whatever the number of tries", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const registered = w.calls.registerDevice;
+        const issued = w.calls.issueLease;
+        let checks = w.calls.deviceIsMine;
+
+        for (const step of DEVICE_CHECK_RETRY_STEPS_MS) {
+          checks += 1;
+          // biome-ignore lint/performance/noAwaitInLoops: each try follows the one before
+          await tick(w, step, checks);
+        }
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.calls.issueLease).toBe(issued);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(uuid(701));
+        expect(runtime.getSnapshot().reason).toBe("device_check_unavailable");
+
+        w.failures.deviceIsMineError = new TypeError("Failed to fetch");
+        await tick(w, 300_000, checks + 1);
+        expect(w.calls.registerDevice).toBe(registered);
+      });
+
+      it("the screens keep the notice while the server is asked again: the phase goes from unavailable straight to ready", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const phases: string[] = [];
+        runtime.subscribe(() => phases.push(runtime.getSnapshot().phase));
+        w.failures.deviceIsMineError = undefined;
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        await vi.waitFor(() =>
+          expect(runtime.getSnapshot().phase).toBe("ready")
+        );
+        expect(phases).not.toContain("starting");
+        expect(phases).not.toContain("off");
+      });
+
+      it("a stop while the retry is asking leaves the runtime stopped, not opened behind it", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        w.failures.deviceIsMineError = undefined;
+        let release: () => void = () => undefined;
+        w.gates.issueLease = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const issued = w.calls.issueLease;
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        await vi.waitFor(() => expect(w.calls.issueLease).toBe(issued + 1));
+        await runtime.stop();
+        release();
+        await vi.waitFor(() => expect(w.liveTimers()).toHaveLength(0));
+
+        expect(runtime.getSnapshot().phase).toBe("off");
+        expect(runtime.context()).toBeNull();
+      });
+
+      it("offline, the timer asks nothing and sets the next step", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const checks = w.calls.deviceIsMine;
+        w.network.online = false;
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        expect(w.calls.deviceIsMine).toBe(checks);
+        expect(w.liveTimers()).toHaveLength(1);
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+      });
+
+      it("stopping ends the retries", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const checks = w.calls.deviceIsMine;
+
+        await runtime.stop();
+        expect(w.liveTimers()).toHaveLength(0);
+        w.advanceMs(1_000_000);
+        w.fireDueTimers();
+        runtime.connectionChanged();
+        expect(w.calls.deviceIsMine).toBe(checks);
+        expect(runtime.getSnapshot().phase).toBe("off");
+      });
+
+      it.each([
+        [
+          "the plan refused",
+          () =>
+            Object.assign(new Error("conflict"), {
+              data: { reason: "entitlement_denied" },
+            }),
+        ],
+        ["the stores that do not open", () => undefined],
+      ])("%s does not reopen on its own", async (_name, failure) => {
+        const w = world();
+        const refusal = failure();
+        if (refusal) {
+          w.failures.issueLease.push(refusal);
+        } else {
+          w.gates.openStoresFailures = 2;
+        }
+        const runtime = w.make();
+        await runtime.start(organizationId);
+        const { reason } = runtime.getSnapshot();
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+        expect(reason).not.toBe("device_check_unavailable");
+        const checks = w.calls.deviceIsMine;
+        const issued = w.calls.issueLease;
+
+        runtime.connectionChanged();
+        w.network.online = false;
+        runtime.connectionChanged();
+        w.network.online = true;
+        runtime.connectionChanged();
+        w.advanceMs(1_000_000);
+        w.fireDueTimers();
+
+        expect(w.liveTimers()).toHaveLength(0);
+        expect(w.calls.deviceIsMine).toBe(checks);
+        expect(w.calls.issueLease).toBe(issued);
+        expect(runtime.getSnapshot()).toMatchObject({
+          phase: "unavailable",
+          reason,
+        });
+      });
+
+      it("a retry that finds another refusal stops there", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        w.failures.deviceIsMineError = undefined;
+        w.failures.issueLease.push(
+          Object.assign(new Error("conflict"), {
+            data: { reason: "entitlement_denied" },
+          })
+        );
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        await vi.waitFor(() =>
+          expect(runtime.getSnapshot().reason).not.toBe(
+            "device_check_unavailable"
+          )
+        );
+        expect(w.liveTimers()).toHaveLength(0);
+      });
+    });
+
+    it.each(["FORBIDDEN", "UNAUTHORIZED"])(
+      "a definite %s answer with no lease keeps the earlier behaviour: forgets the device and registers again",
+      async (code) => {
+        const w = world();
+        await w.make().start(organizationId);
+        const registered = w.calls.registerDevice;
+        w.keyValues.remove(leaseKeyName);
+
+        w.failures.deviceIsMineError = Object.assign(new Error("refused"), {
+          code,
+          status: code === "FORBIDDEN" ? 403 : 401,
+        });
+        await w.make().start(organizationId);
+
+        expect(w.calls.registerDevice).toBe(registered + 1);
+        expect(w.keyValues.read("polaris.offline.device")).not.toBe(uuid(701));
+      }
+    );
+
+    it("a device that is not this user's (the server answered) is still forgotten and registered again", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const registered = w.calls.registerDevice;
+      w.keyValues.remove(leaseKeyName);
+      w.session.user = "user-2";
+
+      const runtime = w.make();
+      await runtime.start(organizationId);
+
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(runtime.getSnapshot().phase).toBe("ready");
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(uuid(701));
+    });
+  });
+
   it("a session that changes hands while the app is open stops the first user's runtime without touching their data", async () => {
     const w = world();
     const runtime = w.make();
@@ -647,7 +1482,7 @@ describe("starting", () => {
     await queueProduct(runtime, "Do primeiro usuário", 1);
 
     w.session.user = "user-2"; // somebody else signed in, in another tab
-    w.advance(0.02); // past the window in which the last confirmation is reused
+    w.advance(0.11); // past the window in which the last confirmation is reused
     await runtime.syncNow();
 
     expect(runtime.getSnapshot()).toMatchObject({
@@ -660,6 +1495,77 @@ describe("starting", () => {
     expect(w.wiped).toEqual([]);
     const kept = w.stores.get(`${userId}-${organizationId}`);
     expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
+  });
+
+  it("the pull names the user of the lease in use as the expected one", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.expectedUsers.length = 0;
+    await runtime.syncNow();
+    expect(w.expectedUsers).toEqual([userId]);
+  });
+
+  it.each([
+    ["with an empty queue, even inside the confirmation window", false],
+    ["with a command queued while the pull was on its way", true],
+  ])(
+    "a pull refused for another session takes the session changed path %s, keeping the queue",
+    async (_name, queued) => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      const sessionReads = w.calls.sessionUser;
+      w.failures.pullError = Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+        data: { reason: "session_changed" },
+      });
+      w.failures.beforePullError = async () => {
+        w.session.user = "user-2"; // signed in in another window after the confirmation
+        if (queued) {
+          await queueProduct(runtime, "Do primeiro usuário", 1);
+        }
+      };
+      await runtime.syncNow();
+
+      expect(w.calls.sessionUser).toBe(sessionReads + 1); // the window skipped the read before the pull; the refusal forced one
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "session_changed",
+        sessionRefused: true,
+      });
+      expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
+      expect(w.purged).toEqual([]);
+      expect(w.wiped).toEqual([]);
+      const kept = w.stores.get(`${userId}-${organizationId}`);
+      expect((await kept?.outbox.snapshot())?.commands).toHaveLength(
+        queued ? 1 : 0
+      );
+    }
+  );
+
+  it("a pull refused for another session while the reading still names this user ends the sync quietly and the next one tries again", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.failures.pullError = Object.assign(new Error("forbidden"), {
+      code: "FORBIDDEN",
+      data: { reason: "session_changed" },
+    });
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "ready",
+      reason: null,
+      sessionRefused: false,
+      syncing: false,
+    });
+    expect(w.purged).toEqual([]);
+    w.failures.pullError = undefined;
+    const pulls = w.calls.pull;
+    await runtime.syncNow();
+    expect(w.calls.pull).toBe(pulls + 1);
+    expect(runtime.getSnapshot().lastSyncAt).not.toBeNull();
   });
 
   it("when the server answers about the session with something unusable, it never falls back to the remembered user; with no connection at all it does", async () => {
@@ -705,7 +1611,7 @@ describe("starting", () => {
     await runtime.start(organizationId);
     await queueProduct(runtime, "Camiseta", 1);
     w.failures.sessionUser = new SessionUnreachableError("session_http_503");
-    w.advance(0.02);
+    w.advance(0.11);
 
     await runtime.syncNow();
 
@@ -756,7 +1662,7 @@ describe("starting", () => {
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(1);
 
-    w.advance(0.02);
+    w.advance(0.11);
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(2);
     await runtime.syncNow();
@@ -767,6 +1673,157 @@ describe("starting", () => {
     w.network.online = true;
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("asks every confirmation of the server fresh: at the start, with a queue, within the window and past it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.sessionFresh).toEqual([true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Camiseta", 1);
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    expect(w.sessionFresh).toEqual([true, true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Calça", 1);
+    w.network.online = true;
+    w.advance(0.02);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+
+    w.advance(0.11);
+    await runtime.syncNow();
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
+    expect(w.sessionFresh.length).toBe(w.calls.sessionUser);
+  });
+
+  it("a sync with nothing queued reuses the session confirmation for 6 minutes and looks again at exactly 6", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(359_999);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(1);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.advanceMs(359_999);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+  });
+
+  it("keeps the recheck window at a fixed 6 minutes, a literal that does not follow the tick", () => {
+    expect(SESSION_RECHECK_MS).toBe(360_000);
+  });
+
+  it("an idle tab at the 600 s tick reads the get-session at every tick", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(MAX_TICK_MS);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
+
+    w.advanceMs(MAX_TICK_MS);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("the read is still fresh inside the window with something queued, after the return to the page and after the connection changed", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    await queueProduct(runtime, "Camiseta", 1);
+    let reads = w.calls.sessionUser;
+    w.advanceMs(MAX_TICK_MS);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads + 1);
+    reads = w.calls.sessionUser;
+
+    w.advanceMs(1000);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads);
+
+    runtime.pageReturned();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads + 1);
+    reads = w.calls.sessionUser;
+
+    w.advanceMs(1000);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads);
+
+    runtime.connectionChanged();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads + 1);
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
+  });
+
+  it("with something queued the session is read again before the push, inside the window", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = w.calls.sessionUser;
+
+    w.advanceMs(1000);
+    await runtime.syncNow();
+
+    expect(w.calls.sessionUser).toBe(before + 1);
+    expect(w.calls.push).toBe(1);
+  });
+
+  it("the return to the page and the change of the connection look at the session on the next sync, inside the window", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(60_000);
+    runtime.pageReturned();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.advanceMs(60_000);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.network.online = false;
+    runtime.connectionChanged();
+    w.network.online = true;
+    runtime.connectionChanged();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("somebody else signing in is seen by the first sync after the window, and not before it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.session.user = "user-2";
+
+    w.advanceMs(359_999);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().reason).not.toBe("session_changed");
+
+    w.advanceMs(1);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "session_changed",
+    });
   });
 
   it("sweeps the leases of the old layout of every organization at the first start, and only those", async () => {
@@ -1054,7 +2111,7 @@ describe("starting", () => {
     const runtime = w.make();
     await runtime.start(organizationId);
     w.session.user = "user-2";
-    w.advance(0.02);
+    w.advance(0.11);
     await runtime.syncNow();
     expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
   });
@@ -1206,22 +2263,147 @@ describe("syncing", () => {
   });
 });
 
+describe("whether the last pull was idle (the scheduler stretches its interval only after one)", () => {
+  it("is idle after an answered sync that sent and pulled nothing, not after a send or a pull with changes", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    w.server.inventory.set(uuid(301), {
+      productId: uuid(201),
+      quantity: 5,
+      updatedAt: "2026-10-14T12:30:00.000Z",
+      variantId: uuid(301),
+      version: 2,
+    });
+    w.server.changes.push({
+      entityId: uuid(301),
+      entityType: "inventory_balance",
+      seq: w.server.changes.length + 1,
+    });
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle after a sync that failed or got no answer", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    w.failures.push = true;
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    w.failures.push = false;
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    w.network.online = false;
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+  });
+
+  it("a run that only pushes leaves the verdict of the last pull alone", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    await runtime.syncNow({ pull: false });
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle after the sync that bootstraps a store opened offline, even with nothing to send", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await first.stop();
+    const writer = w.stores.get(`${userId}-${organizationId}`)?.writer;
+    if (!writer) {
+      throw new Error("no stores");
+    }
+    writer.meta = null;
+    const flags = { proven: false };
+    const runtime = w.make(null, { isOnline: () => flags.proven });
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot()).toMatchObject({
+      bootstrapped: false,
+      phase: "ready",
+    });
+
+    flags.proven = true;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().bootstrapped).toBe(true);
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle when the lock was held by another tab, whatever the pull before said", async () => {
+    const w = world();
+    const exclusive = sharedLock();
+    const runtime = w.make(null, { exclusive });
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    const other = w.make(null, { exclusive });
+    await other.start(organizationId);
+    const gate = deferred();
+    w.gates.push = gate.promise;
+    await queueProduct(other, "Camiseta", 1);
+    const running = other.syncNow();
+    await vi.waitFor(() => expect(w.calls.push).toBe(1));
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    gate.release();
+    await running;
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+});
+
 describe("whether the copy is fresh (the scheduler skips the sync of a page load by it)", () => {
   // the pull stamps the copy with the browser's clock: these runtimes read the same one, at the world's time
   const start = new Date("2026-10-14T12:00:00.000Z");
+  let elapsed = 0;
   beforeEach(() => {
+    elapsed = 0;
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(start);
   });
   afterEach(() => {
     vi.useRealTimers();
   });
-  const now = () => new Date();
+  const now = () => new Date(start.getTime() + elapsed);
   function freshWorld() {
     const w = world();
     const runtime = w.make(null, { now });
     const offset = {
       set ms(value: number) {
+        elapsed = value;
         vi.setSystemTime(start.getTime() + value);
       },
     };
@@ -2356,6 +3538,28 @@ describe("the offline access that expired (emenda do ADR 0047)", () => {
     expect(w.server.products.size).toBe(1);
   });
 
+  it("a renewal whose stores do not open even for the queue ends unavailable with the local message, after one renewal and nothing more asked", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    w.network.online = true;
+    w.gates.openStoresFailures = 2;
+    const asked = w.calls.issueLease;
+    await runtime.syncNow();
+
+    const snapshot = runtime.getSnapshot();
+    expect(snapshot).toMatchObject({
+      phase: "unavailable",
+      reason: "opfs_failed",
+      syncing: false,
+    });
+    expect(isBrowserFailure(snapshot.reason)).toBe(true);
+    expect(w.calls.issueLease).toBe(asked + 1);
+  });
+
   it("a renewal that fails after the stores opened closes them before going back to the expired state", async () => {
     const { runtime: first, w } = await queuedOffline();
     await first.stop();
@@ -2911,31 +4115,6 @@ describe("conexão com prova (F7)", () => {
     return runtime;
   }
 
-  /** One lock per name across runtimes, `ifAvailable` like navigator.locks. */
-  function sharedLock() {
-    const held = new Set<string>();
-    return async (name: string, task: () => Promise<void>) => {
-      if (held.has(name)) {
-        return false;
-      }
-      held.add(name);
-      try {
-        await task();
-        return true;
-      } finally {
-        held.delete(name);
-      }
-    };
-  }
-
-  function deferred() {
-    let release: () => void = () => undefined;
-    const promise = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    return { promise, release };
-  }
-
   describe("an answer that did not come from the Worker is no refusal", () => {
     it("a 403 without the mark keeps the copy, the lease and the session", async () => {
       const w = world();
@@ -3370,5 +4549,292 @@ describe("conexão com prova (F7)", () => {
     proven = true;
     runtime.connectionChanged();
     expect(runtime.getSnapshot().online).toBe(true);
+  });
+});
+
+describe("the device check a start skips (the same session, linked in the last 12 h)", () => {
+  const CHECK_KEY = "polaris.offline.device-checked";
+  const record = (w: ReturnType<typeof world>) =>
+    JSON.parse(w.keyValues.read(CHECK_KEY) ?? "null") as Record<
+      string,
+      unknown
+    > | null;
+
+  /** A first start of session `s-1` (it registers and takes a lease), then a stop, as a closed tab. */
+  async function linked(options: { leaseHours?: number } = {}) {
+    const w = world(options);
+    w.session.id = "s-1";
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(0);
+    return w;
+  }
+
+  it("a reopening of the same session within 12 h opens without asking whose the device is", async () => {
+    const w = await linked();
+    w.advance(11.9);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(runtime.context()?.deviceId).toBe(uuid(701));
+    expect(w.calls).toMatchObject({
+      deviceIsMine: 0,
+      issueLease: 1,
+      registerDevice: 1,
+    });
+  });
+
+  it("the record names the session by its id, with the user, the device and the instant, and nothing else", async () => {
+    const w = await linked();
+    expect(Object.keys(record(w) ?? {}).sort()).toEqual([
+      "checkedAt",
+      "deviceId",
+      "sessionId",
+      "userId",
+    ]);
+    expect(record(w)).toEqual({
+      checkedAt: new Date("2026-10-14T12:00:00.000Z").getTime(),
+      deviceId: uuid(701),
+      sessionId: "s-1",
+      userId,
+    });
+  });
+
+  it("a new session (the first start after a sign-in) asks, and the record moves to it", async () => {
+    const w = await linked();
+    w.session.id = "s-2";
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.calls.deviceIsMine).toBe(1);
+    expect(record(w)).toMatchObject({ deviceId: uuid(701), sessionId: "s-2" });
+  });
+
+  it("a record of another user asks, even under the same session id", async () => {
+    const w = await linked();
+    w.keyValues.write(
+      CHECK_KEY,
+      JSON.stringify({ ...record(w), userId: "user-2" })
+    );
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a session of another user asks, and never lends the first user's device", async () => {
+    const w = await linked();
+    w.session.user = "user-2";
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+    expect(runtime.context()?.deviceId).not.toBe(uuid(701));
+  });
+
+  it("a record of another device asks", async () => {
+    const w = await linked();
+    w.keyValues.write(
+      CHECK_KEY,
+      JSON.stringify({ ...record(w), deviceId: uuid(799) })
+    );
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a record of 12 h or more asks, and so does a clock that went back", async () => {
+    const w = await linked();
+    w.advance(12);
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+
+    w.advance(-1);
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(2);
+  });
+
+  it("a lease within 12 h of its end asks, even with a recent record", async () => {
+    const w = await linked({ leaseHours: 20 });
+    w.advance(9); // the record is 9 h old, the lease has 11 h left
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("without a lease of this store, the start asks", async () => {
+    const w = await linked();
+    w.keyValues.remove(`polaris.offline.lease.${userId}.${organizationId}`);
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a cached lease that does not work for this device asks, whatever its expiry says", async () => {
+    const w = await linked();
+    const name = `polaris.offline.lease.${userId}.${organizationId}`;
+    const cached = JSON.parse(w.keyValues.read(name) ?? "{}");
+    w.keyValues.write(
+      name,
+      JSON.stringify({ ...cached, lease: "não.é.licença" })
+    );
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a session the server could not confirm (no answer, the remembered user) asks", async () => {
+    const w = await linked();
+    w.failures.sessionUser = new SessionUnreachableError("session_http_503");
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("an answer without a session id asks", async () => {
+    const w = await linked();
+    w.session.id = null;
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("after a session that changed hands the record is gone, and the next start asks", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.session.user = "user-2";
+    w.advance(0.11);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().reason).toBe("session_changed");
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+
+    w.session.user = userId;
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a logout takes the record with the lease, and forgetting the device leaves nothing", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const workspace = runtime.logoutWorkspace();
+    if (!workspace) {
+      throw new Error("no workspace");
+    }
+    expect(await attemptLogout([workspace])).toEqual({ status: "ready" });
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+    runtime.forgetDevice();
+    expect(w.keyValues.data.size).toBe(0);
+  });
+
+  it("forgetting the device takes the record", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    runtime.forgetDevice();
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+  });
+
+  it("a device revoked between two starts: the next start finds no session and never asks; the next sign-in forgets the device", async () => {
+    const w = await linked();
+    // the revocation deletes the sessions linked to the device (`end_device_sessions`): get-session answers none
+    w.session.signedIn = false;
+    w.revoke(uuid(701));
+    const pulls = w.calls.pull;
+    const after = w.make();
+    await after.start(organizationId);
+    expect(after.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "no_session",
+    });
+    expect(after.context()).toBeNull();
+    expect(w.calls.deviceIsMine).toBe(0);
+    expect(w.calls.pull).toBe(pulls);
+
+    // a sign-in is a new session: it asks, the device is no longer the user's, and another is registered
+    w.session.signedIn = true;
+    w.session.id = "s-2";
+    const signedIn = w.make();
+    await signedIn.start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+    expect(signedIn.getSnapshot().phase).toBe("ready");
+    expect(signedIn.context()?.deviceId).toBe(uuid(702));
+    expect(record(w)).toMatchObject({ deviceId: uuid(702), sessionId: "s-2" });
+  });
+
+  it("a session whose check got no answer is never recorded by a lease, so its next start asks again", async () => {
+    const w = await linked({ leaseHours: 20 });
+    w.advance(9); // the lease is due: this start renews it
+    w.session.id = "s-2";
+    w.failures.deviceIsMine = true; // the cached lease stands in for the check
+    const issued = w.calls.issueLease;
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.calls.issueLease).toBe(issued + 1);
+    expect(record(w)).toBeNull();
+
+    w.failures.deviceIsMine = false;
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(2);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+  });
+
+  it("a lease renewed under a session another tab replaced does not write over the record of the new one", async () => {
+    const w = await linked({ leaseHours: 20 });
+    const first = w.make();
+    await first.start(organizationId);
+    w.session.id = "s-2"; // the same user signed in again in another tab
+    const second = w.make();
+    await second.start(organizationId);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+
+    w.advance(9);
+    const issued = w.calls.issueLease;
+    await first.syncNow();
+    expect(w.calls.issueLease).toBe(issued + 1);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+  });
+
+  it("a lease renewed under the recorded session moves its instant", async () => {
+    const w = await linked({ leaseHours: 20 });
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.advance(9);
+    await runtime.syncNow();
+    expect(record(w)).toMatchObject({
+      checkedAt: new Date("2026-10-14T21:00:00.000Z").getTime(),
+      sessionId: "s-1",
+    });
+  });
+
+  it("a session the server refuses on a push takes the record", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    w.failures.push = true;
+    w.failures.pushCode = "UNAUTHORIZED";
+    await runtime.syncNow();
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+  });
+
+  it("an api that cannot name the session asks at every start", async () => {
+    const w = await linked();
+    const { signedInSession: _unused, ...withoutSession } = w.api;
+    await w.make(null, { api: withoutSession }).start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a failed write of the record does not fail the start", async () => {
+    const w = world();
+    w.session.id = "s-1";
+    const { write } = w.keyValues;
+    const runtime = w.make(null, {
+      keyValues: {
+        ...w.keyValues,
+        write: (name, value) => {
+          if (name === CHECK_KEY) {
+            throw new Error("QuotaExceededError");
+          }
+          write(name, value);
+        },
+      },
+    });
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
   });
 });

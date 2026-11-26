@@ -166,6 +166,14 @@ export async function expectReflowFont(
   ).toBe(`${fontPixels}px`);
 }
 
+/**
+ * The detail of a KPI warning that does not fit is `invisible` and `aria-hidden` on purpose (`WarningDetail`): its box
+ * still holds the whole text, so it reads as cut. A test that sweeps a tile in that state passes this as `skip`; any
+ * other text with `visibility: hidden` is measured, because an invisible text by mistake is the defect to find.
+ */
+export const HIDDEN_WARNING_DETAIL =
+  '[data-kpi-warning-detail][aria-hidden="true"]';
+
 interface ClippedOptions {
   /** Selectors of elements that scroll on purpose: they are not measured themselves. */
   allowScroll?: readonly string[];

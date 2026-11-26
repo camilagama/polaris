@@ -1,7 +1,15 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  bindingsOf as bindingsOfConfig,
+  bindingsSnapshot,
+  hyperdriveDetails,
+  parseJsonc,
+  readBuilt,
+  stringsOf,
+  WORKERS,
+} from "./lib/wrangler-config.mjs";
 
 /**
  * Isolation of the fixed staging (ADR 0097). Reads the three `wrangler.jsonc` and, with `--built`,
@@ -12,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - a staging value is still a PLACEHOLDER, or a staging id, queue, bucket or rate limit namespace is
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
- * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
+ * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail that is set is outside araute.app (whatever the flags; an empty `AUTH_EMAIL_FROM` passes only while `EMAIL_PASSWORD_AUTH_ENABLED` is not "true", and an empty `ACTIVATION_EMAIL_FROM` only while `ACTIVATION_EMAILS_ENABLED` is not "true"), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
  * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, any
  *   route (its Custom Domain at admin.araute.app is created outside the config), an Access team or audience missing, malformed
@@ -27,8 +35,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
  * the staging token) and checks host, user and caching. Nothing is printed but names and ids.
  */
-
-export const WORKERS = ["web", "catalog", "admin"];
 
 const PLACEHOLDER = /PLACEHOLDER/i;
 const CLOUDFLARE_ID = /^[0-9a-f]{32}$/;
@@ -92,97 +98,12 @@ const SHARED_HYPERDRIVE = new Set([
 ]);
 const OWNER_USER = /_owner$/;
 
-/**
- * Calls `visit(char, index)` for every character outside a string literal and copies string literals
- * as they are; `visit` returns how many characters it consumed and what to write.
- */
-function scanOutsideStrings(text, visit) {
-  let out = "";
-  let index = 0;
-  while (index < text.length) {
-    if (text[index] === '"') {
-      const start = index;
-      index += 1;
-      while (index < text.length && text[index] !== '"') {
-        index += text[index] === "\\" ? 2 : 1;
-      }
-      index += 1;
-      out += text.slice(start, index);
-    } else {
-      const { length, write } = visit(text[index], index);
-      out += write;
-      index += length;
-    }
-  }
-  return out;
-}
-
-const NEXT_NON_SPACE = /\S/g;
-
-/** JSON with comments and trailing commas (the wrangler.jsonc format), without touching strings. */
-export function parseJsonc(text) {
-  const withoutComments = scanOutsideStrings(text, (char, index) => {
-    if (char === "/" && text[index + 1] === "/") {
-      const end = text.indexOf("\n", index);
-      return { length: (end === -1 ? text.length : end) - index, write: "" };
-    }
-    if (char === "/" && text[index + 1] === "*") {
-      const end = text.indexOf("*/", index + 2);
-      if (end === -1) {
-        throw new Error("unterminated comment");
-      }
-      return { length: end + 2 - index, write: "" };
-    }
-    return { length: 1, write: char };
-  });
-  const withoutTrailingCommas = scanOutsideStrings(
-    withoutComments,
-    (char, index) => {
-      if (char !== ",") {
-        return { length: 1, write: char };
-      }
-      NEXT_NON_SPACE.lastIndex = index + 1;
-      const next = NEXT_NON_SPACE.exec(withoutComments)?.[0];
-      return { length: 1, write: next === "}" || next === "]" ? "" : char };
-    }
-  );
-  return JSON.parse(withoutTrailingCommas);
-}
-
-/** The resources a config binds, by binding name. */
-export function bindingsOf(config) {
-  const hyperdrive = new Map(
-    (config.hyperdrive ?? []).map((item) => [item.binding, item.id])
-  );
-  const buckets = new Map(
-    (config.r2_buckets ?? []).map((item) => [item.binding, item.bucket_name])
-  );
-  const producers = new Map(
-    (config.queues?.producers ?? []).map((item) => [item.binding, item.queue])
-  );
-  const consumers = (config.queues?.consumers ?? []).flatMap((item) =>
-    [item.queue, item.dead_letter_queue].filter(Boolean)
-  );
-  const ratelimits = new Map(
-    (config.ratelimits ?? []).map((item) => [
-      item.name,
-      String(item.namespace_id),
-    ])
-  );
-  const images = config.images?.binding ? [config.images.binding] : [];
+function bindingsOf(config) {
   // the lane, without the environment suffix: polaris-critical-staging and polaris-critical are the same consumer
   const consumerLanes = (config.queues?.consumers ?? []).map((item) =>
     item.queue.replace(ENVIRONMENT_SUFFIX, "")
   );
-  return {
-    buckets,
-    consumerLanes,
-    consumers,
-    hyperdrive,
-    images,
-    producers,
-    ratelimits,
-  };
+  return { ...bindingsOfConfig(config), consumerLanes };
 }
 
 function bindingNames(config) {
@@ -195,21 +116,6 @@ function bindingNames(config) {
     ...b.images.map((name) => `images:${name}`),
     ...b.consumerLanes.map((lane) => `consumer:${lane}`),
   ];
-}
-
-function stringsOf(value, path = "") {
-  if (typeof value === "string") {
-    return [[path, value]];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => stringsOf(item, `${path}[${index}]`));
-  }
-  if (value && typeof value === "object") {
-    return Object.entries(value).flatMap(([key, item]) =>
-      stringsOf(item, path ? `${path}.${key}` : key)
-    );
-  }
-  return [];
 }
 
 function checkTopLevel(app, config, problems) {
@@ -250,9 +156,24 @@ function checkTopLevel(app, config, problems) {
   }
 }
 
+/**
+ * Bindings that env.production does not declare until the go-live step that turns them on. The first
+ * production deploy goes out without the outbox path and the binding comes back only in step 7 of
+ * docs/runbooks/queues.md, after the CPU measurements of step 6 that the Free plan requires.
+ */
+export const PRODUCTION_DEFERRED_BINDINGS = [
+  "web:hyperdrive:OUTBOX_HYPERDRIVE",
+];
+
 function checkParity(app, top, environment, envName, problems) {
   const present = new Set(bindingNames(environment));
   for (const name of bindingNames(top)) {
+    if (
+      envName === "production" &&
+      PRODUCTION_DEFERRED_BINDINGS.includes(`${app}:${name}`)
+    ) {
+      continue;
+    }
     if (!present.has(name)) {
       problems.push(
         `${app}: env.${envName} lacks ${name} (bindings are not inherited)`
@@ -504,10 +425,16 @@ function checkStagingExposure(app, where, staging, production, problems) {
 }
 
 // Password sign-in is on in staging by decision of the user (ADR 0100), open to anyone because the
-// data is synthetic. The sender and the reply-to are shared by every e-mail the Worker sends (the password
-// ones and the closure notices, with the one RESEND_API_KEY), so they are checked whatever the flags say: a
-// sender of another domain would send from a verified domain of production or of a third party the day any
-// flag turns on. Name and address, or the bare address.
+// data is synthetic. What every e-mail of the Worker shares is the one RESEND_API_KEY, so a sender of another
+// domain would send from a verified domain of production or of a third party the day its e-mail turns on:
+// a sender or reply-to that is there is checked whatever the flags say. AUTH_EMAIL_FROM is the sender of three
+// kinds (the password e-mails, the closure notices and the billing e-mails) and AUTH_EMAIL_REPLY_TO is the
+// reply-to of the first two only; the billing e-mails reply to BILLING_SUPPORT_EMAIL, as does the tips series,
+// whose sender is its own ACTIVATION_EMAIL_FROM. An empty value is another matter: it turns that e-mail off,
+// so the check refuses it in three cases only: AUTH_EMAIL_FROM while the password is on, ACTIVATION_EMAIL_FROM
+// while the tips series is on, and BILLING_SUPPORT_EMAIL while the billing is on (in the billing check). An
+// empty AUTH_EMAIL_FROM passes with the closure notices or the billing on, and an empty BILLING_SUPPORT_EMAIL
+// passes with the tips series on, although those e-mails then stay off. Name and address, or the bare address.
 const STAGING_SENDER =
   /^(?:[^<>@\r\n]*<[A-Za-z0-9._+-]+@araute\.app>|[A-Za-z0-9._+-]+@araute\.app)$/i;
 
@@ -531,7 +458,16 @@ function checkStagingEmail(where, staging, problems) {
   const from = (vars.AUTH_EMAIL_FROM ?? "").trim();
   if (from === "" ? passwordOn : !STAGING_SENDER.test(from)) {
     problems.push(
-      `${where}: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags`
+      `${where}: staging needs vars.AUTH_EMAIL_FROM on @araute.app (empty only while vars.EMAIL_PASSWORD_AUTH_ENABLED is not "true")`
+    );
+  }
+  // The tips series sends through the same RESEND_API_KEY with its own sender, so an empty one is only
+  // refused while the series is on and would need it.
+  const tipsOn = vars.ACTIVATION_EMAILS_ENABLED === "true";
+  const tipsFrom = (vars.ACTIVATION_EMAIL_FROM ?? "").trim();
+  if (tipsFrom === "" ? tipsOn : !STAGING_SENDER.test(tipsFrom)) {
+    problems.push(
+      `${where}: staging needs vars.ACTIVATION_EMAIL_FROM on @araute.app (empty only while vars.ACTIVATION_EMAILS_ENABLED is not "true")`
     );
   }
   // The reply-to is optional, but when it is there the answer of a person goes to a mailbox of the staging
@@ -1048,18 +984,6 @@ function checkBuilt(app, staging, production, built, problems) {
   }
 }
 
-function bindingsSnapshot(config) {
-  const b = bindingsOf(config);
-  return {
-    account: config.account_id,
-    buckets: [...b.buckets].sort(),
-    consumers: [...b.consumers].sort(),
-    hyperdrive: [...b.hyperdrive].sort(),
-    producers: [...b.producers].sort(),
-    ratelimits: [...b.ratelimits].sort(),
-  };
-}
-
 /**
  * One staging Hyperdrive configuration as `wrangler hyperdrive get` shows it. The staging database host
  * comes from STAGING_DATABASE_HOST (not a secret); the password never appears in that output.
@@ -1087,39 +1011,6 @@ export function findHyperdriveProblems(binding, details, expectedHost) {
     );
   }
   return problems;
-}
-
-/** Pinned to the staging account, so a token that sees several accounts never reads another one. */
-function hyperdriveDetails(id, cwd, accountId) {
-  const result = spawnSync(
-    "bunx",
-    ["--no-install", "wrangler", "hyperdrive", "get", id],
-    {
-      cwd,
-      encoding: "utf8",
-      env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: accountId },
-    }
-  );
-  if (result.status !== 0) {
-    return null;
-  }
-  const start = result.stdout.indexOf("{");
-  try {
-    return start === -1 ? null : JSON.parse(result.stdout.slice(start));
-  } catch {
-    return null;
-  }
-}
-
-function readBuilt(appDir) {
-  // the deploy follows .wrangler/deploy/config.json to the generated wrangler.json; so does this check
-  const redirect = resolve(appDir, ".wrangler/deploy/config.json");
-  if (!existsSync(redirect)) {
-    return null;
-  }
-  const { configPath } = JSON.parse(readFileSync(redirect, "utf8"));
-  const file = resolve(dirname(redirect), configPath);
-  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
 }
 
 function findRemoteProblems(entries) {

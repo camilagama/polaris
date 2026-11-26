@@ -2,6 +2,7 @@ import { isLimitReached } from "../subscription/limit-help-model";
 import {
   CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
+  isConnectionFailure,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -45,7 +46,7 @@ export function isCategoryUnavailable(error: unknown): boolean {
   );
 }
 
-export type ProductAction = "archive" | "restore";
+export type ProductAction = "archive" | "restore" | "delete";
 
 /** A 503 of a read keeps its text; a direct write may have been saved, so it never invites a second try. */
 function unavailableMessage(action: string | undefined): string {
@@ -103,4 +104,102 @@ export function productErrorMessage(
     return unavailableMessage(action);
   }
   return "Não foi possível concluir a operação. Tente novamente.";
+}
+
+/** What the dialog of "Excluir produto" says of a refusal, and what the screen does besides saying it. */
+export interface ProductDeleteRefusal {
+  /** The balance is not zero: the message carries the way to the stock. */
+  toStock: boolean;
+  /** The list may be out of date (the product changed or left): it is read again. */
+  reread: boolean;
+  text: string;
+}
+
+const TOO_SOON = "daqui a pouco";
+
+/** The time the hour's ceiling opens again, rounded up to the minute so it never says a time earlier than the real one. */
+function releaseTime(retryAfterSeconds: unknown, now: Date): string {
+  if (
+    typeof retryAfterSeconds !== "number" ||
+    !Number.isFinite(retryAfterSeconds)
+  ) {
+    return TOO_SOON;
+  }
+  const minute = 60_000;
+  const at = new Date(
+    Math.ceil(
+      (now.getTime() + Math.max(1, retryAfterSeconds) * 1000) / minute
+    ) * minute
+  );
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(at);
+}
+
+function retryAfterOf(error: unknown): unknown {
+  if (typeof error !== "object" || error === null || !("data" in error)) {
+    return undefined;
+  }
+  const { data } = error as { data?: { retryAfterSeconds?: unknown } | null };
+  return data?.retryAfterSeconds;
+}
+
+/** The balance of the product when the server refused for it, or `null` when it could not be read. */
+function stockText(balance: number | null): string {
+  return balance === null ? "estoque" : `${balance} em estoque`;
+}
+
+/**
+ * The refusal of `product.delete`, in the words of the dialog. `balance` is the quantity in stock the screen read after
+ * a refusal for the balance (the server does not send it); `now` is the clock the hour of the ceiling counts from.
+ */
+export function productDeleteRefusal(
+  error: unknown,
+  name: string,
+  balance: number | null,
+  now: Date
+): ProductDeleteRefusal {
+  const code = rpcErrorCode(error);
+  const reason = rpcErrorReason(error);
+  if (code === "CONFLICT" && reason === "product_stock_not_empty") {
+    return {
+      reread: false,
+      text: `Não dá para excluir “${name}” porque ele ainda tem ${stockText(balance)}. Zere o estoque na baixa ou na contagem e tente de novo.`,
+      toStock: true,
+    };
+  }
+  if (
+    code === "TOO_MANY_REQUESTS" &&
+    reason === "product_delete_rate_limited"
+  ) {
+    const when = releaseTime(retryAfterOf(error), now);
+    return {
+      reread: false,
+      text:
+        when === TOO_SOON
+          ? "Você excluiu muitos produtos agora. Tente de novo daqui a pouco."
+          : `Você excluiu muitos produtos agora. Tente de novo às ${when}.`,
+      toStock: false,
+    };
+  }
+  if (
+    code === "CONFLICT" &&
+    (reason === "product_version_conflict" ||
+      reason === "product_lifecycle_conflict")
+  ) {
+    return {
+      reread: true,
+      text: `“${name}” mudou em outro aparelho. Atualize a lista e tente de novo.`,
+      toStock: false,
+    };
+  }
+  if (isConnectionFailure(error)) {
+    return { reread: true, text: CHANGE_FAULT_UNKNOWN, toStock: false };
+  }
+  return {
+    reread: true,
+    text: productErrorMessage(error, "delete"),
+    toStock: false,
+  };
 }

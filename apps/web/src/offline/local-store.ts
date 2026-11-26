@@ -12,6 +12,7 @@ import type {
   LocalSyncMeta,
   LocalWriter,
 } from "./bootstrap";
+import { withLocalFileLock } from "./local-store-lock";
 import type { LocalNamespace } from "./namespace";
 import type { LocalVariantReader } from "./sale-confirm";
 import type { LocalInventoryReader } from "./stock-commands";
@@ -241,9 +242,11 @@ export async function openLocalStore(
   namespace: LocalNamespace
 ): Promise<LocalStore> {
   assertSupported(inspectLocalStoreSupport());
-  const database = await openBrowserWASQLiteOPFSDatabase({
-    databaseName: namespace.databaseFile,
-  });
+  const database = await withLocalFileLock(namespace.databaseFile, () =>
+    openBrowserWASQLiteOPFSDatabase({
+      databaseName: namespace.databaseFile,
+    })
+  );
   const coordinator = new BrowserCollectionCoordinator({
     dbName: namespace.coordinatorName,
   });
@@ -297,18 +300,23 @@ export async function wipeLocalStore(
   namespace: LocalNamespace
 ): Promise<{ removedFiles: number }> {
   assertSupported(inspectLocalStoreSupport());
-  const root = await navigator.storage.getDirectory();
-  let removedFiles = 0;
-  for (const suffix of ["", "-journal", "-wal", "-shm"]) {
-    try {
-      // biome-ignore lint/performance/noAwaitInLoops: at most four tiny files
-      await root.removeEntry(`${namespace.databaseFile}${suffix}`);
-      removedFiles += 1;
-    } catch (error) {
-      if (!(error instanceof DOMException) || error.name !== "NotFoundError") {
-        throw error;
+  return await withLocalFileLock(namespace.databaseFile, async () => {
+    const root = await navigator.storage.getDirectory();
+    let removedFiles = 0;
+    for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+      try {
+        // biome-ignore lint/performance/noAwaitInLoops: at most four tiny files
+        await root.removeEntry(`${namespace.databaseFile}${suffix}`);
+        removedFiles += 1;
+      } catch (error) {
+        if (
+          !(error instanceof DOMException) ||
+          error.name !== "NotFoundError"
+        ) {
+          throw error;
+        }
       }
     }
-  }
-  return { removedFiles };
+    return { removedFiles };
+  });
 }

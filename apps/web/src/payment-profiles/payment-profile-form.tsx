@@ -1,6 +1,6 @@
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
-import { type FormEvent, type ReactNode, useCallback } from "react";
+import { type FormEvent, Fragment, type ReactNode, useCallback } from "react";
+import { AddRowButton } from "@/lib/add-row-button";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { FieldLegend, FieldSet } from "@/ui/field";
+import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
 import {
   ConnectionRequiredDialogNotice,
   connectionControlProps,
@@ -177,7 +177,7 @@ function RuleEditor({
   );
   const credit = rule.method === "credit_card";
   return (
-    <FieldSet className="@container min-w-0 gap-4 not-first:border-t not-first:pt-4">
+    <FieldSet className="@container min-w-0 gap-4">
       <FieldLegend className="mb-3" variant="label">
         Regra {index + 1}
       </FieldLegend>
@@ -363,31 +363,25 @@ export function PaymentProfileForm({
               onChange={onNameChange}
               value={draft.name}
             />
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-section">Regras de pagamento</h3>
-              <Button
-                id="payment-add-rule"
-                onClick={onAddRule}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <PlusIcon aria-hidden="true" data-icon="inline-start" />
-                Adicionar regra
-              </Button>
-            </div>
+            <FieldSeparator />
+            <h3 className="text-section">Regras de pagamento</h3>
             <div className="grid gap-4">
               {draft.rules.map((rule, index) => (
-                <RuleEditor
-                  canRemove={draft.rules.length > 1}
-                  errors={errors}
-                  index={index}
-                  key={rule.draftId}
-                  onRemove={onRemoveRule}
-                  onUpdate={onUpdateRule}
-                  rule={rule}
-                />
+                <Fragment key={rule.draftId}>
+                  {index > 0 ? <FieldSeparator /> : null}
+                  <RuleEditor
+                    canRemove={draft.rules.length > 1}
+                    errors={errors}
+                    index={index}
+                    onRemove={onRemoveRule}
+                    onUpdate={onUpdateRule}
+                    rule={rule}
+                  />
+                </Fragment>
               ))}
+              <AddRowButton id="payment-add-rule" onClick={onAddRule}>
+                Adicionar regra
+              </AddRowButton>
             </div>
           </DialogBody>
           <ConnectionRequiredDialogNotice online={online} />

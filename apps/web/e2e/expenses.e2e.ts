@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   datePickerButton,
   FORM_VIEWPORTS,
@@ -15,6 +15,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import { expectMono } from "./mono-face";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
@@ -140,6 +141,9 @@ class FakeExpenseServer {
   readonly expenses: FakeExpense[] = [];
   readonly rules: FakeRule[] = [];
   calls: string[] = [];
+  /** Answers the split of the total per category, as the current server does; off, as an old server that has no such field. */
+  splitByCategory = false as boolean;
+  listGate: Promise<void> | null = null;
   private next = 100;
 
   /** Like the real server: reading generates the occurrences that fell due, each an ordinary expense. */
@@ -335,11 +339,29 @@ class FakeExpenseServer {
           0
         );
         const limit = Number(input.limit ?? 100);
+        const perCategory = new Map<string, { count: number; cents: number }>();
+        for (const e of rows) {
+          const line = perCategory.get(e.categoryId) ?? { cents: 0, count: 0 };
+          line.cents += Math.round(Number(e.amount) * 100);
+          line.count += 1;
+          perCategory.set(e.categoryId, line);
+        }
         return this.ok({
           count: rows.length,
           expenses: rows.slice(0, limit),
           nextCursor: rows.length > limit ? "more" : null,
           total: (cents / 100).toFixed(2),
+          ...(this.splitByCategory
+            ? {
+                totalsByCategory: [...perCategory].map(
+                  ([categoryId, line]) => ({
+                    categoryId,
+                    count: line.count,
+                    total: (line.cents / 100).toFixed(2),
+                  })
+                ),
+              }
+            : {}),
         });
       }
       case "expense/create": {
@@ -416,6 +438,9 @@ async function installServer(page: Page, server: FakeExpenseServer) {
     const body = route.request().postDataJSON() as {
       json?: Record<string, unknown>;
     } | null;
+    if (procedure === "expense/list") {
+      await server.listGate;
+    }
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
@@ -443,8 +468,17 @@ async function openExpenses(
   ).toBeVisible({ timeout: 20_000 });
 }
 
+const voidExpense = async (page: Page, description: string) => {
+  await page
+    .getByRole("button", { name: `Mais ações para ${description}` })
+    .click();
+  await page
+    .getByRole("menuitem", { name: `Anular despesa ${description}` })
+    .click();
+};
+
 const row = (page: Page, text: string) =>
-  page.locator("article").filter({ hasText: text }).first();
+  page.locator("[data-expense-id]").filter({ hasText: text }).first();
 
 /** Picks an option of a Base UI select: its list opens in a portal, on the page. */
 async function choose(
@@ -466,7 +500,7 @@ const FILTER_BUTTON_NAME = /^Filtrar( despesas)?$/;
 const filterButton = (page: Page) =>
   filterBar(page).getByRole("button", { name: FILTER_BUTTON_NAME });
 const statusSegmented = (page: Page) =>
-  page.getByRole("group", { exact: true, name: "Situação" });
+  page.getByRole("tablist", { exact: true, name: "Situação" });
 // by `aria-label`, not by role: under the form Dialog of a phone the page behind is `aria-hidden`
 const filterPill = (page: Page, field: string) =>
   page.locator(
@@ -491,14 +525,14 @@ async function addFilter(page: Page, field: string, option: string) {
   await expect(editor).toHaveCount(0);
 }
 
-/** The segmented "Ativas | Anuladas" of the month's line: one touch swaps the list and marks the one on screen. */
+/** The segmented "Ativas | Anuladas" of the month's line: one touch swaps the list and opens the tab of the one on screen. */
 async function showStatus(page: Page, status: "Anuladas" | "Ativas") {
-  const option = statusSegmented(page).getByRole("button", {
+  const option = statusSegmented(page).getByRole("tab", {
     exact: true,
     name: status,
   });
   await option.click();
-  await expect(option).toHaveAttribute("aria-pressed", "true");
+  await expect(option).toHaveAttribute("aria-selected", "true");
 }
 
 /** The category of the list: the pill of Categoria. */
@@ -535,6 +569,12 @@ async function fillExpense(
   await page.getByLabel("Descrição").fill(values.description);
 }
 
+/** Runs the clock and then sends one call of its own: it reaches the route after any resend the run let go. */
+async function runClockFor(page: Page, milliseconds: number) {
+  await page.clock.runFor(milliseconds);
+  await page.evaluate(() => fetch("/rpc/settle").catch(() => undefined));
+}
+
 test("registra uma despesa com valor em formato brasileiro e a soma do período aparece", async ({
   page,
 }) => {
@@ -556,9 +596,31 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
   );
 });
 
+test("o total do período e o valor de cada despesa da lista são Geist Mono", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await fillExpense(page, {
+    amount: "1.500,50",
+    category: "Aluguel",
+    description: "Aluguel de outubro",
+  });
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+  await expect(page.getByText("Despesa registrada.")).toBeVisible();
+  const total = page.getByText("Total do período").locator("..");
+  await expect(total).toContainText("1.500,50");
+  await expectMono(total.locator("[data-money]"), "o total do período");
+  await expectMono(
+    row(page, "Aluguel de outubro").locator("[data-money]"),
+    "o valor da despesa na lista"
+  );
+});
+
 test("registrar com o 503 server_busy diz que pode ter sido salva, não repete sozinho e não oferece tentar de novo", async ({
   page,
 }) => {
+  await page.clock.install();
   const server = new FakeExpenseServer();
   let created = 0;
   await openExpenses(page, server, (target) =>
@@ -598,7 +660,7 @@ test("registrar com o 503 server_busy diz que pode ter sido salva, não repete s
   ).toHaveCount(0);
   await expect(page.getByText("salva neste aparelho")).toHaveCount(0);
   // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(created).toBe(1);
   expect(server.expenses).toHaveLength(0);
   await expect(page.getByLabel("Descrição")).toHaveValue("Conta de luz");
@@ -790,24 +852,25 @@ test("a barra 'Filtrar despesas': abre em Ativas, Anuladas está a um toque no s
   await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(2);
   await expect(
-    statusSegmented(page).getByRole("button", { exact: true, name: "Ativas" })
-  ).toHaveAttribute("aria-pressed", "true");
+    statusSegmented(page).getByRole("tab", { exact: true, name: "Ativas" })
+  ).toHaveAttribute("aria-selected", "true");
   await expect(
-    statusSegmented(page).getByRole("button", {
+    statusSegmented(page).getByRole("tab", {
       exact: true,
       name: "Anuladas",
     })
-  ).toHaveAttribute("aria-pressed", "false");
+  ).toHaveAttribute("aria-selected", "false");
   const summary = page
     .getByRole("status")
     .filter({ hasText: "Total do período" });
-  await expect(summary).toContainText("2 despesas");
+  const count = page.locator("[data-list-count]");
+  await expect(count).toHaveText("2 despesas");
   await expect(summary).not.toContainText("anuladas");
 
   await showStatus(page, "Anuladas");
   await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(1);
-  await expect(summary).toContainText("1 despesa");
+  await expect(count).toHaveText("1 despesa");
   await expect(summary).toContainText("Total do período (anuladas)");
 
   await showStatus(page, "Ativas");
@@ -846,11 +909,11 @@ test("o filtro da barra sobrevive à troca de segmento, e fechar o editor devolv
   await page.getByRole("tab", { name: "Recorrentes" }).click();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
   await expect(
-    statusSegmented(page).getByRole("button", {
+    statusSegmented(page).getByRole("tab", {
       exact: true,
       name: "Anuladas",
     })
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveAttribute("aria-selected", "true");
   await expect(filterPill(page, "Categoria")).toBeVisible();
   await expect(page.getByText(EMPTY_WITH_FILTERS)).toBeVisible();
 
@@ -875,6 +938,7 @@ test("o vazio com categoria diz 'Nenhuma despesa encontrada com estes filtros.' 
   const empty = page.locator("[data-empty-state]");
   await expect(empty).toContainText(EMPTY_WITH_FILTERS);
   await expect(empty).toHaveAttribute("role", "status");
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   await expect(
     empty.getByRole("button", { exact: true, name: "Nova despesa" })
   ).toHaveCount(0);
@@ -884,8 +948,8 @@ test("o vazio com categoria diz 'Nenhuma despesa encontrada com estes filtros.' 
   await expect(page.locator("[data-expense-id]")).toHaveCount(1);
   await expect(filterButton(page)).toBeFocused();
   await expect(
-    statusSegmented(page).getByRole("button", { exact: true, name: "Ativas" })
-  ).toHaveAttribute("aria-pressed", "true");
+    statusSegmented(page).getByRole("tab", { exact: true, name: "Ativas" })
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test("anular tira a despesa do período, aparece em Anuladas e pode ser reativada", async ({
@@ -901,7 +965,7 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await page.getByRole("button", { name: "Registrar despesa" }).click();
   await expect(row(page, "Panfletos")).toBeVisible();
 
-  await page.getByRole("button", { name: "Anular despesa Panfletos" }).click();
+  await voidExpense(page, "Panfletos");
   await expect(row(page, "Panfletos")).toHaveCount(0);
 
   await showStatus(page, "Anuladas");
@@ -930,7 +994,7 @@ test("anular avisa com o nome da despesa e Desfazer a devolve ao período", asyn
   await page.getByRole("button", { name: "Registrar despesa" }).click();
   await expect(row(page, "Cartazes")).toBeVisible();
 
-  await page.getByRole("button", { name: "Anular despesa Cartazes" }).click();
+  await voidExpense(page, "Cartazes");
   await expect(row(page, "Cartazes")).toHaveCount(0);
   const notice = page
     .getByRole("status")
@@ -1000,7 +1064,7 @@ const rulesPanel = (page: Page) =>
 const listedExpense = (page: Page, text: string) =>
   page
     .getByRole("region", { name: "Despesas do período" })
-    .locator("article")
+    .locator("[data-expense-id]")
     .filter({ hasText: text });
 
 async function openRulesPanel(page: Page) {
@@ -1256,6 +1320,114 @@ for (const viewport of FORM_VIEWPORTS) {
     expect(Math.abs(month.centre - filter.centre)).toBeLessThanOrEqual(1);
   });
 }
+
+async function boxOrFail(locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box, "the element has no box").not.toBeNull();
+  return box as NonNullable<typeof box>;
+}
+
+const TOUCH_AREA = 44;
+const TOUCH_SLACK = 0.5;
+
+/** Whether a tap `distance` px from the centre of the control, along each axis and at its four corners, still lands on it (its own box or its `touch-hit` area). */
+function tapReaches(control: Locator, distance: number) {
+  return control.evaluate((element, reach) => {
+    const box = element.getBoundingClientRect();
+    const middle = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    const lands = (x: number, y: number) => {
+      const hit = document.elementFromPoint(x, y);
+      return hit !== null && element.contains(hit);
+    };
+    return {
+      across:
+        lands(middle.x - reach, middle.y) && lands(middle.x + reach, middle.y),
+      diagonal: [-1, 1].every((dx) =>
+        [-1, 1].every((dy) =>
+          lands(middle.x + dx * reach, middle.y + dy * reach)
+        )
+      ),
+      down:
+        lands(middle.x, middle.y - reach) && lands(middle.x, middle.y + reach),
+    };
+  }, distance);
+}
+
+test.describe("com toque", () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  test("a linha de uma despesa e o seletor de mês têm área de toque de 44 px: o gatilho …, o item Anular e a célula do mês", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "1500.50");
+    await openExpenses(page, server);
+    expect(
+      await page.evaluate(() => matchMedia("(pointer: coarse)").matches)
+    ).toBe(true);
+
+    const trigger = page.getByRole("button", {
+      name: "Mais ações para Despesa 1",
+    });
+    await trigger.scrollIntoViewIfNeeded();
+    const item = page.getByRole("menuitem", {
+      name: "Anular despesa Despesa 1",
+    });
+    const reach = await tapReaches(trigger, TOUCH_AREA / 2 - TOUCH_SLACK);
+    await test.step("eixos da área de toque do gatilho", () => {
+      expect(
+        reach.across,
+        "um toque 21,5 px ao lado do gatilho … cai fora dele"
+      ).toBe(true);
+      expect(
+        reach.down,
+        "um toque 21,5 px acima ou abaixo do gatilho … cai fora dele"
+      ).toBe(true);
+    });
+
+    await test.step("canto da área de toque do gatilho", async () => {
+      expect
+        .soft(
+          reach.diagonal,
+          "um toque 21,5 px na diagonal do gatilho … (canto da área de toque) cai nele"
+        )
+        .toBe(true);
+      const triggerBox = await boxOrFail(trigger);
+      await page.touchscreen.tap(
+        triggerBox.x + triggerBox.width / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK),
+        triggerBox.y + triggerBox.height / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK)
+      );
+      await expect
+        .soft(item, "o toque no canto da área do gatilho … abre o menu")
+        .toBeVisible();
+    });
+    await page.keyboard.press("Escape");
+    await expect(item).toBeHidden();
+
+    await trigger.click();
+    await expect(item).toBeVisible();
+    const itemBox = await item.boundingBox();
+    expect(itemBox?.height ?? 0).toBeGreaterThanOrEqual(
+      TOUCH_AREA - TOUCH_SLACK
+    );
+    await page.keyboard.press("Escape");
+    await expect(item).toBeHidden();
+
+    await page.locator("#expense-month").click();
+    const cell = page
+      .getByRole("dialog", { name: "Mês de competência" })
+      .getByRole("button", { name: "novembro de 2026" });
+    const cellBox = await cell.boundingBox();
+    expect(cellBox?.height ?? 0).toBeGreaterThanOrEqual(
+      TOUCH_AREA - TOUCH_SLACK
+    );
+    expect(cellBox?.width ?? 0).toBeGreaterThanOrEqual(
+      TOUCH_AREA - TOUCH_SLACK
+    );
+  });
+});
 
 /** Opens the screen and records the month of every list the screen asks for. */
 async function openExpensesWatchingMonths(page: Page) {
@@ -1633,6 +1805,7 @@ test("o vazio do período é só a frase: o Nova despesa único é o do título,
   await expect(empty).toBeVisible();
   await expect(empty.getByText("Toque em")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   const only = page.getByRole("button", { exact: true, name: "Nova despesa" });
   await expect(only).toHaveCount(1);
   await expect(empty.getByRole("button")).toHaveCount(0);
@@ -1727,7 +1900,11 @@ for (const viewport of FORM_VIEWPORTS) {
       name: "Nova despesa",
     });
 
-    await expect(page.getByText("Carregando despesas…")).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Despesas do período" })
+        .getByText("Carregando…")
+    ).toBeVisible();
     await expect(newButtons).toHaveCount(1);
     const reading = await placesOf(parts);
 
@@ -1754,7 +1931,7 @@ for (const viewport of FORM_VIEWPORTS) {
   });
 }
 
-test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura e no mesmo lugar (até 1 px), no celular e no desktop", async ({
+test("a troca de carregando para vazio mantém a moldura da lista no mesmo lugar, com o título e o total dentro dela nos dois estados (até 1 px), no celular e no desktop", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
@@ -1769,18 +1946,29 @@ test("a troca de carregando para vazio deixa o cartão da lista com a mesma altu
     })
   );
   const card = page.getByRole("region", { name: "Despesas do período" });
-  await expect(page.getByText("Carregando despesas…")).toBeVisible();
+  await expect(card.getByText("Carregando…")).toBeVisible();
+  const title = card.getByRole("heading", { name: "Despesas do período" });
+  const periodTotal = card.getByText("Total do período", { exact: true });
   const measure = async () => {
     const box = await card.boundingBox();
-    return { height: box?.height ?? 0, top: box?.y ?? 0 };
+    const heading = await title.boundingBox();
+    const total = await periodTotal.boundingBox();
+    return {
+      heading: heading?.y ?? 0,
+      top: box?.y ?? 0,
+      total: total?.y ?? 0,
+    };
   };
   const reading = await measure();
+  await expect(card.locator("[data-list-total]")).toBeVisible();
   release?.();
-  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  await expect(card.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  await expect(card.locator("[data-list-total]")).toBeVisible();
   const empty = await measure();
-  expect(Math.abs(empty.height - reading.height)).toBeLessThanOrEqual(1);
-  // the title's button is there in both states, so the card does not move
   expect(Math.abs(empty.top - reading.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(empty.heading - reading.heading)).toBeLessThanOrEqual(1);
+  expect(reading.total).toBeGreaterThan(reading.heading);
+  expect(Math.abs(empty.total - reading.total)).toBeLessThanOrEqual(1);
 });
 
 const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;
@@ -1848,6 +2036,76 @@ test("o segmentado Lançamentos · Recorrentes · Categorias: nome acessível, e
   await expect(
     rulesPanel(page).getByRole("checkbox", { name: "Mostrar pausadas" })
   ).toBeChecked();
+});
+
+const callsOf = (server: FakeExpenseServer, procedure: string) =>
+  server.calls.filter((call) => call === procedure).length;
+
+/** A read that goes out after the ones under test: once the server has it, the earlier ones had their turn. */
+async function settleWithMonth(
+  page: Page,
+  server: FakeExpenseServer,
+  month: string
+) {
+  const before = callsOf(server, "expense/list");
+  await chooseMonth(page, month);
+  await expect.poll(() => callsOf(server, "expense/list")).toBe(before + 1);
+}
+
+const rulesList = (page: Page) =>
+  rulesPanel(page).locator('[aria-busy="false"]');
+
+test("as regras recorrentes só são lidas na primeira vez que a aba Recorrentes fica à vista", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await expect(page.getByRole("tab", { name: "Lançamentos" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect.poll(() => callsOf(server, "expense/list")).toBe(1);
+  await expect.poll(() => callsOf(server, "expense/listCategories")).toBe(1);
+  await settleWithMonth(page, server, "setembro de 2026");
+  expect(callsOf(server, "expense/listRules")).toBe(0);
+
+  await openRulesPanel(page);
+  await expect(rulesList(page)).toBeVisible();
+  expect(callsOf(server, "expense/listRules")).toBe(1);
+
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  await openLaunches(page);
+  await openRulesPanel(page);
+  await openLaunches(page);
+  await settleWithMonth(page, server, "agosto de 2026");
+  expect(callsOf(server, "expense/listRules")).toBe(1);
+  expect(callsOf(server, "expense/listCategories")).toBe(1);
+});
+
+test("a tela aberta direto em Recorrentes lê as regras uma vez", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server, (current) =>
+    current.addInitScript(() => {
+      history.replaceState(
+        history.state,
+        "",
+        `${window.location.pathname}${window.location.search}${window.location.search ? "&" : "?"}ver=recorrentes`
+      );
+    })
+  );
+  await expect(page.getByRole("tab", { name: "Recorrentes" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(rulesList(page)).toBeVisible();
+  expect(callsOf(server, "expense/listRules")).toBe(1);
+  await openLaunches(page);
+  await openRulesPanel(page);
+  await openLaunches(page);
+  await settleWithMonth(page, server, "setembro de 2026");
+  expect(callsOf(server, "expense/listRules")).toBe(1);
 });
 
 test("o endereço abre o segmento, e um ?ver= inválido cai em Lançamentos sem passo no histórico", async ({
@@ -2060,7 +2318,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await expect(footer).toContainText("Total na tela");
     await expect(footer).toContainText("R$ 1.500,80");
     await expect(footer).toContainText("3 despesas");
-    const value = footer.locator(".tabular-nums");
+    const value = footer.locator(".tabular-nums").first();
     await expect(value).toHaveCSS("text-align", "right");
     await expect(value).toHaveCSS("font-variant-numeric", TABULAR_NUMS);
     const filled = await footer.boundingBox();
@@ -2097,7 +2355,10 @@ for (const viewport of [
     await expect(footer).toContainText("50 despesas · há mais");
     const count = footer.getByText("50 despesas · há mais");
     const countBox = await count.boundingBox();
-    const valueBox = await footer.locator(".tabular-nums").boundingBox();
+    const valueBox = await footer
+      .locator(".tabular-nums")
+      .first()
+      .boundingBox();
     expect(countBox?.height ?? 99).toBeLessThanOrEqual(24);
     expect(valueBox).not.toBeNull();
     if (viewport.width === 320) {
@@ -2143,7 +2404,7 @@ for (const width of [480, 1280]) {
       expect(box).not.toBeNull();
       return (box?.x ?? 0) + (box?.width ?? 0);
     };
-    const footerValue = page.locator("[data-list-total] .tabular-nums");
+    const footerValue = page.locator("[data-list-total] .tabular-nums").first();
     const rowValues = page.locator("[data-expense-id] p.tabular-nums");
     const expectColumn = async () => {
       await expect(rowValues).toHaveCount(2);
@@ -2159,6 +2420,197 @@ for (const width of [480, 1280]) {
     await expectColumn();
   });
 }
+
+const BY_CATEGORY = "Por categoria";
+const REMOVE_FILTER = /^Tirar o filtro/;
+const byCategory = (page: Page) =>
+  page.getByRole("region", { exact: true, name: BY_CATEGORY });
+const categoryButton = (page: Page, name: string) =>
+  byCategory(page).getByRole("button", {
+    name: new RegExp(`^Filtrar por ${name}( |$)`),
+  });
+
+function seedSplit(server: FakeExpenseServer) {
+  server.splitByCategory = true;
+  seedExpense(server, 1, "300.00", 0);
+  seedExpense(server, 2, "300.00", 0);
+  seedExpense(server, 3, "200.00", 1);
+  seedExpense(server, 4, "100.00", 1);
+  seedExpense(server, 5, "100.00", 2);
+}
+
+test("por categoria: cada linha escreve o nome, o percentual e o valor, a soma é o total do período e a tela não faz leitura a mais", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  await openExpenses(page, server);
+
+  const block = byCategory(page);
+  await expect(block).toBeVisible();
+  const lines = block.locator("[data-share-line]");
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toContainText("Marketing");
+  await expect(lines.nth(0)).toContainText("60%");
+  await expect(lines.nth(0)).toContainText("R$ 600,00");
+  await expect(lines.nth(1)).toContainText("Aluguel");
+  await expect(lines.nth(1)).toContainText("30%");
+  await expect(lines.nth(1)).toContainText("R$ 300,00");
+  await expect(lines.nth(2)).toContainText("Impostos");
+  await expect(lines.nth(2)).toContainText("10%");
+  await expect(lines.nth(2)).toContainText("R$ 100,00");
+  await expect(page.getByText("Total do período").locator("..")).toContainText(
+    "R$ 1.000,00"
+  );
+
+  const widths = () =>
+    block.locator("[data-share-track]").evaluateAll((tracks) =>
+      tracks.map((track) => {
+        const fill = track.firstElementChild as HTMLElement;
+        return (
+          fill.getBoundingClientRect().width /
+          track.getBoundingClientRect().width
+        );
+      })
+    );
+  await expect
+    .poll(async () => (await widths()).map((width) => Math.round(width * 100)))
+    .toEqual([100, 50, 17]);
+  await expect(block.locator("[data-share-track]")).toHaveCount(3);
+  await expect(
+    block.locator('[data-share-track]:not([aria-hidden="true"])')
+  ).toHaveCount(0);
+
+  expect(
+    await axeFaults(page, '[aria-labelledby="expense-by-category-title"]')
+  ).toEqual([]);
+  expect(callsOf(server, "expense/list")).toBe(1);
+  expect(callsOf(server, "expense/listCategories")).toBe(1);
+});
+
+test("por categoria: tocar numa linha aplica o filtro de Categoria da barra, o bloco sai e tirar a pílula o traz de volta, com 44 px de área e foco visível", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  await openExpenses(page, server);
+
+  const target = categoryButton(page, "Aluguel");
+  await expect(target).toBeVisible();
+  const box = await target.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  const first = categoryButton(page, "Marketing");
+  await filterButton(page).focus();
+  await page.keyboard.press("Tab");
+  await expect(first).toBeFocused();
+  await expect(first).toHaveCSS("outline-style", "solid");
+  await expect(first).toHaveCSS("outline-width", "3px");
+
+  const before = callsOf(server, "expense/list");
+  await target.click();
+  await expect(filterPill(page, "Categoria")).toContainText("Aluguel");
+  await expect(byCategory(page)).toHaveCount(0);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(2);
+  await expect(filterButton(page)).toBeFocused();
+  await expect.poll(() => callsOf(server, "expense/list")).toBe(before + 1);
+
+  await filterBar(page).getByRole("button", { name: REMOVE_FILTER }).click();
+  await expect(filterPill(page, "Categoria")).toHaveCount(0);
+  await expect(byCategory(page)).toBeVisible();
+  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
+});
+
+test("por categoria: com Anuladas, com menos de duas categorias no mês e com um servidor sem o campo o bloco não aparece", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  await openExpenses(page, server);
+  await expect(byCategory(page)).toBeVisible();
+
+  await showStatus(page, "Anuladas");
+  await expect(page.getByText(EMPTY_VOIDED)).toBeVisible();
+  await expect(byCategory(page)).toHaveCount(0);
+  await showStatus(page, "Ativas");
+  await expect(byCategory(page)).toBeVisible();
+
+  await chooseMonth(page, "setembro de 2026");
+  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  await expect(byCategory(page)).toHaveCount(0);
+});
+
+test("por categoria: um servidor sem totalsByCategory deixa a tela como era, sem o bloco nem texto de 'Sem categoria'", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  server.splitByCategory = false;
+  await openExpenses(page, server);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
+  await expect(byCategory(page)).toHaveCount(0);
+  await expect(page.getByText("Sem categoria")).toHaveCount(0);
+});
+
+test("por categoria: ao trocar de mês o bloco guarda o lugar em esqueleto com a forma das linhas e a lista não anda (CLS até 0,01)", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  await page.addInitScript(() => {
+    const holder = window as unknown as { __shift: number };
+    holder.__shift = 0;
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const shift = entry as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) {
+          holder.__shift += shift.value;
+        }
+      }
+    }).observe({ buffered: true, type: "layout-shift" });
+  });
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  for (const expense of [...server.expenses]) {
+    server.expenses.push({
+      ...expense,
+      competenceOn: "2026-09-14",
+      id: uuid(900 + server.expenses.length),
+    });
+  }
+  await openExpenses(page, server);
+  await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
+
+  let release: () => void = () => undefined;
+  server.listGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await chooseMonth(page, "setembro de 2026");
+  await expect(byCategory(page).locator("[data-share-skeleton]")).toBeVisible();
+  const card = page.getByRole("region", { name: "Despesas do período" });
+  const reserved = await placesOf({ list: card });
+  await page.evaluate(() => {
+    (window as unknown as { __shift: number }).__shift = 0;
+  });
+  release();
+  await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
+  expectSamePlaces(
+    "com as linhas no lugar do esqueleto",
+    reserved,
+    await placesOf({ list: card })
+  );
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __shift: number }).__shift
+    )
+  ).toBeLessThanOrEqual(0.01);
+});
 
 test.describe("a 320 px com letra de 20 px", () => {
   skipOutsideChromium();
@@ -2177,7 +2629,7 @@ test.describe("a 320 px com letra de 20 px", () => {
 
       const footer = page.locator("[data-list-total]");
       await expect(footer).toContainText("50 despesas · há mais");
-      const value = footer.locator(".tabular-nums");
+      const value = footer.locator(".tabular-nums").first();
       await expect(value).toHaveText("R$ 75.025,00");
       const [footerBox, valueBox, countBox] = await Promise.all([
         footer.boundingBox(),
@@ -2204,6 +2656,64 @@ test.describe("a 320 px com letra de 20 px", () => {
       await expect(value).toHaveText("R$ 0,00");
       const empty = await footer.boundingBox();
       expect(Math.abs((empty?.height ?? 0) - filled)).toBeLessThanOrEqual(1);
+    }
+  );
+
+  reflowTest(
+    "em toda linha o Editar e o … ficam à direita, com o … na borda direita da linha, com o valor curto e com o valor que quebra",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await page.clock.setFixedTime(new Date(NOW));
+      const server = new FakeExpenseServer();
+      const amounts = ["15.00", "1500.50", "12345678.90", "987654321.99"];
+      for (const [index, amount] of amounts.entries()) {
+        seedExpense(server, index + 1, amount);
+      }
+      await openExpenses(page, server);
+      await expectReflowFont(page);
+
+      const measureRow = async (name: string) => {
+        const item = listedExpense(page, name);
+        await item.scrollIntoViewIfNeeded();
+        const content = await item.evaluate(
+          (element) =>
+            element.getBoundingClientRect().right -
+            Number.parseFloat(getComputedStyle(element).paddingRight)
+        );
+        const edit = await boxOrFail(
+          item.getByRole("button", { name: `Editar despesa ${name}` })
+        );
+        const more = await boxOrFail(
+          item.getByRole("button", { name: `Mais ações para ${name}` })
+        );
+        const { height } = await boxOrFail(item);
+        return { content, edit, height, more, name };
+      };
+      const rows: Awaited<ReturnType<typeof measureRow>>[] = [];
+      for (const [index] of amounts.entries()) {
+        // biome-ignore lint/performance/noAwaitInLoops: each row is scrolled to and read on its own, in order
+        rows.push(await measureRow(`Despesa ${index + 1}`));
+      }
+      const [short, , , wrapped] = rows;
+      expect(
+        (wrapped?.height ?? 0) - (short?.height ?? 0),
+        "o valor longo da última linha não quebra a linha de ações: o caso não cobre o ml-auto"
+      ).toBeGreaterThan(8);
+      for (const { content, edit, more, name } of rows) {
+        expect(
+          Math.abs(more.x + more.width - content),
+          `${name}: o … não termina na borda direita da linha`
+        ).toBeLessThanOrEqual(1);
+        expect(
+          edit.x + edit.width,
+          `${name}: o Editar passa do …`
+        ).toBeLessThanOrEqual(more.x + 1);
+        expect(
+          Math.abs(edit.y + edit.height / 2 - (more.y + more.height / 2)),
+          `${name}: o Editar e o … não estão na mesma linha`
+        ).toBeLessThanOrEqual(2);
+      }
+      await assertNoPageScroll(page);
     }
   );
 });

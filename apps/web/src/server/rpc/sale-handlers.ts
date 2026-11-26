@@ -24,6 +24,7 @@ import type {
   SaleListEntry,
 } from "@polaris/db/sale-query-repository";
 import type {
+  ConfirmedSalePaymentReadModel,
   ConfirmSaleResult,
   confirmSale,
 } from "@polaris/db/sale-repository";
@@ -69,10 +70,34 @@ type AdjustmentValueType =
 type PaymentMethod = ConfirmedSaleReadModel["payment"]["method"];
 type InstallmentPlan = ConfirmedSaleReadModel["payment"]["installmentPlan"];
 
+function confirmedPaymentReadModel(
+  payment: ConfirmedSalePaymentReadModel
+): ConfirmedSaleReadModel["payment"] {
+  return {
+    amount: payment.amount,
+    anticipationFee: {
+      ...payment.anticipationFee,
+      mode: payment.anticipationFee.mode as FeeMode,
+    },
+    anticipationRequested: payment.anticipationRequested,
+    expectedSettlementDays: payment.expectedSettlementDays,
+    installmentPlan: payment.installmentPlan as InstallmentPlan,
+    installments: payment.installments,
+    method: payment.method as PaymentMethod,
+    paymentProfileId: payment.paymentProfileId,
+    paymentProfileName: payment.paymentProfileName,
+    paymentProfileRuleId: payment.paymentProfileRuleId,
+    paymentProfileVersion: payment.paymentProfileVersion,
+    processingFee: {
+      ...payment.processingFee,
+      mode: payment.processingFee.mode as FeeMode,
+    },
+  };
+}
+
 function confirmedSaleReadModel(
   result: ConfirmSaleResult
 ): ConfirmedSaleReadModel {
-  const { payment } = result;
   return {
     adjustments: result.adjustments.map((adjustment) => ({
       amount: adjustment.amount,
@@ -82,26 +107,11 @@ function confirmedSaleReadModel(
       valueType: adjustment.valueType as AdjustmentValueType,
     })),
     items: result.items,
-    payment: {
-      amount: payment.amount,
-      anticipationFee: {
-        ...payment.anticipationFee,
-        mode: payment.anticipationFee.mode as FeeMode,
-      },
-      anticipationRequested: payment.anticipationRequested,
-      expectedSettlementDays: payment.expectedSettlementDays,
-      installmentPlan: payment.installmentPlan as InstallmentPlan,
-      installments: payment.installments,
-      method: payment.method as PaymentMethod,
-      paymentProfileId: payment.paymentProfileId,
-      paymentProfileName: payment.paymentProfileName,
-      paymentProfileRuleId: payment.paymentProfileRuleId,
-      paymentProfileVersion: payment.paymentProfileVersion,
-      processingFee: {
-        ...payment.processingFee,
-        mode: payment.processingFee.mode as FeeMode,
-      },
-    },
+    payment: confirmedPaymentReadModel(result.payment),
+    payments: result.payments.map((part) => ({
+      ...confirmedPaymentReadModel(part),
+      position: part.position,
+    })),
     replayed: result.replayed,
     sale: {
       commandId: result.sale.commandId,
@@ -143,6 +153,7 @@ function saleListEntryReadModel(entry: SaleListEntry): SaleListEntryReadModel {
     occurredAt: entry.occurredAt.toISOString(),
     occurredOn: entry.occurredOn,
     paymentMethod: entry.paymentMethod as PaymentMethod | null,
+    paymentMethods: entry.paymentMethods as PaymentMethod[],
     status: entry.status,
     totalDue: entry.totalDue,
   };
@@ -209,6 +220,24 @@ function saleCustomerLinkReadModel(
   };
 }
 
+type PaymentForm = Pick<
+  Parameters<typeof confirmSale>[2],
+  "payment" | "paymentProfile" | "payments"
+>;
+
+/**
+ * Passes on every payment field the client sent, as is: the domain refuses
+ * both forms together, neither, and a missing profile, behind the contract.
+ */
+function paymentForm(input: PaymentForm): PaymentForm {
+  const { payment, paymentProfile, payments } = input;
+  return {
+    ...(payment === undefined ? {} : { payment }),
+    ...(paymentProfile === undefined ? {} : { paymentProfile }),
+    ...(payments === undefined ? {} : { payments }),
+  };
+}
+
 export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
   const implementContract =
     implement(polarisContract).$context<SaleRpcContext>();
@@ -228,8 +257,7 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
               commandVersion: input.commandVersion,
               items: input.items,
               occurredAt: input.occurredAt,
-              payment: input.payment,
-              paymentProfile: input.paymentProfile,
+              ...paymentForm(input),
               recordedAt: input.recordedAt ?? null,
               requestId: dependencies.requestAuditId(context.requestId),
             });

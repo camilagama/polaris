@@ -1,5 +1,5 @@
 import type { Pool, QueryResult, QueryResultRow } from "pg";
-import { redactConnectionStrings, sqlState } from "./sales-gate-support";
+import { redactConnectionStrings, sqlState } from "./gate-errors";
 
 /**
  * The two ways a gate acts as another role, so it runs the same with an owner who is a superuser (the CI service)
@@ -182,6 +182,77 @@ export async function setLoginRole(
   );
 }
 
+export interface GateReleasable extends GateQueryable {
+  release: (destroy?: boolean) => void;
+}
+
+/**
+ * ROLLBACK that never throws and says whether it worked: a gate calls it where an error is already on its way up (or
+ * the work is over), so a failed ROLLBACK must not replace that error.
+ */
+export async function rollbackQuietly(client: GateQueryable): Promise<boolean> {
+  return await client.query("ROLLBACK").then(
+    () => true,
+    () => false
+  );
+}
+
+/**
+ * ROLLBACK, then give the connection back. A connection whose ROLLBACK failed may still hold the open transaction
+ * (a planted policy or trigger), so it is destroyed instead of returned to the pool. It never throws: put it in a
+ * `finally` and the error already in flight survives. A ROLLBACK that fails after work that passed is not reported:
+ * closing the connection ends the transaction on the server, so nothing leaks; use `inRolledBackTransaction` where the
+ * connection is reused and the failure must stop the gate.
+ */
+export async function rollbackAndRelease(
+  client: GateReleasable
+): Promise<void> {
+  const rolledBack = await rollbackQuietly(client);
+  client.release(!rolledBack);
+}
+
+/**
+ * BEGIN, the work, COMMIT, on one pooled connection. A failure rolls back through `rollbackAndRelease` and rethrows
+ * the failure of the work, never the one of the ROLLBACK.
+ */
+export async function inCommittedTransaction<T>(
+  pool: { connect: () => Promise<GateReleasable> },
+  work: (client: GateReleasable) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client);
+    await client.query("COMMIT");
+    client.release();
+    return result;
+  } catch (error) {
+    await rollbackAndRelease(client);
+    throw error;
+  }
+}
+
+/**
+ * BEGIN, the work, ROLLBACK, on a connection the gate keeps using afterwards. When the work failed, its error wins over
+ * a failed ROLLBACK; when the work passed, a failed ROLLBACK is the failure, since the connection may still be inside
+ * the transaction.
+ */
+export async function inRolledBackTransaction<T>(
+  client: GateQueryable,
+  work: () => Promise<T>
+): Promise<T> {
+  await client.query("BEGIN");
+  let result: T;
+  try {
+    result = await work();
+  } catch (error) {
+    await rollbackQuietly(client);
+    throw error;
+  }
+  await client.query("ROLLBACK");
+  return result;
+}
+
 /** One statement as `role` (withGateRole), in a transaction that is always rolled back. */
 export async function queryAsGateRole<R extends QueryResultRow>(
   pool: Pool,
@@ -196,11 +267,7 @@ export async function queryAsGateRole<R extends QueryResultRow>(
       client.query<R>(text, values)
     );
   } finally {
-    const rolledBack = await client.query("ROLLBACK").then(
-      () => true,
-      () => false
-    );
-    client.release(!rolledBack);
+    await rollbackAndRelease(client);
   }
 }
 

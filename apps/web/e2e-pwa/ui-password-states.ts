@@ -23,7 +23,7 @@ const TOKEN = "tok-de-teste";
 const SHORT_PASSWORD = "curta";
 
 const newPasswordField = (page: Page) =>
-  page.getByLabel("Nova senha", { exact: true });
+  page.locator("input").and(page.getByLabel("Nova senha", { exact: true }));
 const submit = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name }).click();
 const title = (page: Page, name: string) =>
@@ -161,7 +161,7 @@ export const passwordStates = {
     // no form: only the alert and "Cancelar"
     await page.getByLabel("Senha atual").waitFor({ state: "detached" });
     await page
-      .getByRole("link", { name: "Cancelar e voltar para Formas de receber" })
+      .getByRole("link", { name: "Cancelar e voltar para Minha conta" })
       .waitFor();
     await showChangeAlone(page);
   },

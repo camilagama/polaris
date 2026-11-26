@@ -1,4 +1,8 @@
-import { type BillingState, grantsPro } from "./entitlements";
+import {
+  accessInForceUntil,
+  type BillingState,
+  grantsPro,
+} from "./entitlements";
 import type { BillingCycleMonths, RevokedPayment } from "./facts";
 import { saoPauloDateOf } from "./provider-period";
 
@@ -112,16 +116,17 @@ export function renewalAmountOf(
  * The day of the next charge (AS-3), in São Paulo: in a trial, the day of the first charge set at the provider (never
  * the end of the trial, which for a Pix approved late falls after it); while paid and renewing, the last day of the
  * paid period (the day the renewal is charged). None with the renewal cancelled, in grace, on Free or once the access
- * ran out. The Admin names the renewal's day with it, whatever the amount.
+ * ran out (a trial's with its slack, `accessInForceUntil`). The Admin names the renewal's day with it, whatever the amount.
  */
 export function nextChargeDayOf(
   record: PlanViewRecord,
   now: Date
 ): string | null {
+  const until = accessInForceUntil(record);
   if (
     record.cancelAtPeriodEnd ||
-    record.accessEndsAt === null ||
-    record.accessEndsAt.getTime() <= now.getTime()
+    until === null ||
+    until.getTime() <= now.getTime()
   ) {
     return null;
   }
@@ -130,7 +135,7 @@ export function nextChargeDayOf(
   }
   if (record.state === "active") {
     // the period runs through the whole of its last day, and the renewal is charged on that day
-    return saoPauloDateOf(new Date(record.accessEndsAt.getTime() - 1));
+    return saoPauloDateOf(new Date(until.getTime() - 1));
   }
   return null;
 }

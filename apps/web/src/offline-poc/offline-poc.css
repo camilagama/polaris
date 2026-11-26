@@ -116,7 +116,7 @@
   }
 
   .offline-lab-status-value .is-available {
-    color: var(--mark-foreground);
+    color: var(--chart-sales-foreground);
   }
 
   .offline-lab-status-value .is-unavailable {

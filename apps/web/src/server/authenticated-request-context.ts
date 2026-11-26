@@ -1,4 +1,7 @@
-import { createDatabase as createHyperdriveDatabase } from "@polaris/db/client";
+import {
+  createAuthDatabase as createHyperdriveAuthDatabase,
+  createDatabase as createHyperdriveDatabase,
+} from "@polaris/db/client";
 import { logger } from "@polaris/observability/logger";
 import { createBetterAuth } from "./auth";
 import {
@@ -16,8 +19,7 @@ import {
 import { isSessionPastAbsoluteExpiration } from "./auth/session-policy";
 import type { WorkerBindings } from "./environment";
 import {
-  isExemptFromLegalAcceptance,
-  isLegalAcceptanceEnforced,
+  isLegalAcceptanceRequired,
   type LegalAcceptanceQueryable,
   pendingLegalAcceptance,
   readAcceptedLegalVersions,
@@ -74,12 +76,19 @@ export interface AuthenticatedRequestContextDependencies {
     requestState: () => AuthRequestState;
     secret: string;
   }) => SessionAuth;
+  createAuthDatabase: typeof createHyperdriveAuthDatabase;
   createDatabase: typeof createHyperdriveDatabase;
   readAcceptedLegalVersions?: typeof readAcceptedLegalVersions;
 }
 
 export interface AuthenticatedRequestContextInput<T> {
   bindings: WorkerBindings;
+  /**
+   * Set only by the tenant request context of a single transaction, whose entry (`begin_tenant_request`) checks the
+   * acceptance itself, first, so a check here would be a second read of it. Opt-in: every other caller, a new one
+   * included, keeps the check here.
+   */
+  legalAcceptanceCheckedAtTenantEntry?: true;
   operation: (
     database: Database,
     session: AuthenticatedRequestSession,
@@ -90,9 +99,10 @@ export interface AuthenticatedRequestContextInput<T> {
 }
 
 /**
- * The single control of the legal acceptance (ADR 0100): every RPC, the sync, the leases and the
- * authenticated `/api/*` routes come through the request context. Only the exempt procedures and routes
- * skip it, and only with `LEGAL_ACCEPTANCE_ENFORCED=true` does it refuse anyone.
+ * The control of the legal acceptance at the gate (ADR 0100): every RPC, the sync, the leases and the
+ * authenticated `/api/*` routes come through the request context. A tenant call of a single transaction has it at
+ * the entry of that transaction instead (`legalAcceptanceCheckedAtTenantEntry`). Only the exempt procedures and
+ * routes skip it, and only with `LEGAL_ACCEPTANCE_ENFORCED=true` does it refuse anyone.
  */
 async function assertLegalAcceptance(input: {
   bindings: WorkerBindings;
@@ -101,10 +111,7 @@ async function assertLegalAcceptance(input: {
   request: Request;
   userId: string;
 }): Promise<void> {
-  if (
-    !isLegalAcceptanceEnforced(input.bindings) ||
-    isExemptFromLegalAcceptance(input.request)
-  ) {
+  if (!isLegalAcceptanceRequired(input.bindings, input.request)) {
     return;
   }
   let pending: ReturnType<typeof pendingLegalAcceptance>;
@@ -129,6 +136,8 @@ export function createAuthenticatedRequestContext(
   overrides: Partial<AuthenticatedRequestContextDependencies> = {}
 ) {
   const databaseFactory = overrides.createDatabase ?? createHyperdriveDatabase;
+  const authDatabaseFactory =
+    overrides.createAuthDatabase ?? createHyperdriveAuthDatabase;
   const authFactory =
     overrides.createAuth ??
     ((options) => createBetterAuth(options) as SessionAuth);
@@ -215,7 +224,10 @@ export function createAuthenticatedRequestContext(
       throw error;
     }
     const databaseOptions = { maxConnections: 1, ...connectionOptions };
-    const authDatabase = databaseFactory(authConnectionString, databaseOptions);
+    const authDatabase = authDatabaseFactory(
+      authConnectionString,
+      databaseOptions
+    );
     // Authentication and tenant data use different database roles. Only when
     // both resolve to the same connection (local development) is one pool shared.
     let tenantDatabase: typeof authDatabase | undefined;
@@ -245,13 +257,15 @@ export function createAuthenticatedRequestContext(
       }
       const authConnection =
         authDatabase.pool as unknown as LegalAcceptanceQueryable;
-      await assertLegalAcceptance({
-        bindings: input.bindings,
-        connection: authConnection,
-        readAccepted,
-        request: input.request,
-        userId: session.user.id,
-      });
+      if (!input.legalAcceptanceCheckedAtTenantEntry) {
+        await assertLegalAcceptance({
+          bindings: input.bindings,
+          connection: authConnection,
+          readAccepted,
+          request: input.request,
+          userId: session.user.id,
+        });
+      }
 
       if (tenantConnectionString !== authConnectionString) {
         tenantDatabase = databaseFactory(

@@ -5,6 +5,7 @@ import { createDatabase } from "@polaris/db/client";
 import { registerDevice, revokeDevice } from "@polaris/db/device-repository";
 import { receiveStock, writeOffStock } from "@polaris/db/inventory-repository";
 import { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
+import { createPaymentProfile } from "@polaris/db/payment-profile-repository";
 import { runSyncCommand } from "@polaris/db/sync-command-repository";
 import { getSyncCursor, pullSyncChanges } from "@polaris/db/sync-repository";
 import {
@@ -26,7 +27,11 @@ import { createOfflineCustomer } from "../src/offline/customer-create";
 import { MemoryOutboxStorage } from "../src/offline/outbox/memory-storage";
 import { Outbox } from "../src/offline/outbox/outbox";
 import { createOfflineProduct } from "../src/offline/product-create";
-import { createOfflineSale, pendingSales } from "../src/offline/sale-confirm";
+import {
+  createOfflineSale,
+  pendingSales,
+  resubmitRejectedSale,
+} from "../src/offline/sale-confirm";
 import {
   countStockOffline,
   effectiveStock,
@@ -35,7 +40,11 @@ import {
 } from "../src/offline/stock-commands";
 import { syncOutbox } from "../src/offline/sync-runner";
 import { FakeWriter } from "../src/offline/test-support";
-import { pushCommands } from "../src/server/sync/push";
+import {
+  InvalidSyncPayloadError,
+  pushCommands,
+  type SyncCommandHandler,
+} from "../src/server/sync/push";
 import { syncCommandHandlers } from "../src/server/sync/registry";
 
 /**
@@ -181,6 +190,7 @@ async function run() {
           authenticatedUserId: tenant.userId,
           capability,
           requestedOrganizationId: tenant.organizationId,
+          requireLegalAcceptance: false,
         },
         operation
       );
@@ -200,6 +210,10 @@ async function run() {
         ) => Promise<T>
       ) => asTenant("sync:push", operation),
     };
+
+    // The handlers the server runs; a step swaps them to play the Worker of an
+    // earlier version, then puts the current ones back.
+    let serving: readonly SyncCommandHandler[] = syncCommandHandlers;
 
     // ---- a device: registered, granted, with a signed lease and a local store
     async function enroll(label: string) {
@@ -255,7 +269,10 @@ async function run() {
       const push = async (input: {
         commands: Parameters<typeof pushCommands>[0];
       }) => {
-        const results = await pushCommands(input.commands, pushDependencies);
+        const results = await pushCommands(input.commands, {
+          ...pushDependencies,
+          handlers: serving,
+        });
         if (dropResponses > 0) {
           dropResponses -= 1;
           throw new Error("the network dropped the response");
@@ -630,6 +647,171 @@ async function run() {
     );
 
     // ======================================================================
+    // 3b. A sale paid in two parts, made offline
+    // ======================================================================
+    const partsProfile = await asTenant(
+      "organization:manage",
+      (transaction, identity) =>
+        createPaymentProfile(transaction, identity, {
+          name: "Pix das partes E2E",
+          rules: [
+            {
+              anticipationFee: { mode: "none" },
+              expectedSettlementDays: 1,
+              method: "pix",
+              processingFee: {
+                fixedAmount: null,
+                mode: "percentage",
+                percentage: "1.000000",
+              },
+            },
+          ],
+        })
+    );
+    const splitParts = (profileVersion: number) => [
+      { amount: "20.00", method: "cash" as const, paymentProfile: null },
+      {
+        amount: "25.00",
+        method: "pix" as const,
+        paymentProfile: {
+          expectedVersion: profileVersion,
+          id: partsProfile.id,
+        },
+      },
+    ];
+    const sellSplit = (profileVersion: number) =>
+      createOfflineSale({
+        ...device.base,
+        ...reader,
+        lines: [
+          { chargedUnitPrice: "45.00", quantity: 1, variantId: shirtVariant },
+        ],
+        payments: splitParts(profileVersion),
+      });
+    const salesOfCommand = (commandId: string) =>
+      count(
+        "SELECT count(*)::text AS n FROM public.sales WHERE organization_id = $1 AND command_id = $2",
+        tenant.organizationId,
+        commandId
+      );
+    const partsOf = async (commandId: string) =>
+      (
+        await admin.pool.query<{
+          amount: string;
+          method: string;
+          position: number;
+          profile: string | null;
+        }>(
+          "SELECT p.position, p.method, p.amount::text AS amount, p.payment_profile_id AS profile FROM public.sale_payments p JOIN public.sales s ON s.id = p.sale_id AND s.organization_id = p.organization_id WHERE s.organization_id = $1 AND s.command_id = $2 ORDER BY p.position",
+          [tenant.organizationId, commandId]
+        )
+      ).rows;
+    const expectedParts = [
+      { amount: "20.00", method: "cash", position: 0, profile: null },
+      {
+        amount: "25.00",
+        method: "pix",
+        position: 1,
+        profile: partsProfile.id,
+      },
+    ];
+
+    const split = await sellSplit(partsProfile.version);
+    assert.equal(split.totalDue, "45.00");
+    const beforeSplit = await stockOf(shirtVariant);
+    assert.ok(beforeSplit);
+    device.dropNextResponses(1);
+    await assert.rejects(device.sync(), droppedPattern);
+    const splitRun = await device.sync();
+    assert.equal(splitRun.accepted, 1);
+    assert.equal(splitRun.replayed, 1, "the retry replayed, nothing ran twice");
+    assert.equal(await salesOfCommand(split.command.commandId), 1);
+    assert.deepEqual(
+      (await partsOf(split.command.commandId)).map((part) => ({
+        ...part,
+        amount: Number(part.amount).toFixed(2),
+      })),
+      expectedParts
+    );
+    assert.deepEqual(await stockOf(shirtVariant), {
+      quantity: beforeSplit.quantity - 1,
+      version: beforeSplit.version + 1,
+    });
+    tests.push(
+      "a sale paid in two parts (cash, then pix with a profile) is built by the device, its first response is lost and the retry replays: one sale, two payment rows at positions 0 and 1 with the part's profile, one stock movement"
+    );
+
+    // the profile of the second part moved on: the whole sale is refused
+    const staleSplit = await sellSplit(partsProfile.version + 1);
+    const beforeStale = await stockOf(shirtVariant);
+    const staleRun = await device.sync();
+    assert.equal(
+      staleRun.blockedBy?.rejection?.code,
+      "payment_profile_changed"
+    );
+    assert.equal(await salesOfCommand(staleSplit.command.commandId), 0);
+    assert.deepEqual(await stockOf(shirtVariant), beforeStale);
+    const [staleSplitItem] = buildAttention(
+      await device.outbox.snapshot()
+    ).items;
+    assert.equal(staleSplitItem?.kind, "sale");
+    assert.equal(staleSplitItem?.cause, "profile_changed");
+    await discardAttentionItem(staleSplitItem as never, {
+      outbox: device.outbox,
+      writer: device.writer,
+    });
+    tests.push(
+      "a sale in two parts whose second part names a profile version that is no longer current is refused whole with payment_profile_changed: no sale, no payment, no stock movement, and the device shows it in attention"
+    );
+
+    // a rollback of the Worker to the version before parts: strict, no `payments`
+    serving = syncCommandHandlers.map((handler) =>
+      handler.type === "sale.confirm"
+        ? {
+            ...handler,
+            parse: (payload: unknown) => {
+              if (
+                typeof payload === "object" &&
+                payload !== null &&
+                "payments" in payload
+              ) {
+                throw new InvalidSyncPayloadError();
+              }
+              return handler.parse(payload);
+            },
+          }
+        : handler
+    );
+    const rolledBack = await sellSplit(partsProfile.version);
+    const beforeRollback = await stockOf(shirtVariant);
+    const rollbackRun = await device.sync();
+    assert.equal(rollbackRun.blockedBy?.rejection?.code, "invalid_payload");
+    assert.equal(await salesOfCommand(rolledBack.command.commandId), 0);
+    assert.deepEqual(await stockOf(shirtVariant), beforeRollback);
+    const [kept] = (await device.outbox.snapshot()).commands;
+    assert.equal(kept?.commandId, rolledBack.command.commandId);
+    assert.deepEqual(kept?.payload, rolledBack.command.payload);
+    assert.equal((await pendingSales(device.outbox))[0]?.state, "rejected");
+    serving = syncCommandHandlers;
+    const redone = await resubmitRejectedSale(device.outbox, {
+      commandId: rolledBack.command.commandId,
+      lease: device.lease,
+    });
+    const afterRollback = await device.sync();
+    assert.equal(afterRollback.accepted, 1);
+    assert.equal(await salesOfCommand(rolledBack.command.commandId), 0);
+    assert.deepEqual(
+      (await partsOf(redone.commandId)).map((part) => ({
+        ...part,
+        amount: Number(part.amount).toFixed(2),
+      })),
+      expectedParts
+    );
+    tests.push(
+      "against a Worker rolled back to before parts, the split sale is refused as invalid_payload with nothing recorded and stays on the device with its parts; with the current Worker back, the same sale sent as a new command is confirmed with both parts"
+    );
+
+    // ======================================================================
     // 4. A revoked access is refused and needs the account, not the sale
     // ======================================================================
     const d2 = await openDevice("Caixa 2");
@@ -700,7 +882,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

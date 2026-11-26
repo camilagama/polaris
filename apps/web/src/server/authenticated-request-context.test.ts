@@ -3,13 +3,23 @@ import type {
   DatabaseOptions,
 } from "@polaris/db/client";
 import { Hono } from "hono";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type AuthenticatedRequestContextDependencies,
   createAuthenticatedRequestContext,
 } from "./authenticated-request-context";
 import type { ServerEnv, WorkerBindings } from "./environment";
 import { requestIdMiddleware } from "./middleware/request-id";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const baseBindings = {
   AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
@@ -20,20 +30,20 @@ const baseBindings = {
 
 function contextWithDatabaseSpy(
   session: unknown = {
-    session: { createdAt: new Date(), id: "session-1" },
+    session: { createdAt: new Date(NOW), id: "session-1" },
     user: { id: "test-user" },
   }
 ) {
   const db = {} as ReturnType<typeof createHyperdriveDatabase>["db"];
   const endPool = vi.fn(async () => undefined);
-  const createDatabase = vi.fn(
-    (_connectionString: string, _options?: DatabaseOptions) => ({
-      db,
-      pool: { end: endPool } as unknown as ReturnType<
-        typeof createHyperdriveDatabase
-      >["pool"],
-    })
-  );
+  const standIn = (_connectionString: string, _options?: DatabaseOptions) => ({
+    db,
+    pool: { end: endPool } as unknown as ReturnType<
+      typeof createHyperdriveDatabase
+    >["pool"],
+  });
+  const createDatabase = vi.fn(standIn);
+  const createAuthDatabase = vi.fn(standIn);
   const createAuth = vi.fn(() => ({
     api: {
       getSession: vi.fn(async () => session),
@@ -42,11 +52,13 @@ function contextWithDatabaseSpy(
   const run = createAuthenticatedRequestContext({
     createAuth:
       createAuth as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+    createAuthDatabase:
+      createAuthDatabase as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
     createDatabase:
       createDatabase as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
   });
 
-  return { createDatabase, endPool, run };
+  return { createAuthDatabase, createDatabase, endPool, run };
 }
 
 describe("Better Auth once per isolate", () => {
@@ -75,7 +87,7 @@ describe("Better Auth once per isolate", () => {
               requestId: options.requestId(),
             });
             return Promise.resolve({
-              session: { createdAt: new Date(), id: "session-1" },
+              session: { createdAt: new Date(NOW), id: "session-1" },
               user: { id: "test-user" },
             });
           }),
@@ -85,6 +97,8 @@ describe("Better Auth once per isolate", () => {
     const run = createAuthenticatedRequestContext({
       createAuth:
         createAuth as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createAuthDatabase:
+        createDatabase as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
       createDatabase:
         createDatabase as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
     });
@@ -167,7 +181,7 @@ describe("Better Auth once per isolate", () => {
 
 describe("when the isolate drops the Better Auth instance", () => {
   const session = {
-    session: { createdAt: new Date(), id: "session-1" },
+    session: { createdAt: new Date(NOW), id: "session-1" },
     user: { id: "test-user" },
   };
 
@@ -182,6 +196,10 @@ describe("when the isolate drops the Better Auth instance", () => {
     const run = createAuthenticatedRequestContext({
       createAuth:
         createAuth as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createAuthDatabase: (() => ({
+        db: {},
+        pool: { end: () => Promise.resolve() },
+      })) as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
       createDatabase: (() => ({
         db: {},
         pool: { end: () => Promise.resolve() },
@@ -239,6 +257,7 @@ describe("when the isolate drops the Better Auth instance", () => {
 describe("authenticated request database connection", () => {
   it("allows a longer local Hyperdrive-emulation timeout when configured", async () => {
     const {
+      createAuthDatabase: createAuthDatabaseSpy,
       createDatabase: createDatabaseSpy,
       endPool,
       run,
@@ -260,11 +279,11 @@ describe("authenticated request database connection", () => {
       baseBindings.HYPERDRIVE.connectionString,
       { connectionTimeoutMillis: 30_000, maxConnections: 1 }
     );
-    expect(createDatabaseSpy).toHaveBeenNthCalledWith(
-      1,
+    expect(createAuthDatabaseSpy).toHaveBeenCalledExactlyOnceWith(
       baseBindings.AUTH_HYPERDRIVE.connectionString,
       { connectionTimeoutMillis: 30_000, maxConnections: 1 }
     );
+    expect(createDatabaseSpy).toHaveBeenCalledOnce();
     expect(endPool).toHaveBeenCalledTimes(2);
   });
 
@@ -285,7 +304,7 @@ describe("authenticated request database connection", () => {
 
   it("rejects a session without an id, running no operation", async () => {
     const { run } = contextWithDatabaseSpy({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(NOW) },
       user: { id: "test-user" },
     });
     const operation = vi.fn(async () => "ok");
@@ -298,5 +317,59 @@ describe("authenticated request database connection", () => {
       })
     ).rejects.toMatchObject({ code: "session_required" });
     expect(operation).not.toHaveBeenCalled();
+  });
+});
+
+describe("the check of the legal acceptance at the gate", () => {
+  function contextWithAcceptance() {
+    const readAccepted = vi.fn(async () => ({}));
+    const createDatabase = vi.fn(() => ({
+      db: {},
+      pool: { end: vi.fn(async () => undefined) },
+    }));
+    const run = createAuthenticatedRequestContext({
+      createAuth: (() => ({
+        api: {
+          getSession: vi.fn(async () => ({
+            session: { createdAt: new Date(NOW), id: "session-1" },
+            user: { id: "test-user" },
+          })),
+        },
+      })) as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createAuthDatabase:
+        createDatabase as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
+      createDatabase:
+        createDatabase as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
+      readAcceptedLegalVersions: readAccepted,
+    });
+    return { readAccepted, run };
+  }
+  const enforced = { ...baseBindings, LEGAL_ACCEPTANCE_ENFORCED: "true" };
+
+  it("runs for every caller that does not opt out of it, and refuses before the operation", async () => {
+    const { readAccepted, run } = contextWithAcceptance();
+    const operation = vi.fn(async () => "ran");
+    await expect(
+      run({
+        bindings: enforced,
+        operation,
+        request: new Request("https://polaris.example.invalid/rpc"),
+      })
+    ).rejects.toMatchObject({ code: "legal_acceptance_required" });
+    expect(readAccepted).toHaveBeenCalledOnce();
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it("is skipped only when the caller says the entry of its tenant transaction checks it", async () => {
+    const { readAccepted, run } = contextWithAcceptance();
+    await expect(
+      run({
+        bindings: enforced,
+        legalAcceptanceCheckedAtTenantEntry: true,
+        operation: async () => "ran",
+        request: new Request("https://polaris.example.invalid/rpc"),
+      })
+    ).resolves.toBe("ran");
+    expect(readAccepted).not.toHaveBeenCalled();
   });
 });

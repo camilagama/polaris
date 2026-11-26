@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { RefreshButton } from "@/ui/refresh-button";
 import { deviceSaleKept } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -50,7 +50,9 @@ import {
   writeLastPayment,
 } from "./last-payment-model";
 import {
+  KEPT_PRICE_NOTICE,
   mergeLastPrices,
+  pricesForVariantChange,
   type RememberedPrices,
   readLastPrices,
   suggestionHint,
@@ -65,12 +67,14 @@ import {
   writeSaleAttempt,
 } from "./sale-attempt-storage";
 import { ConfirmedSalePanel } from "./sale-confirmed-panel";
+import { useSaleDraftStamps } from "./use-sale-draft-stamps";
 import { SaleDraftBar } from "./sale-draft-bar";
 import {
-  chosenItemCount,
+  chosenSaleCount,
   DRAFT_EXPIRED_MESSAGE,
   DRAFT_RECORDED_MESSAGE,
   DRAFT_UNREADABLE_MESSAGE,
+  draftNewDayNotice,
   draftVariantIds,
   refreshedDraftMessage,
   refreshRestoredItems,
@@ -85,19 +89,23 @@ import {
 import {
   type AdjustmentDraft,
   acknowledgeProfileReview,
+  acknowledgeSecondProfileReview,
   addAdjustment,
   addItem,
   applySalePreset,
+  applySplitAction,
   type CatalogView,
   type ChoiceOption,
   cancelDiscard,
   canKeepLockedSaleOnDevice,
   canStartSubmission,
   createBlankSaleForm,
+  describePartRefusal,
   describeStockRefusal,
   discardLockedSale,
   editSaleDate,
   editSaleForm,
+  endSplit,
   evaluateSaleForm,
   formForOfflineSale,
   type ItemDraft,
@@ -122,14 +130,21 @@ import {
   saleModeIsOffline,
   selectPaymentMethod,
   selectProfileChoice,
+  selectSecondPaymentMethod,
+  selectSecondProfileChoice,
+  setFirstPartAmount,
+  setSecondPartAmount,
+  startSplit,
   startSubmission,
   updateAdjustment,
   updateItem,
   updatePayment,
+  updateSecondPayment,
   withdrawSalePreset,
 } from "./sale-form-model";
 import { AddItemButton, ItemEditor, ItemsCount } from "./sale-item-editor";
-import { PaymentSection } from "./sale-payment-section";
+import { PaymentSection, type SplitHandlers } from "./sale-payment-section";
+import { splitStartBlocker } from "./sale-split-model";
 import { SubmitBar, SummaryPanel } from "./sale-summary-panel";
 import {
   coversOfStock,
@@ -179,9 +194,17 @@ function methodHint(
   return same ? "Igual à última venda neste aparelho." : "";
 }
 
-/** Focuses the first invalid control; a group of choice cards gives the focus to its first card. */
-function focusFirstInvalidField() {
+/**
+ * Focuses the first invalid control (a group of choice cards gives the focus to its first card), or the state line of
+ * the parts when the only thing wrong is that they do not close the total: the line says how far they are and has the
+ * button that closes them.
+ */
+function focusFirstInvalidField(splitMismatchFirst = false) {
   window.requestAnimationFrame(() => {
+    if (splitMismatchFirst) {
+      document.getElementById("sale-split-balance")?.focus();
+      return;
+    }
     const invalid = document.querySelector<HTMLElement>(
       '[data-sale-form] [aria-invalid="true"]'
     );
@@ -255,9 +278,8 @@ export function SalePage() {
     )
   );
   const restoredDraft = draftRead.kind === "restored" ? draftRead.draft : null;
-  const draftStartedAt = useRef<string | null>(
-    restoredDraft?.startedAt ?? null
-  );
+  const draftStamps = useSaleDraftStamps(restoredDraft);
+  const draftStartedAt = draftStamps.startedAt;
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [firstSaleId, setFirstSaleId] = useState<string | null>(null);
   const [form, setForm] = useState<SaleFormState>(
@@ -371,9 +393,9 @@ export function SalePage() {
   const confirmedRef = useRef<HTMLElement | null>(null);
 
   const forgetDraft = useCallback(() => {
-    draftStartedAt.current = null;
+    draftStamps.reset();
     writeSaleDraft(sessionStorageOrNull(), organizationId, null);
-  }, [organizationId]);
+  }, [draftStamps, organizationId]);
   useEffect(() => {
     // after "Sair" or a session refused, the copies were dropped and must not be written again
     if (isSigningOut() || isSessionOver()) {
@@ -383,12 +405,11 @@ export function SalePage() {
       forgetDraft();
       return;
     }
-    draftStartedAt.current ??= new Date().toISOString();
     writeSaleDraft(sessionStorageOrNull(), organizationId, {
       form,
-      startedAt: draftStartedAt.current,
+      ...draftStamps.stamp(),
     });
-  }, [forgetDraft, form, organizationId]);
+  }, [draftStamps, forgetDraft, form, organizationId]);
 
   const handleProfilesLoaded = useCallback(
     (profiles: PaymentProfileReadModel[]) => {
@@ -448,7 +469,7 @@ export function SalePage() {
       });
     };
   }, [localOutbox, localWriter]);
-  const { readLines, refresh, resetStock, seedStock } = catalog;
+  const { listPrices, readLines, refresh, resetStock, seedStock } = catalog;
   const covers = useMemo(() => coversOfStock(catalog.stock), [catalog.stock]);
 
   useEffect(
@@ -574,6 +595,15 @@ export function SalePage() {
       setForm((current) => editSaleForm(submission, current, edit)),
     [submission]
   );
+  const editByPerson = useCallback(
+    (edit: (current: SaleFormState) => SaleFormState) => {
+      if (!isFormLocked(submission)) {
+        draftStamps.markEdited();
+      }
+      editForm(edit);
+    },
+    [draftStamps, editForm, submission]
+  );
   const appliedPresetRef = useRef<SalePreset | null>(null);
   useEffect(() => {
     // the profiles were read: a store without an active one starts on "Sem perfil"; only empty choices are filled,
@@ -584,10 +614,31 @@ export function SalePage() {
       applySalePreset(withdrawSalePreset(current, previous, preset), preset)
     );
   }, [editForm, preset]);
+  const [keptPriceNotice, setKeptPriceNotice] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const setKeptNotice = useCallback((draftId: string, kept: boolean) => {
+    setKeptPriceNotice((current) => {
+      if (current.has(draftId) === kept) {
+        return current;
+      }
+      const next = new Set(current);
+      if (kept) {
+        next.add(draftId);
+      } else {
+        next.delete(draftId);
+      }
+      return next;
+    });
+  }, []);
   const handleItemChange = useCallback(
-    (draftId: string, changes: Partial<ItemDraft>) =>
-      editForm((current) => updateItem(current, draftId, changes)),
-    [editForm]
+    (draftId: string, changes: Partial<ItemDraft>) => {
+      if ("chargedUnitPrice" in changes || "listedUnitPrice" in changes) {
+        setKeptNotice(draftId, false);
+      }
+      editByPerson((current) => updateItem(current, draftId, changes));
+    },
+    [editByPerson, setKeptNotice]
   );
   const handlePickVariant = useCallback(
     (draftId: string, entry: InventoryBalanceEntryReadModel) => {
@@ -597,12 +648,34 @@ export function SalePage() {
         entry.variantId,
         entry.listPrice
       );
-      editForm((current) => {
-        const item = current.items.find(
-          (candidate) => candidate.draftId === draftId
+      const item = form.items.find(
+        (candidate) => candidate.draftId === draftId
+      );
+      const swapping =
+        item !== undefined &&
+        item.variantId !== "" &&
+        item.variantId !== entry.variantId;
+      let prices: Pick<
+        ItemDraft,
+        "chargedUnitPrice" | "listedUnitPrice"
+      > | null = null;
+      if (item && swapping) {
+        const swapped = pricesForVariantChange(
+          item,
+          suggestPrices(
+            lastPrices,
+            item.variantId,
+            listPrices.current.get(item.variantId) ?? null
+          ),
+          suggestion
         );
-        const prices = item ? withSuggestedPrices(item, suggestion) : null;
-        return updateItem(current, draftId, {
+        prices = swapped;
+        setKeptNotice(draftId, swapped.keptTyped);
+      } else if (item) {
+        prices = withSuggestedPrices(item, suggestion);
+      }
+      editByPerson((current) =>
+        updateItem(current, draftId, {
           ...itemChangesForEntry(entry),
           ...(prices
             ? {
@@ -610,79 +683,141 @@ export function SalePage() {
                 listedUnitPrice: prices.listedUnitPrice,
               }
             : {}),
-        });
-      });
+        })
+      );
       focusLater(() =>
         document.getElementById(`sale-item-${draftId}-quantity`)?.focus()
       );
     },
-    [editForm, lastPrices, seedStock]
+    [editByPerson, form.items, lastPrices, listPrices, seedStock, setKeptNotice]
   );
   const handleAddItem = useCallback(
-    () => editForm((current) => addItem(current, newId())),
-    [editForm]
+    () => editByPerson((current) => addItem(current, newId())),
+    [editByPerson]
   );
   const handleRemoveItem = useCallback(
-    (draftId: string) => editForm((current) => removeItem(current, draftId)),
-    [editForm]
+    (draftId: string) =>
+      editByPerson((current) => removeItem(current, draftId)),
+    [editByPerson]
   );
   const handleAddAdjustment = useCallback(
-    () => editForm((current) => addAdjustment(current, newId())),
-    [editForm]
+    () => editByPerson((current) => addAdjustment(current, newId())),
+    [editByPerson]
   );
   const handleAdjustmentChange = useCallback(
     (draftId: string, changes: Partial<Omit<AdjustmentDraft, "draftId">>) =>
-      editForm((current) => updateAdjustment(current, draftId, changes)),
-    [editForm]
+      editByPerson((current) => updateAdjustment(current, draftId, changes)),
+    [editByPerson]
   );
   const handleRemoveAdjustment = useCallback(
     (draftId: string) =>
-      editForm((current) => removeAdjustment(current, draftId)),
-    [editForm]
+      editByPerson((current) => removeAdjustment(current, draftId)),
+    [editByPerson]
   );
   const handleDateChange = useCallback(
-    (value: string) => editForm((current) => editSaleDate(current, value)),
-    [editForm]
+    (value: string) => editByPerson((current) => editSaleDate(current, value)),
+    [editByPerson]
   );
   const handleMethodChange = useCallback(
     (value: string) =>
-      editForm((current) =>
+      editByPerson((current) =>
         selectPaymentMethod(current, value as SaleMethod | "")
       ),
-    [editForm]
+    [editByPerson]
   );
   const handleInstallmentsChange = useCallback(
     (value: string) =>
-      editForm((current) => updatePayment(current, { installments: value })),
-    [editForm]
+      editByPerson((current) =>
+        updatePayment(current, { installments: value })
+      ),
+    [editByPerson]
   );
   const handlePlanChange = useCallback(
     (value: string) =>
-      editForm((current) =>
+      editByPerson((current) =>
         updatePayment(current, {
           installmentPlan: value as "" | "issuer" | "merchant",
         })
       ),
-    [editForm]
+    [editByPerson]
   );
   const handleAnticipationChange = useCallback(
     (checked: boolean) =>
-      editForm((current) =>
+      editByPerson((current) =>
         updatePayment(current, { anticipationRequested: checked })
       ),
-    [editForm]
+    [editByPerson]
   );
   const handleProfileChange = useCallback(
     (value: string) =>
-      editForm((current) =>
+      editByPerson((current) =>
         selectProfileChoice(current, value, activeProfiles)
       ),
-    [activeProfiles, editForm]
+    [activeProfiles, editByPerson]
   );
   const handleAcknowledgeReview = useCallback(
     () =>
-      editForm((current) => acknowledgeProfileReview(current, activeProfiles)),
-    [activeProfiles, editForm]
+      editByPerson((current) =>
+        acknowledgeProfileReview(current, activeProfiles)
+      ),
+    [activeProfiles, editByPerson]
+  );
+
+  const { totalDue } = evaluation;
+  const splitHandlers = useMemo<SplitHandlers>(
+    () => ({
+      onAcknowledgeSecondReview: () =>
+        editByPerson((current) =>
+          acknowledgeSecondProfileReview(current, activeProfiles)
+        ),
+      onAction: (cents) =>
+        editByPerson((current) =>
+          applySplitAction(current, { amount: cents }, totalDue)
+        ),
+      onEnd: () => {
+        editByPerson((current) => endSplit(current));
+        focusLater(() =>
+          document
+            .querySelector<HTMLElement>('#sale-method [role="radio"]')
+            ?.focus()
+        );
+      },
+      onFirstAmountChange: (value) =>
+        editByPerson((current) => setFirstPartAmount(current, value, totalDue)),
+      onSecondAmountChange: (value) =>
+        editByPerson((current) =>
+          setSecondPartAmount(current, value, totalDue)
+        ),
+      onSecondAnticipationChange: (checked) =>
+        editByPerson((current) =>
+          updateSecondPayment(current, { anticipationRequested: checked })
+        ),
+      onSecondInstallmentPlanChange: (value) =>
+        editByPerson((current) =>
+          updateSecondPayment(current, {
+            installmentPlan: value as "" | "issuer" | "merchant",
+          })
+        ),
+      onSecondInstallmentsChange: (value) =>
+        editByPerson((current) =>
+          updateSecondPayment(current, { installments: value })
+        ),
+      onSecondMethodChange: (value) =>
+        editByPerson((current) =>
+          selectSecondPaymentMethod(current, value as SaleMethod | "")
+        ),
+      onSecondProfileChange: (value) =>
+        editByPerson((current) =>
+          selectSecondProfileChoice(current, value, activeProfiles)
+        ),
+      onStart: () => {
+        editByPerson((current) => startSplit(current));
+        focusLater(() =>
+          document.getElementById("sale-part-1-amount")?.focus()
+        );
+      },
+    }),
+    [activeProfiles, editByPerson, totalDue]
   );
 
   /** What the page does once a confirmation settled, on the server or on the device. */
@@ -769,12 +904,15 @@ export function SalePage() {
       applyOutcome(
         {
           ...outcome,
-          submission: describeStockRefusal(outcome.submission, {
-            canAdjustStock,
-            items: prepared.request.items,
-            labels: itemLabels(form.items),
-            stock: catalog.stock,
-          }),
+          submission: describePartRefusal(
+            describeStockRefusal(outcome.submission, {
+              canAdjustStock,
+              items: prepared.request.items,
+              labels: itemLabels(form.items),
+              stock: catalog.stock,
+            }),
+            prepared.request.payments?.length ?? 1
+          ),
         },
         null
       );
@@ -798,7 +936,10 @@ export function SalePage() {
       );
       const { body } = fresh;
       if (body === null || !canStartSubmission(submission, fresh)) {
-        focusFirstInvalidField();
+        const mismatchKey = fresh.split?.mismatchKey ?? null;
+        focusFirstInvalidField(
+          mismatchKey !== null && mismatchKey === fresh.firstIssueKey
+        );
         return;
       }
       const prepared = prepareConfirmation({
@@ -970,13 +1111,24 @@ export function SalePage() {
     (summary?.lines ?? []).map((line) => [line.draftId, line])
   );
   const itemCount = form.items.length;
-  const chosenCount = chosenItemCount(form);
+  const chosen = chosenSaleCount(form);
+  const newDayNotice =
+    isSaleFormDirty(form, preset) && !locked
+      ? draftNewDayNotice({
+          dateEmpty: form.occurredAtLocal === "",
+          now,
+          offline,
+          startedAt: draftStartedAt.current,
+          timezone: organization.timezone,
+        })
+      : null;
   return (
     <div className="@container/sale grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Nova venda</h1>
       <SaleDraftBar
         canClear={!locked}
-        itemCount={chosenCount}
+        count={chosen}
+        newDayNotice={newDayNotice}
         notice={draftNotice}
         onClear={handleClearSale}
         open={isSaleFormDirty(form, preset)}
@@ -1004,24 +1156,21 @@ export function SalePage() {
         onSubmit={handleSubmitEvent}
       >
         <div className="grid min-w-0 gap-4">
-          <Card>
-            <fieldset
-              aria-labelledby="sale-items-title"
-              className="grid min-w-0 gap-4"
-              disabled={locked}
-            >
-              <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
-                <CardTitle aria-level={2} id="sale-items-title" role="heading">
-                  Itens
-                </CardTitle>
+          <Block aria-labelledby="sale-items-title" className="gap-4">
+            <BlockHeader
+              aside={<ItemsCount count={chosen} />}
+              action={
                 <RefreshButton
-                  className="row-span-2"
+                  disabled={locked}
                   object="estoque e perfis"
                   onClick={handleRefresh}
                 />
-                <ItemsCount chosen={chosenCount} />
-              </CardHeader>
-              <CardContent className="grid gap-4">
+              }
+              id="sale-items-title"
+              title="Itens"
+            />
+            <BlockPanel>
+              <fieldset className="grid min-w-0 gap-4" disabled={locked}>
                 {form.items.map((item, index) => (
                   <ItemEditor
                     canAdjustStock={canAdjustStock}
@@ -1037,20 +1186,24 @@ export function SalePage() {
                     onRemove={handleRemoveItem}
                     organizationId={organizationId}
                     otherLinesQuantity={otherLinesQuantity(form.items, item)}
-                    priceHint={suggestionHint(lastPrices, item)}
+                    priceHint={
+                      keptPriceNotice.has(item.draftId)
+                        ? KEPT_PRICE_NOTICE
+                        : suggestionHint(lastPrices, item)
+                    }
                     stock={catalog.stock}
                     stockWarning={evaluation.stockWarnings[item.draftId]}
                     summaryLine={summaryLines.get(item.draftId)}
                   />
                 ))}
                 <AddItemButton
-                  chosen={chosenCount}
+                  chosen={chosen.lines}
                   onAdd={handleAddItem}
                   total={itemCount}
                 />
-              </CardContent>
-            </fieldset>
-          </Card>
+              </fieldset>
+            </BlockPanel>
+          </Block>
           <PaymentSection
             disabled={locked}
             errors={evaluation.errors}
@@ -1070,6 +1223,11 @@ export function SalePage() {
             profileOptions={profileOptions}
             profilesView={profilesState}
             singlePaymentText={methodHint(lastPayment, form, preset)}
+            split={{
+              blocker: splitStartBlocker(totalDue),
+              evaluation: evaluation.split,
+              handlers: splitHandlers,
+            }}
             timezone={organization.timezone}
           />
         </div>
@@ -1087,6 +1245,7 @@ export function SalePage() {
           summary={summary}
         />
         <SubmitBar
+          balance={evaluation.split?.balance ?? null}
           offline={offline}
           submission={submission}
           summary={summary}

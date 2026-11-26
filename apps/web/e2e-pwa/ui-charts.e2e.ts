@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 import { expectMotionLevel } from "./motion-expect";
-import { axeViolations } from "./ui-guardrails";
+import { axeViolations } from "./ui-guardrails/measures";
 
 /**
  * The charts and the Tabs of src/ui/ in the gallery (ADR 0103, amendment "Gráficos"): the charts open from
@@ -198,10 +198,11 @@ test("o ponteiro abre o tooltip no primeiro, no do meio e no último ponto, com 
     isMobile,
     "a mouse moves over the drawing; with touch it is a hold"
   );
+  await page.clock.install();
   const areas = await openGalleryWithCharts(page);
   const week = areas.getByRole("img", { name: WEEK_LABEL });
   await week.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(1500);
+  await page.clock.runFor(1500);
   const box = await week.boundingBox();
   expect(box).not.toBeNull();
   if (!box) {
@@ -222,7 +223,7 @@ test("o ponteiro abre o tooltip no primeiro, no do meio e no último ponto, com 
     await expect(rows).toHaveCount(1);
     await expect(pill).toBeVisible();
     // the pill rolls to its date and the panel follows the pointer: let both arrive
-    await page.waitForTimeout(900);
+    await page.clock.runFor(900);
     const date = await week.evaluate(visiblePillDate);
     if (stop.date) {
       expect(date).toBe(stop.date);
@@ -240,10 +241,11 @@ test("no toque, o tooltip aparece enquanto o dedo está no gráfico e some ao so
   page,
 }) => {
   test.skip(!isMobile, "a hold of the finger is a touch device's gesture");
+  await page.clock.install();
   const areas = await openGalleryWithCharts(page);
   const week = areas.getByRole("img", { name: WEEK_LABEL });
   await week.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(1500);
+  await page.clock.runFor(1500);
   const box = await week.boundingBox();
   expect(box).not.toBeNull();
   if (!box) {
@@ -270,10 +272,11 @@ test("o painel do tooltip fica na margem de cima e não cobre o eixo das datas, 
   isMobile,
   page,
 }) => {
+  await page.clock.install();
   const areas = await openGalleryWithCharts(page);
   const week = areas.getByRole("img", { name: WEEK_LABEL });
   await week.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(1500);
+  await page.clock.runFor(1500);
   const box = await week.boundingBox();
   expect(box).not.toBeNull();
   if (!box) {
@@ -293,7 +296,7 @@ test("o painel do tooltip fica na margem de cima e não cobre o eixo das datas, 
       : page.mouse.move(x, y));
     await expect(row).toBeVisible();
     // the spring of the panel needs its time before it is where it stays
-    await page.waitForTimeout(1200);
+    await page.clock.runFor(1200);
     const panel = await row.evaluate((element) => {
       const rect = (
         element.closest(".rounded-xl") as Element
@@ -427,7 +430,7 @@ test("a miniatura sai da leitura: escondida, sem texto e sem controle", async ({
 });
 
 for (const theme of THEMES) {
-  test(`tema ${theme.name}: as cores vêm dos tokens: a tinta na série e no anel do melhor dia, nunca o esmeralda (v7)`, async ({
+  test(`tema ${theme.name}: as cores vêm dos tokens: a tinta na série e no anel do melhor dia, nunca a cor da marca (v7)`, async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -436,7 +439,7 @@ for (const theme of THEMES) {
     const page = await context.newPage();
     const areas = await openGalleryWithCharts(page, theme.stored);
     const ink = await resolveToken(page, "--chart-5");
-    const emerald = await resolveToken(page, "--chart-1");
+    const brand = await resolveToken(page, "--chart-1");
     const week = areas.getByRole("img", { name: WEEK_LABEL });
     // the ring of the best day and the line come in with the reveal
     await expect(week.locator("circle")).toHaveCount(1);
@@ -453,14 +456,14 @@ for (const theme of THEMES) {
         strokes,
       };
     });
-    // the line of the series is the ink; the grid and the tooltip are the border and the card, never the emerald
+    // the line of the series is the ink; the grid and the tooltip are the border and the card, never the brand color
     expect(colors.strokes).toContain(ink);
-    expect(colors.strokes).not.toContain(emerald);
-    // since v7 the best day is marked by its shape (a larger ring in the color of the series), not by the emerald
+    expect(colors.strokes).not.toContain(brand);
+    // since v7 the best day is marked by its shape (a larger ring in the color of the series), not by the brand color
     expect(colors.best).toContain(ink);
-    expect(colors.best).not.toContain(emerald);
-    // the ink and the emerald are never the same color, in either theme
-    expect(ink).not.toBe(emerald);
+    expect(colors.best).not.toContain(brand);
+    // the ink and the brand color are never the same color, in either theme
+    expect(ink).not.toBe(brand);
     // a sparkline is the ink too
     const spark = page
       .getByRole("region", { name: "Miniaturas" })
@@ -588,14 +591,16 @@ test("enquanto o pedaço vem, uma caixa da altura do gráfico guarda o lugar", a
   });
   await openGallery(page);
   const boxes = page.locator("[data-chart-loading]");
-  await expect(boxes).toHaveCount(15);
+  await expect(boxes).toHaveCount(21);
   const heights = await boxes.evaluateAll((items) =>
     items.map((item) => Math.round(item.getBoundingClientRect().height))
   );
   // the eight area charts: the plot, the margins of the blocks (40 px) and the line of reading above it (26 px), and
-  // 44 px more for the legend of two series; the six miniatures: 32 px; the sparkline of the KPI tile: 36 px
+  // 44 px more for the legend of two series; the six miniatures: 32 px; the sparkline of the KPI tile: 36 px; the six
+  // rings of the pace of the goal: 112 px
   expect(heights.filter((height) => height === 32)).toHaveLength(6);
   expect(heights.filter((height) => height === 36)).toHaveLength(1);
+  expect(heights.filter((height) => height === 112)).toHaveLength(6);
   expect(
     heights.filter((height) => [246, 286, 330].includes(height))
   ).toHaveLength(8);

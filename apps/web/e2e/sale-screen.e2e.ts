@@ -17,10 +17,10 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
+const HAS_TWO = /2/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const LAB_PROFILE = /Maquininha do laboratório/;
 const ANY_ID = /.+/;
-const BLANK_LINE = /^\s*$/;
 const FIX_FIELDS = /Corrija \d+ campos?/;
 
 const THEMES = [
@@ -34,19 +34,23 @@ const rpc = (body: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+const NOW = new Date("2026-10-01T12:00:00-03:00");
+const STAMP = NOW.toISOString();
+
 const PROFILE = {
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: STAMP,
   id: "0199c2d0-0000-7000-8000-0000000000c1",
   name: "Maquininha do laboratório",
   organizationId: "0199c2d0-0000-7000-8000-00000000a001",
   rules: [],
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 };
 
 async function openSaleLab(page: Page, stored: string) {
+  await page.clock.setFixedTime(NOW);
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
@@ -78,7 +82,7 @@ async function pickShirt(page: Page): Promise<Locator> {
 }
 
 async function useEveryControl(page: Page) {
-  const summary = page.getByRole("complementary", { name: "Resumo" });
+  const summary = page.getByRole("region", { exact: true, name: "Resumo" });
   // the summary shows only what was chosen: nothing yet, so no payment, profile or date line
   await expect(summary).not.toContainText("Perfil de pagamento");
   await expect(summary).not.toContainText("ainda não escolhido");
@@ -166,6 +170,111 @@ for (const theme of THEMES) {
   });
 }
 
+test("Alterar data e ajustes: com a altura do painel ainda abrindo, levar um controle à vista não rola o conteúdo dentro do painel", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "no celular o painel abre sem animação de altura"
+  );
+  await openSaleLab(page, "claro");
+  const extras = page.getByRole("button", { name: "Alterar data e ajustes" });
+  await expect(extras).toBeVisible();
+  // the timeline of the page stands still, so the opening stays at its first frame (height 0, clipped) for as long
+  // as the check takes, however slow the machine
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  await extras.click();
+  const close = page.getByRole("button", { name: "Fechar data e ajustes" });
+  await expect(close).toHaveAttribute("aria-controls", ANY_ID);
+  const panel = page.locator(
+    `[id="${await close.getAttribute("aria-controls")}"]`
+  );
+  await expect
+    .poll(() =>
+      panel.evaluate((node) =>
+        node.getAnimations().map((animation) => animation.playState)
+      )
+    )
+    .toEqual(["running"]);
+  const scrolled = await panel.evaluate((node) => {
+    const add = [...node.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Adicionar ajuste"
+    );
+    add?.scrollIntoView({ block: "center" });
+    return {
+      found: add !== undefined,
+      height: node.getBoundingClientRect().height,
+      scrollTop: node.scrollTop,
+    };
+  });
+  expect(scrolled).toEqual({ found: true, height: 0, scrollTop: 0 });
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+  await page.getByRole("button", { name: "Adicionar ajuste" }).click();
+  await expect(
+    page.getByRole("group", { exact: true, name: "Ajuste 1" })
+  ).toBeVisible();
+});
+
+test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo dentro do painel não rola", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "no celular o painel fecha sem animação de altura"
+  );
+  await openSaleLab(page, "claro");
+  await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
+  const close = page.getByRole("button", { name: "Fechar data e ajustes" });
+  await expect(close).toHaveAttribute("aria-controls", ANY_ID);
+  const panel = page.locator(
+    `[id="${await close.getAttribute("aria-controls")}"]`
+  );
+  await expect
+    .poll(() => panel.evaluate((node) => node.getAnimations().length))
+    .toBe(0);
+  const openHeight = await panel.evaluate(
+    (node) => node.getBoundingClientRect().height
+  );
+  expect(openHeight).toBeGreaterThan(0);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  await close.click();
+  await expect
+    .poll(() =>
+      panel.evaluate((node) =>
+        node.getAnimations().map((animation) => animation.playState)
+      )
+    )
+    .toEqual(["running"]);
+  // the first frame has the full height, where nothing needs to scroll, so the check stands in the middle of the
+  // closing: the animation is paused 100 ms in, with the panel shorter than its content
+  const measured = await panel.evaluate((node) => {
+    const [animation] = node.getAnimations();
+    animation?.pause();
+    if (animation) {
+      animation.currentTime = 100;
+    }
+    const add = [...node.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Adicionar ajuste"
+    );
+    add?.scrollIntoView({ block: "center" });
+    return {
+      found: add !== undefined,
+      height: node.getBoundingClientRect().height,
+      scrollHeight: node.scrollHeight,
+      scrollTop: node.scrollTop,
+    };
+  });
+  expect(measured.found).toBe(true);
+  expect(measured.height).toBeGreaterThan(0);
+  expect(measured.height).toBeLessThan(openHeight);
+  expect(measured.height).toBeLessThan(measured.scrollHeight);
+  expect(measured.scrollTop).toBe(0);
+});
+
 /**
  * The touch area of a button: the `::before` of `touch-hit` when it is on (it is positioned from the padding box,
  * inside the border), or the box itself.
@@ -227,6 +336,12 @@ test("C-1: o campo da quantidade tem 64 px e deixa 48 px ou mais livres entre as
   ).toBeDisabled();
 });
 
+/** The counter has the text on screen and the text a reader says: two spans, so each is checked on its own. */
+async function expectCount(count: Locator, visible: string, spoken: string) {
+  await expect(count.locator('[aria-hidden="true"]')).toHaveText(visible);
+  await expect(count.locator(".sr-only")).toHaveText(spoken);
+}
+
 test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º produto não empurra o item", async ({
   page,
 }) => {
@@ -234,11 +349,11 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
   const items = page.getByRole("group", { exact: true, name: "Item 1" });
   const addItem = page.getByRole("button", { name: "Adicionar item" });
   const count = page
-    .getByRole("group", { exact: true, name: "Itens" })
-    .locator("[data-slot=card-description]");
+    .getByRole("region", { exact: true, name: "Itens" })
+    .locator("[data-slot=items-count]");
   await expect(items.getByLabel("Produto ou variante")).toBeVisible();
   await expect(addItem).toHaveCount(0);
-  await expect(count).toHaveText(BLANK_LINE);
+  await expect(count).toHaveCount(0);
 
   // the "Venda em andamento" bar above the card appears with the first choice, so the gap to the card's own title
   // is what shows whether the counter pushed the item
@@ -247,23 +362,34 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
     ((await items.boundingBox())?.y ?? Number.NaN) -
     ((await title.boundingBox())?.y ?? Number.NaN);
   const before = await top();
-  const lineHeight = (await count.boundingBox())?.height ?? Number.NaN;
-  expect(lineHeight).toBeGreaterThan(0);
   await pickShirt(page);
   const quantity = items.getByLabel("Quantidade");
   await expect(quantity).toBeVisible();
-  await expect(count).toHaveText("1 item");
+  await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
   await expect(addItem).toBeVisible();
   expect(Math.abs((await top()) - before)).toBeLessThanOrEqual(1);
-  expect(
-    Math.abs(((await count.boundingBox())?.height ?? Number.NaN) - lineHeight)
-  ).toBeLessThanOrEqual(1);
 
   await addItem.click();
   await expect(
     page.getByRole("group", { exact: true, name: "Item 2" })
   ).toBeVisible();
-  await expect(count).toHaveText("1 item");
+  await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
+});
+
+test("Itens, Pagamento e Resumo são anunciados uma vez só pelo nome: região sem grupo nem complementar com o mesmo nome", async ({
+  page,
+}) => {
+  await openSaleLab(page, "claro");
+  const names = ["Itens", "Pagamento", "Resumo"];
+  await Promise.all(
+    names.flatMap((name) => [
+      expect(page.getByRole("region", { exact: true, name })).toHaveCount(1),
+      expect(page.getByRole("group", { exact: true, name })).toHaveCount(0),
+      expect(
+        page.getByRole("complementary", { exact: true, name })
+      ).toHaveCount(0),
+    ])
+  );
 });
 
 async function chooseNoProfile(page: Page) {
@@ -426,7 +552,7 @@ test("Trocar abre a busca com a variante atual marcada; Escape volta à linha co
 
 const NON_BLANK = /\S/;
 const SINGLE_PAYMENT_TEXT =
-  "Um pagamento só, no valor total. O método não comprova o recebimento.";
+  "Um pagamento no valor total. Para receber de dois jeitos, use Dividir pagamento. O método não comprova o recebimento.";
 
 /** Under "Pagamento" the two explanations are in the (i) of the title, whole, and not on the screen. */
 async function expectPaymentTip(page: Page) {
@@ -508,4 +634,216 @@ test('um "Sem perfil" lembrado numa loja com perfil ativo: a venda seguinte vem 
       .getByRole("status")
       .filter({ hasText: "Venda guardada neste aparelho" })
   ).toBeVisible();
+});
+
+const DESKTOP_ONLY = "o número e a tecla só existem com ponteiro fino";
+
+function methodGroup(page: Page): Locator {
+  return page.getByRole("radiogroup", { name: "Método de pagamento" });
+}
+
+test("Pagamento: com o foco no grupo a tecla do número escolhe a forma; fora do grupo e em campo de texto, não", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), DESKTOP_ONLY);
+  await openSaleLab(page, "claro");
+  const methods = methodGroup(page);
+  const chosen = methods.locator('[role="radio"][aria-checked="true"]');
+  const search = page.getByLabel("Produto ou variante");
+  await search.focus();
+  await page.keyboard.press("2");
+  await expect(search).toHaveValue(HAS_TWO);
+  await expect(chosen).toHaveCount(0);
+  await search.fill("");
+  await page.keyboard.press("Escape");
+  const item = await pickShirt(page);
+  const pix = methods.getByRole("radio", { name: "Pix" });
+  const cash = methods.getByRole("radio", { name: "Dinheiro" });
+  const debit = methods.getByRole("radio", { name: "Débito" });
+
+  await pix.focus();
+  await page.keyboard.press("2");
+  await expect(cash).toBeChecked();
+  await expect(cash).toBeFocused();
+  await page.keyboard.press("4");
+  await expect(debit).toBeChecked();
+  await expect(debit).toBeFocused();
+
+  const price = item.getByLabel("Preço cobrado");
+  await price.fill("");
+  await price.focus();
+  await page.keyboard.press("2");
+  await expect(price).toHaveValue("2");
+  await expect(debit).toBeChecked();
+
+  await page.getByRole("heading", { exact: true, name: "Nova venda" }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.keyboard.press("2");
+  await expect(debit).toBeChecked();
+  await expect(cash).not.toBeChecked();
+
+  await debit.focus();
+  await page.keyboard.press("Control+2");
+  await page.keyboard.press("Alt+2");
+  await page.keyboard.press("0");
+  await expect(debit).toBeChecked();
+});
+
+test("Pagamento: as setas e o espaço andam entre as formas como antes, e o grupo segue radiogroup com o mesmo nome", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), DESKTOP_ONLY);
+  await openSaleLab(page, "claro");
+  const methods = methodGroup(page);
+  await expect(methods).toHaveAttribute("aria-label", "Método de pagamento");
+  const pix = methods.getByRole("radio", { name: "Pix" });
+  const cash = methods.getByRole("radio", { name: "Dinheiro" });
+  await pix.focus();
+  await page.keyboard.press("Space");
+  await expect(pix).toBeChecked();
+  await page.keyboard.press("ArrowDown");
+  await expect(cash).toBeChecked();
+  await expect(cash).toBeFocused();
+});
+
+test("Pagamento: cada forma traz o número decorativo e aria-keyshortcuts, o nome não muda e o cartão não cresce", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), DESKTOP_ONLY);
+  await openSaleLab(page, "claro");
+  const methods = methodGroup(page);
+  const radios = methods.getByRole("radio");
+  await expect(radios).toHaveCount(6);
+  for (let index = 0; index < 6; index += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: one option after the other
+    await expect(radios.nth(index)).toHaveAttribute(
+      "aria-keyshortcuts",
+      String(index + 1)
+    );
+  }
+  const names = [
+    "Pix",
+    "Dinheiro",
+    "Crédito",
+    "Débito",
+    "Transferência",
+    "Outro",
+  ];
+  for (const name of names) {
+    // biome-ignore lint/performance/noAwaitInLoops: one name after the other
+    await expect(methods.getByRole("radio", { exact: true, name })).toHaveCount(
+      1
+    );
+  }
+  const keys = methods.locator("[data-method-key]");
+  await expect(keys).toHaveCount(6);
+  await expect(keys.first()).toHaveAttribute("aria-hidden", "true");
+
+  const card = page
+    .locator('[data-slot="card-frame"]')
+    .filter({ has: methods })
+    .first();
+  const heights = async () =>
+    card.evaluate((node) => node.getBoundingClientRect().height);
+  for (const width of [760, 900, 1024, 1280, 1536]) {
+    // biome-ignore lint/performance/noAwaitInLoops: the layout is measured width by width
+    await page.setViewportSize({ height: 900, width });
+    if (width >= 1280) {
+      await expect(keys.first()).toBeVisible();
+    }
+    const withKeys = await heights();
+    await keys.evaluateAll((nodes) => {
+      for (const node of nodes) {
+        (node as HTMLElement).style.display = "none";
+      }
+    });
+    const without = await heights();
+    await keys.evaluateAll((nodes) => {
+      for (const node of nodes) {
+        (node as HTMLElement).style.display = "";
+      }
+    });
+    expect(Math.abs(withKeys - without), `${width} px`).toBeLessThanOrEqual(1);
+  }
+});
+
+test("Pagamento: abaixo de 760 px ou com toque não há número, aria-keyshortcuts nem tecla", async ({
+  page,
+}, testInfo) => {
+  await openSaleLab(page, "claro");
+  if (!testInfo.project.name.includes("mobile")) {
+    await page.setViewportSize({ height: 800, width: 740 });
+  }
+  const methods = methodGroup(page);
+  await expect(methods.getByRole("radio")).toHaveCount(6);
+  await expect(methods.locator("[data-method-key]")).toHaveCount(0);
+  await expect(methods.locator("[aria-keyshortcuts]")).toHaveCount(0);
+  const pix = methods.getByRole("radio", { name: "Pix" });
+  await pix.focus();
+  await page.keyboard.press("2");
+  await expect(methods.getByRole("radio", { checked: true })).toHaveCount(0);
+});
+
+const LAB_ROW_LABELS = [
+  { option: SHIRT_OPTION, search: "camiseta azul" },
+  { option: /Camiseta do laboratório · Vermelha/, search: "camiseta vermelha" },
+  { option: SHIRT_OPTION, search: "camiseta azul" },
+] as const;
+
+async function pickLines(page: Page) {
+  await page.getByLabel("Rede disponível").uncheck();
+  for (const [index, row] of LAB_ROW_LABELS.entries()) {
+    if (index > 0) {
+      // biome-ignore lint/performance/noAwaitInLoops: one line after the other, each opens from the one before
+      await page.getByRole("button", { name: "Adicionar item" }).click();
+    }
+    const item = page.getByRole("group", {
+      exact: true,
+      name: `Item ${index + 1}`,
+    });
+    await item.getByLabel("Produto ou variante").fill(row.search);
+    await page.getByRole("option", { name: row.option }).click();
+    await expect(item.getByLabel("Quantidade")).toBeVisible();
+  }
+  await page.getByLabel("Rede disponível").check();
+}
+
+/** How far below the window the first screen of the sale leaves "Confirmar venda": zero or less means it shows. */
+async function confirmOverflow(page: Page): Promise<number> {
+  const confirm = page
+    .getByRole("region", { exact: true, name: "Resumo" })
+    .getByRole("button", { name: "Confirmar venda" });
+  await expect(confirm).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  return confirm.evaluate(
+    (node) => node.getBoundingClientRect().bottom - window.innerHeight
+  );
+}
+
+/**
+ * "Confirmar venda" sits 303 px above the bottom of the window in this lab on the main before the blocks (497 of 800 px):
+ * it must show, and the blocks may push it down by 24 px at most.
+ */
+const CONFIRM_ROOM_BEFORE = 303;
+const CONFIRM_ROOM_BUDGET = 24;
+
+test("AC-7.1: a 1280 × 800, com 3 itens e o pagamento fechado, o botão Confirmar venda aparece sem rolar e desce no máximo 24 px", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "a janela é de mesa");
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openSaleLab(page, "claro");
+  await pickLines(page);
+  await expect(
+    page.getByRole("group", { exact: true, name: "Item 3" })
+  ).toBeVisible();
+  const overflow = await confirmOverflow(page);
+  testInfo.annotations.push({
+    description: `${overflow.toFixed(1)} px`,
+    type: "confirmar-abaixo-da-janela",
+  });
+  expect(overflow).toBeLessThanOrEqual(0);
+  expect(-overflow).toBeGreaterThanOrEqual(
+    CONFIRM_ROOM_BEFORE - CONFIRM_ROOM_BUDGET
+  );
 });

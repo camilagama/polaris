@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { createDatabase } from "../src/client";
 import { createCustomer } from "../src/customer-repository";
 import {
@@ -10,14 +11,15 @@ import { listUserOrganizations } from "../src/organization-membership-query";
 import {
   archiveProduct,
   createProduct,
-  deleteProduct,
   listProducts,
 } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
-import { listSales } from "../src/sale-query-repository";
+import { getSale, listSales } from "../src/sale-query-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
+import { inRolledBackTransaction } from "./gate-roles";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -32,6 +34,14 @@ import {
   temporaryRuntimeUrl,
   withTenantAs,
 } from "./sales-gate-support";
+import {
+  checkOtherRuntimeCannotList,
+  checkUserOrganizationsCatalog,
+  checkUserOrganizationsEquality,
+  checkUserOrganizationsLeaveNoSetting,
+  checkUserOrganizationsRefusals,
+  listedBySeparateStatements,
+} from "./user-organizations-gate-checks";
 
 /**
  * The read models behind the web screens: the organizations of a session user,
@@ -141,6 +151,37 @@ async function run() {
       "organization.listMine reads only the session user's active memberships of active organizations, with name, time zone and role; a stranger has none and a padded id is refused"
     );
 
+    await checkUserOrganizationsCatalog(admin.pool);
+    await checkOtherRuntimeCannotList(admin.pool, tenantA.userId);
+    const runtimeClient = await runtimeDatabase.pool.connect();
+    try {
+      await checkUserOrganizationsRefusals(runtimeClient, tenantB.userId);
+      await checkUserOrganizationsLeaveNoSetting(
+        runtimeClient,
+        tenantA.userId,
+        mine
+      );
+      assert.deepEqual(
+        mine,
+        await inRolledBackTransaction(runtimeClient, () =>
+          listedBySeparateStatements(runtimeClient, tenantA.userId)
+        ),
+        "listUserOrganizations answers what the reference reading in separate statements answers"
+      );
+    } finally {
+      runtimeClient.release();
+    }
+    assert.deepEqual(
+      await listUserOrganizations(runtimeDatabase.db, tenantA.userId),
+      mine,
+      "a second listUserOrganizations on the one connection of the pool answers the same"
+    );
+    const compared = await checkUserOrganizationsEquality(admin.pool);
+    assert.equal(compared.length, 6);
+    tests.push(
+      `list_user_organizations is SECURITY INVOKER with a pinned search_path and EXECUTE only for the tenant runtime, returns the four fields, refuses a null, empty or padded user with 42501, keeps every setting local (session values come back after COMMIT and ROLLBACK, on one connection) and leaves both empty for the rest of its transaction, and answers exactly what the separate statements answer (${compared.join("; ")})`
+    );
+
     // ------------------------------------------- 2. the stock balance list
     const alpha = await createSellableProduct(rt, tenantA, "Alpha camiseta", {
       cost: "1.00",
@@ -184,7 +225,7 @@ async function run() {
       tenantA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: echo.version,
           id: echo.productId,
         })
@@ -575,6 +616,192 @@ async function run() {
       "sale.list filters by commercial date range, cancelled/confirmed/with-returns status, customer name and product text (case-insensitive, literal wildcards), returns the customer name and the commercial date, and is scoped to the organization"
     );
 
+    // ------------------------ 4. the parts of a sale with more than one part, by position
+    const partsDay = storeDay(runClock, -1);
+    const writeParts = (
+      parts: { amount: string; id?: string; method: string }[]
+    ) =>
+      withTenantAs(
+        runtimeDatabase.db,
+        tenantA,
+        "sale:create",
+        async (transaction, identity) => {
+          const org = identity.organizationId;
+          const commandId = randomUUID();
+          const total = parts
+            .reduce(
+              (sum, part) => sum + Math.round(Number(part.amount) * 100),
+              0
+            )
+            .toString();
+          const price = `${total.slice(0, -2) || "0"}.${total.slice(-2).padStart(2, "0")}`;
+          const header = await transaction.execute<{ id: string }>(
+            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count, payment_count) VALUES (${org}, ${commandId}, ${storeNoon(partsDay)}, ${partsDay}, 1, 0, ${parts.length}) RETURNING id`
+          );
+          const saleId = header.rows[0]?.id;
+          assert.ok(saleId);
+          await transaction.execute(
+            sql`INSERT INTO public.sale_items (organization_id, sale_id, position, product_id, variant_id, product_label, quantity, listed_unit_price, charged_unit_price, unit_cost) VALUES (${org}, ${saleId}, 0, ${itemProduct.productId}, ${itemProduct.variantId}, 'Historico', 1, ${price}, ${price}, '3.000000')`
+          );
+          for (const [position, part] of parts.entries()) {
+            const card = part.method === "credit_card";
+            // biome-ignore lint/performance/noAwaitInLoops: the parts go in at their positions, one after the other
+            await transaction.execute(
+              sql`INSERT INTO public.sale_payments (id, organization_id, sale_id, method, amount, position, installments, installment_plan_unknown) VALUES (COALESCE(${part.id ?? null}::uuid, uuidv7()), ${org}, ${saleId}, ${part.method}, ${part.amount}, ${position}, ${card ? 1 : null}, ${card})`
+            );
+          }
+          // a receipt of the unit sold keeps the ledger at the balance
+          await transaction.execute(
+            sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta, unit_cost) VALUES (${org}, ${randomUUID()}, 0, 1, ${partsDay}, 'receipt', ${itemProduct.productId}, ${itemProduct.variantId}, 1, '3.000000')`
+          );
+          await transaction.execute(
+            sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta, unit_cost) VALUES (${org}, ${commandId}, 0, 1, ${partsDay}, 'sale', ${itemProduct.productId}, ${itemProduct.variantId}, -1, '3.000000')`
+          );
+          return saleId;
+        }
+      );
+    const lowestId = "00000000-0000-7000-8000-000000000001";
+    const highestId = "ffffffff-ffff-7fff-bfff-ffffffffffff";
+    const partSales = {
+      biggestFirst: await writeParts([
+        { amount: "14.90", method: "pix" },
+        { amount: "5.00", method: "cash" },
+      ]),
+      biggestLast: await writeParts([
+        { amount: "9.90", method: "pix" },
+        { amount: "30.00", method: "credit_card" },
+      ]),
+      onlyPart: (
+        await confirmPlainSale(rt, tenantA, [
+          { quantity: 1, variantId: itemProduct.variantId },
+        ])
+      ).sale.id,
+      tieHigherIdLast: await writeParts([
+        { amount: "19.90", method: "pix" },
+        { amount: "19.90", id: highestId, method: "bank_transfer" },
+      ]),
+      tieLowerIdLast: await writeParts([
+        { amount: "19.90", method: "pix" },
+        { amount: "19.90", id: lowestId, method: "debit_card" },
+      ]),
+    };
+    const stored = await admin.pool.query<{ parts: string }>(
+      "SELECT string_agg(payment.position || ':' || payment.method, ',' ORDER BY payment.position) AS parts FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = ANY($1::uuid[]) GROUP BY sale.id, sale.payment_count HAVING count(*) = sale.payment_count",
+      [Object.values(partSales)]
+    );
+    assert.deepEqual(
+      stored.rows.map((row) => row.parts).sort(),
+      [
+        "0:pix",
+        "0:pix,1:bank_transfer",
+        "0:pix,1:cash",
+        "0:pix,1:credit_card",
+        "0:pix,1:debit_card",
+      ],
+      "the parts are committed at their positions, as many as each header counts"
+    );
+    const seen = await withTenantAs(
+      runtimeDatabase.db,
+      tenantA,
+      "sale:read",
+      async (transaction, identity) => {
+        const listed = await listSales(transaction, identity, { limit: 100 });
+        const partIds = Object.values(partSales);
+        assert.equal(
+          listed.sales.filter((sale) => partIds.includes(sale.id)).length,
+          partIds.length,
+          "a sale of two parts is listed once"
+        );
+        assert.deepEqual(
+          partIds.map(
+            (saleId) =>
+              listed.sales.find((sale) => sale.id === saleId)?.totalDue
+          ),
+          ["19.90", "39.90", "19.90", "39.80", "39.80"],
+          "the total due of a sale of parts is the sum of its parts"
+        );
+        const read: Record<
+          string,
+          {
+            amount: string;
+            detail: string | null;
+            detailParts: string[];
+            list: string | null;
+            listParts: string[] | null;
+          }
+        > = {};
+        for (const [name, saleId] of Object.entries(partSales)) {
+          // biome-ignore lint/performance/noAwaitInLoops: one transaction, one statement at a time
+          const detail = await getSale(transaction, identity, saleId);
+          const entry = listed.sales.find((sale) => sale.id === saleId);
+          read[name] = {
+            amount: detail.sale.payment.amount,
+            detail: detail.sale.payment.method,
+            detailParts: detail.sale.payments.map(
+              (part) => `${part.position}:${part.method}:${part.amount}`
+            ),
+            list: entry?.paymentMethod ?? null,
+            listParts: entry?.paymentMethods ?? null,
+          };
+          const [first] = detail.sale.payments;
+          assert.ok(first, `${name}: the detail lists its parts`);
+          const { position: _position, ...firstPart } = first;
+          assert.deepEqual(
+            detail.sale.payment,
+            firstPart,
+            `${name}: payment is the part at position 0, every field`
+          );
+        }
+        return read;
+      }
+    );
+    assert.deepEqual(
+      seen,
+      {
+        biggestFirst: {
+          amount: "14.90",
+          detail: "pix",
+          detailParts: ["0:pix:14.90", "1:cash:5.00"],
+          list: "pix",
+          listParts: ["pix", "cash"],
+        },
+        // the biggest amount is at position 1: the part at position 0 still names the sale
+        biggestLast: {
+          amount: "9.90",
+          detail: "pix",
+          detailParts: ["0:pix:9.90", "1:credit_card:30.00"],
+          list: "pix",
+          listParts: ["pix", "credit_card"],
+        },
+        onlyPart: {
+          amount: "19.90",
+          detail: "pix",
+          detailParts: ["0:pix:19.90"],
+          list: "pix",
+          listParts: ["pix"],
+        },
+        tieHigherIdLast: {
+          amount: "19.90",
+          detail: "pix",
+          detailParts: ["0:pix:19.90", "1:bank_transfer:19.90"],
+          list: "pix",
+          listParts: ["pix", "bank_transfer"],
+        },
+        // the part at position 1 has the smaller id: the order is the position, never the id
+        tieLowerIdLast: {
+          amount: "19.90",
+          detail: "pix",
+          detailParts: ["0:pix:19.90", "1:debit_card:19.90"],
+          list: "pix",
+          listParts: ["pix", "debit_card"],
+        },
+      },
+      "the list and the detail agree: payment and paymentMethod are the part at position 0, payments and paymentMethods follow the positions, whatever the amounts and the ids"
+    );
+    tests.push(
+      "sale.list paymentMethod/paymentMethods and sale.get payment/payments agree on a sale committed in two parts: position 0 names the sale and the parts follow the positions, with the biggest amount at position 0 or 1 and the smaller id at position 0 or 1"
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -593,7 +820,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     await admin.pool.end();

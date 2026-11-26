@@ -16,12 +16,12 @@
     "AUTH_ABUSE_PROTECTION_ENABLED": "false",
     // the Woovi refund command stays off until the refund of an installment is proven (S3.2, Gate 7)
     "WOOVI_REFUND_ENABLED": "false",
-    // the automatic purge of a closed organization (ADR 0102): off until the go-live
+    // the automatic purge of a closed organization (ADR 0102): off here (local) and in production until the go-live; on only in `env.staging`
     "CLOSURE_AUTO_PURGE_ENABLED": "false",
     // the e-mail of the closure notices (ADR 0102, amended): off until the responsible turns it on
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
-    // the tips of the activation series (ADR 0106, D6): off in every environment, staging included, until the user
-    // turns it on; off, the hourly sweep only clears the instant it was seen on
+    // the tips of the activation series (ADR 0106, D6): off here and in production; only env.staging turns it on;
+    // off, the hourly sweep only clears the instant it was seen on
     "ACTIVATION_EMAILS_ENABLED": "false",
     // the owner's billing self-service (ADR 0104): off until the screens, the e-mails and the Gate 7 are in
     "BILLING_SELF_SERVICE_ENABLED": "false",
@@ -287,15 +287,18 @@
         "WOOVI_WEBHOOK_PUBLIC_KEYS": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoZwBaFwmstKqy9VAqqxiSbCWgJR3dd5CTtDi6Fwthtd2owFkZIMqTqKg3Bq5ExjuOxE+v/1gIWFqR9jNjbtYumwPq+wXQhvx9TrQgrrFMVZ6tMPcwzj8Nknw182N/HMIQsV6B+8JWWzf/cN4ZZVSsRZfQvoVgFM7PSvSvc/h6v0X2Lkzjypvw7ZRkfxoc+z7B0p3vdQmLSKxPRpLzdLLVlJ+CJA2aATKVQR5feiuWHKdOlvCT7IRhal0hxUAjc7rxho5eHgaxWO5rITke8wSIjYIpuw38vMobYSxXb6iuj5Zrjpe2GV8vwuGud8H2dngYhkqbGuY5f4j1kfcN7gC8QIDAQAB",
         // on in the sandbox, so the refund of a Pix installment can be proven there (S3.2, Gate 7)
         "WOOVI_REFUND_ENABLED": "true",
-        "CLOSURE_AUTO_PURGE_ENABLED": "false",
+        // on in staging only, with the notice e-mail on: the synthetic closed stores follow the cycle and are erased (ADR 0102)
+        "CLOSURE_AUTO_PURGE_ENABLED": "true",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "true",
-        // off in staging too: the real sending of the tips there is a later phase
-        "ACTIVATION_EMAILS_ENABLED": "false",
+        // on in staging only: the tips really go out there (ADR 0106); the operator uses test mailboxes only, since
+        // the code does not filter recipients. The sender is a public address, and the secrets stay in the Worker
+        "ACTIVATION_EMAILS_ENABLED": "true",
+        "ACTIVATION_EMAIL_FROM": "Polaris (staging) <dicas@araute.app>",
         "BILLING_SELF_SERVICE_ENABLED": "true",
         "MEDIA_THUMBS_ENABLED": "true",
         // the footer and reply-to of the billing e-mails: one address on araute.app (the isolation check refuses another domain)
         "BILLING_SUPPORT_EMAIL": "suporte@araute.app",
-        "LEGAL_ACCEPTANCE_ENFORCED": "false",
+        "LEGAL_ACCEPTANCE_ENFORCED": "true",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
         "CATALOG_ORIGIN": "https://catalogo.araute.app",
         "OFFLINE_LEASE_KEY_ID": "staging-1",
@@ -307,7 +310,7 @@
         // /health declares the commit of the Worker (X-Polaris-Release), read by the smoke (ADR 0098, amended)
         "RELEASE_HEADER_ENABLED": "true"
       },
-      // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
+      // Staging traces at 10% so a load test does not exhaust the account's daily ingestion cap and blind the logs; logs stay at 100% (ADR 0094).
       "observability": {
         "enabled": true,
         "logs": {
@@ -315,7 +318,7 @@
           "head_sampling_rate": 1,
           "invocation_logs": false
         },
-        "traces": { "enabled": true, "head_sampling_rate": 1 }
+        "traces": { "enabled": true, "head_sampling_rate": 0.1 }
       },
       // One configuration per database role, caching disabled, against the staging Neon project only.
       "hyperdrive": [
@@ -475,6 +478,8 @@
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "ACTIVATION_EMAILS_ENABLED": "false",
+        // empty until the production sender exists (ADR 0106, D6); the series stays off there
+        "ACTIVATION_EMAIL_FROM": "",
         "BILLING_SELF_SERVICE_ENABLED": "false",
         "MEDIA_THUMBS_ENABLED": "false",
         "BILLING_SUPPORT_EMAIL": "",
@@ -498,6 +503,7 @@
         },
         "traces": { "enabled": true, "head_sampling_rate": 0.05 }
       },
+      // OUTBOX_HYPERDRIVE is left out on purpose: the first deploy goes without the queue path and the binding returns in step 7 of docs/runbooks/queues.md, after the CPU measurements of step 6
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
@@ -522,10 +528,6 @@
         {
           "binding": "BILLING_HYPERDRIVE",
           "id": "PLACEHOLDER-production-hyperdrive-billing"
-        },
-        {
-          "binding": "OUTBOX_HYPERDRIVE",
-          "id": "PLACEHOLDER-production-hyperdrive-outbox"
         }
       ],
       "images": { "binding": "IMAGES" },

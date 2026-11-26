@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createDatabase } from "@polaris/db/client";
+import { inRolledBackTransaction } from "../../../packages/db/scripts/gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -213,7 +214,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
@@ -247,7 +248,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       const database = createDatabase(
         temporaryRuntimeUrl(adminUrl, role, password),
         { maxConnections: 1 }
@@ -363,8 +364,7 @@ async function run() {
     const mutationClient = await owner.pool.connect();
     try {
       const original = await definitionOf(authClient, FUNCTIONS.hash);
-      await mutationClient.query("BEGIN");
-      try {
+      await inRolledBackTransaction(mutationClient, async () => {
         await mutationClient.query(
           original.replace("gen_salt('bf', 11)", "gen_salt('bf', 4)")
         );
@@ -378,9 +378,7 @@ async function run() {
           () => probeHashAndCheck(mutantHasher),
           "the probe of the cost catches a hash of cost 4"
         );
-      } finally {
-        await mutationClient.query("ROLLBACK");
-      }
+      });
       assert.equal(
         await definitionOf(authClient, FUNCTIONS.hash),
         original,
@@ -414,9 +412,8 @@ async function run() {
     for (const close of closers.reverse()) {
       await close().catch(() => undefined);
     }
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       try {
-        await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       } catch (error) {
         cleanupFailures.push(`role (${redactedFailure(error)})`);

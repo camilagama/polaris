@@ -57,6 +57,39 @@ describe("when the organization left Pro", () => {
   });
 });
 
+describe("a trial left Pro only when its slack ran out (AC-47)", () => {
+  const stored = new Date("2026-11-17T16:46:00.000Z");
+  const slackEnd = new Date("2026-11-18T09:00:00.000Z");
+
+  it("dates the episode by the end of the slack, not by the stored end", () => {
+    expect(
+      episodeStart({
+        accessEndsAt: stored,
+        overLimitSince: null,
+        state: "trialing",
+      })
+    ).toEqual(slackEnd);
+  });
+
+  it("stores the end of the slack when the sweep ends the trial, and now when it ends earlier", () => {
+    expect(
+      episodeStartAfter({
+        before: { accessEndsAt: stored, state: "trialing" },
+        nextState: "free_over_limit",
+        now: new Date("2026-11-18T09:01:00.000Z"),
+      })
+    ).toEqual(slackEnd);
+    const failedAt = new Date("2026-11-17T20:30:00.000Z");
+    expect(
+      episodeStartAfter({
+        before: { accessEndsAt: stored, state: "trialing" },
+        nextState: "free_over_limit",
+        now: failedAt,
+      })
+    ).toEqual(failedAt);
+  });
+});
+
 describe("the episode start stored on the record", () => {
   const now = new Date("2026-10-10T00:00:00.000Z");
   const lapsed = new Date("2026-10-08T00:00:00.000Z");

@@ -7,7 +7,8 @@ import { productErrorMessage } from "./product-errors";
  * What `/products` opens by its address (the Início and the Venda link to it):
  * `?produto=<uuid>` the variants panel of that product (with `&variante=<uuid>` the field of that variant takes
  * the focus), `?novo=1` the form of a
- * new one, `?importar=1` the import of a spreadsheet (the checklist of the Início).
+ * new one, `?importar=1` the import of a spreadsheet (the checklist of the Início),
+ * `?arquivados=1` the list already on "Arquivados" (the warning of the plan's limit).
  * Anything else is the plain list, and no value of the address is ever written
  * on the screen.
  */
@@ -15,6 +16,7 @@ export type ProductsLink =
   | { kind: "none" }
   | { kind: "new" }
   | { kind: "import" }
+  | { kind: "archived" }
   | { kind: "product"; productId: string; variantId: string | null };
 
 const uuidPattern =
@@ -38,8 +40,16 @@ export function readProductsLink(search: string): ProductsLink {
   if (params.get("importar") === "1") {
     return { kind: "import" };
   }
-  return params.get("novo") === "1" ? { kind: "new" } : { kind: "none" };
+  if (params.get("novo") === "1") {
+    return { kind: "new" };
+  }
+  return params.get("arquivados") === "1"
+    ? { kind: "archived" }
+    : { kind: "none" };
 }
+
+/** The address of the list on "Arquivados": "Ver arquivados" of the warning, for the new tab a click does not open. */
+export const ARCHIVED_PRODUCTS_HREF = "/products?arquivados=1";
 
 /** The address that opens the product on `/products`, on the variant when the row of the stock is one of a variant. */
 export function productHref(productId: string, variantId?: string): string {

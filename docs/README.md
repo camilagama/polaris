@@ -10,7 +10,7 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 - decisões técnicas difíceis de reverter e seus motivos: [adr/](adr/);
 - invariantes de domínio: [business-rules/](business-rules/);
 - procedimentos operacionais repetíveis e checklist de go-live: [runbooks/](runbooks/);
-- invariantes do domínio ligadas aos testes que as provam, e o padrão dos testes de propriedade: [testing/property-invariants.md](testing/property-invariants.md).
+- invariantes do domínio ligadas aos testes que as provam, e o padrão dos testes de propriedade: [testing/property-invariants.md](testing/property-invariants.md); como fixar o relógio e derivar as datas nos testes: [testing/relogio-nos-testes.md](testing/relogio-nos-testes.md); a lista de testes que não se apagam nem se enfraquecem sem o aceite do Rodrigo, e a checagem que a guarda: [testing/lista-protegida.md](testing/lista-protegida.md).
 
 [doc/doc-inicial.md](../doc/doc-inicial.md) é o material original de produto e arquitetura. [doc/plano-inicial.md](../doc/plano-inicial.md) é a autoridade para a sequência de implementação e os critérios dos gates ([ADR 0016](adr/0016-ordem-das-fases-gate-auth-e-gate-2.md)). [doc/status-implementacao.md](../doc/status-implementacao.md) registra o estado de entrega, sem criar regras. [doc/checkpoint-gate4.md](../doc/checkpoint-gate4.md) e [doc/revisao-checkpoint-gate4.md](../doc/revisao-checkpoint-gate4.md) são o dossiê e a revisão do fim da Fase 4. Para conteúdo de produto, termos, design, arquitetura e invariantes, use os arquivos canônicos acima. Quando essas fontes exigirem uma mudança, atualize o plano no mesmo pull request.
 
@@ -118,17 +118,18 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0092](adr/0092-registro-de-acesso-a-aplicacao.md) | Registro de acesso a aplicação (Marco Civil, art. 15) | aceito |
 | [0093](adr/0093-funcoes-security-definer-e-privilegios-padrao.md) | Funções SECURITY DEFINER e privilégios padrão do banco | aceito |
 | [0094](adr/0094-tracing-e-amostragem-do-workers-observability.md) | Tracing e amostragem do Workers Observability | aceito |
-| [0095](adr/0095-onde-os-alertas-operacionais-vao-rodar.md) | Onde os alertas operacionais vão rodar | proposto |
+| [0095](adr/0095-onde-os-alertas-operacionais-vao-rodar.md) | Onde os alertas operacionais vão rodar | aceito (staging) |
 | [0096](adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md) | Migrations compatíveis com a versão anterior do Worker (expand/contract) | aceito |
 | [0097](adr/0097-staging-fixo-e-producao-em-conta-separada.md) | Staging fixo na conta atual e produção em conta separada | aceito |
 | [0098](adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md) | Sentry no navegador: só erros, sanitizado, com source maps escondidos | aceito |
-| [0099](adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md) | Backup lógico diário do banco no R2, cifrado com age, provado primeiro no staging | proposto |
+| [0099](adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md) | Backup lógico diário do banco no R2, cifrado com age, provado primeiro no staging | aceito (escopo staging) |
 | [0100](adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md) | Tela de entrada: e-mail e senha atrás de flag, bloqueio de conta no banco e aceite legal registrado | aceito |
 | [0101](adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md) | Adaptador Asaas: porta de saída, releitura do recurso e período pelo vencimento original | aceito |
 | [0102](adr/0102-apagamento-automatico-da-loja-encerrada.md) | Apagamento automático da loja encerrada, sem caso de privacidade | aceito |
 | [0103](adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md) | Base de componentes: shadcn na variante Base UI com Tailwind 4 | aceito |
 | [0104](adr/0104-autosservico-de-cobranca-do-dono.md) | Autosserviço de cobrança do dono: leitura do plano, cancelar, desistir e pagar a pendente | aceito |
 | [0105](adr/0105-comandos-de-provedor-pelo-operador.md) | Comandos de provedor pelo operador: cancelar a renovação e reembolsar pelo Admin | aceito |
-| [0106](adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md) | Avisos de ativação e medida de comportamento (número provisório) | aceito, com pré-condições de produção |
+| [0106](adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md) | Avisos de ativação e medida de comportamento | aceito, com pré-condições de produção |
+| [0107](adr/0107-venda-paga-em-partes.md) | Venda paga em partes: de uma a três partes que somam o total | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

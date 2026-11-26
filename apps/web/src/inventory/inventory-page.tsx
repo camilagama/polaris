@@ -1,5 +1,6 @@
 import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import PackageIcon from "lucide-react/dist/esm/icons/package";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type MouseEvent,
@@ -13,13 +14,17 @@ import {
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
-import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
+import { Button, buttonVariants } from "@/ui/button";
+import { Block } from "@/ui/block";
+import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { MoneyText } from "@/ui/hidden-values";
+import { ListBlock } from "@/ui/list-block";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
+import { TextLink } from "@/ui/text-link";
+import { TitleLine } from "../app-shell/screen-title";
 import {
   ProductThumbnail,
   useThumbnailSequence,
@@ -27,22 +32,32 @@ import {
 import { stockProductLinks } from "../catalog/products-link-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
+import {
+  LIST_REFRESH_FAILED_TEXT,
+  LIST_REFRESHING_TEXT,
+} from "../lib/list-refresh-text";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
+import { useFocusTitleWhenGone } from "../lib/use-focus-title-when-gone";
 import { useStoreToday } from "../lib/use-store-today";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { LINK, StockActionStrip } from "./stock-action-strip";
+import { StockActionStrip } from "./stock-action-strip";
 import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
 import { StockFiltersBar } from "./stock-filters";
 import {
+  framedListState,
   readStockLinkFilters,
   readStockLinkSearch,
   type StockAttentionLink,
+  type StockMoreView,
+  type StockListView,
   type StockRow,
   stockCountText,
   stockCoverIds,
   stockListView,
   stockMoreView,
+  STOCK_NO_VARIANTS_SUPPORT,
+  STOCK_NO_VARIANTS_TITLE,
 } from "./stock-list-model";
 import { RowActions, triggerId } from "./stock-row-actions";
 import { type StockTarget, stockTarget } from "./stock-target";
@@ -77,9 +92,6 @@ function isPanelMounted(
   );
 }
 
-/** A link on a line of its own: it gets the 44 px touch area. */
-const STANDALONE_LINK = `touch-hit ${LINK}`;
-
 function EntryNotFoundNotice({ unavailable }: { unavailable: boolean }) {
   return (
     <Alert variant="warning">
@@ -101,9 +113,9 @@ function OfflineStockNotice() {
       <AlertDescription>
         Saldo do aparelho. Receber, contar e baixar vão quando a conexão voltar
         (veja{" "}
-        <a className={LINK} href="/attention">
+        <TextLink inline href="/attention">
           Pendências
-        </a>
+        </TextLink>
         ). Custo médio só com conexão.
       </AlertDescription>
     </Alert>
@@ -125,9 +137,6 @@ function Figure({ children, className, label }: FigureProps) {
   );
 }
 
-/** The name of a row that leads to its product: a link on a line of its own, with the 44 px touch area. */
-const PRODUCT_NAME_LINK = `touch-hit ${LINK}`;
-
 interface StockItemProps {
   canOpenProduct: boolean;
   children: ReactNode;
@@ -148,11 +157,8 @@ function StockItem({
   const thumbs = useMediaThumbsEnabled();
   const rowLocked = panelOpen || otherPanelOpen;
   return (
-    <li
-      className={cn(
-        "@container grid gap-3 p-(--card-spacing)",
-        panelOpen && "bg-muted/50"
-      )}
+    <ListBlock.Row
+      className="@container grid items-stretch gap-3"
       data-open={panelOpen ? "" : undefined}
     >
       <div className="grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.5fr)_auto] md:items-center md:gap-6">
@@ -171,13 +177,12 @@ function StockItem({
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
               {canOpenProduct && !rowLocked ? (
-                <a
+                <TextLink
                   aria-label={`${row.productName}, ${row.variantText}. Abrir o produto`}
-                  className={PRODUCT_NAME_LINK}
                   href={row.productHref}
                 >
                   {row.productName}
-                </a>
+                </TextLink>
               ) : (
                 row.productName
               )}
@@ -224,34 +229,33 @@ function StockItem({
         <RowActions disabled={rowLocked} onOpen={onOpen} row={row} />
       </div>
       {children}
-    </li>
+    </ListBlock.Row>
   );
 }
 
-/** The empty state: a card with one line, centered under the toolbar. */
-function StateCard({ children }: { children: ReactNode }) {
-  return (
-    <Card className="items-center px-(--card-spacing) text-center">
-      <p className="text-muted-foreground">{children}</p>
-    </Card>
-  );
+const LIST_TITLE = "Saldos em estoque";
+
+/** The sentence of a search or filter with no result, in the panel of the frame; nothing for the other states. */
+function frameNotice(view: StockListView) {
+  return view.kind === "empty" ? (
+    <p className="text-muted-foreground">{view.message}</p>
+  ) : null;
 }
 
-const LOADING_ROWS = [0, 1, 2];
+/** The shape of a row while the list is read: the name and the variant, as the two lines a row has. */
+const ROW_SKELETON = (
+  <div className="grid gap-1.5">
+    <Skeleton className="h-3.5 w-2/3" />
+    <Skeleton className="h-3 w-1/3" />
+  </div>
+);
 
-/** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
-function LoadingCard({ message }: { message: string }) {
-  return (
-    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
-      <p className="sr-only">{message}</p>
-      {LOADING_ROWS.map((row) => (
-        <div aria-hidden="true" className="grid gap-1.5" key={row}>
-          <Skeleton className="h-3.5 w-2/3" />
-          <Skeleton className="h-3 w-1/3" />
-        </div>
-      ))}
-    </Card>
-  );
+/** "Carregar mais", the retry of the refresh warning and the retry of the full-screen error never show together, and a re-read always passes through a loading render between them, so the hook sees one render with none. */
+function hasFocusableControl(
+  more: StockMoreView,
+  fullScreenError: boolean
+): boolean {
+  return more.visible || more.refreshFailed || fullScreenError;
 }
 
 /**
@@ -276,6 +280,7 @@ export function InventoryPage() {
   const {
     applyBalance: applyListBalance,
     filters,
+    listKey,
     loadMore,
     reload: reloadList,
     setFilters,
@@ -316,11 +321,20 @@ export function InventoryPage() {
   }, [entryLink]);
   const today = useStoreToday(organization.timezone);
   const view = stockListView(state, filters, offline);
-  const more = stockMoreView(state);
+  const more = stockMoreView(state, listKey);
+  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
+    hasFocusableControl(more, view.kind === "error")
+  );
   const coverIds = useMemo(() => stockCoverIds(state.entries), [state.entries]);
   useThumbnailSequence(coverIds);
-  const countText =
-    state.status === "ready" ? stockCountText(state, filters, offline) : null;
+  const countText = (() => {
+    if (state.status !== "ready") {
+      return null;
+    }
+    return more.refreshing && !offline
+      ? LIST_REFRESHING_TEXT
+      : stockCountText(state, filters, offline);
+  })();
 
   const handleQuery = useCallback(
     (query: string) => setFilters({ query }),
@@ -388,6 +402,8 @@ export function InventoryPage() {
     [setFilters]
   );
 
+  const framedState = framedListState(view);
+
   const panelMounted = isPanelMounted(
     open,
     view.kind === "ready" ? view.rows : null
@@ -396,13 +412,17 @@ export function InventoryPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
-        <div className="flex items-center gap-1">
-          <h1 className="text-title">Estoque</h1>
-          <HelpTip about="Estoque">
-            Receber, contar e baixar mudam o saldo aqui. Venda e devolução mudam
-            sozinhas.
-          </HelpTip>
-        </div>
+        <TitleLine action={<RefreshButton fill onClick={handleReload} />}>
+          <div className="flex items-center gap-1">
+            <h1 className="text-title" ref={focus.title} tabIndex={-1}>
+              Estoque
+            </h1>
+            <HelpTip about="Estoque">
+              Receber, contar e baixar mudam o saldo aqui. Venda e devolução
+              mudam sozinhas.
+            </HelpTip>
+          </div>
+        </TitleLine>
       </header>
 
       <StockActionStrip
@@ -432,45 +452,33 @@ export function InventoryPage() {
         onChange={setFilters}
       />
 
-      <div className="flex min-h-ctl-sm items-center justify-between gap-3">
-        <p
-          aria-live="polite"
-          className="min-w-0 text-muted-foreground text-support"
-          role="status"
-        >
-          {countText ?? " "}
-        </p>
-        <RefreshButton className="shrink-0" onClick={handleReload} />
-      </div>
-
       {open?.standalone ? (
-        <Card className="gap-0 py-0">
-          <div className="p-(--card-spacing)">
-            <StockCommandPanel
-              action={open.action}
-              key={`${open.target.variantId}-${open.action}`}
-              local={offlineWorkspace ?? undefined}
-              onBalance={applyBalance}
-              onClose={handleClose}
-              onInformCost={handleInformCost}
-              onReloadList={reload}
-              organizationId={organizationId}
-              requestedQuantity={open.quantity}
-              standalone
-              target={open.target}
-              today={today}
-            />
-          </div>
-        </Card>
+        <Block variant="plain">
+          <StockCommandPanel
+            action={open.action}
+            key={`${open.target.variantId}-${open.action}`}
+            local={offlineWorkspace ?? undefined}
+            onBalance={applyBalance}
+            onClose={handleClose}
+            onInformCost={handleInformCost}
+            onReloadList={reload}
+            organizationId={organizationId}
+            requestedQuantity={open.quantity}
+            standalone
+            target={open.target}
+            today={today}
+          />
+        </Block>
       ) : null}
 
-      {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
-      {view.kind === "error" ? (
-        <Alert variant="destructive">
+      {more.refreshFailed ? (
+        <Alert variant="warning">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {view.message}
+            {LIST_REFRESH_FAILED_TEXT}
             <Button
+              onBlur={focus.onBlur}
               onClick={handleReload}
+              onFocus={focus.onFocus}
               size="sm"
               type="button"
               variant="link"
@@ -481,60 +489,84 @@ export function InventoryPage() {
           </AlertDescription>
         </Alert>
       ) : null}
-      {view.kind === "empty" ? (
-        <StateCard>
-          {view.message}
-          {view.showCatalogLink ? (
-            <>
-              {" "}
-              <a className={STANDALONE_LINK} href="/products">
-                Ir para Produtos
-              </a>
-            </>
-          ) : null}
-        </StateCard>
+      {view.kind === "error" ? (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {view.message}
+            <Button
+              onBlur={focus.onBlur}
+              onClick={handleReload}
+              onFocus={focus.onFocus}
+              size="sm"
+              type="button"
+              variant="link"
+            >
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
-      {view.kind === "ready" ? (
-        <Card className="gap-0 py-0">
-          <ul
-            aria-label="Saldos por variante"
-            className="divide-y divide-border"
+      {view.kind === "empty" && view.showCatalogLink ? (
+        <EmptyState
+          afterRead
+          icon={PackageIcon}
+          support={STOCK_NO_VARIANTS_SUPPORT}
+          title={STOCK_NO_VARIANTS_TITLE}
+        >
+          <a
+            className={buttonVariants({ variant: "outline" })}
+            href="/products"
           >
-            {view.rows.map((row) => (
-              <StockItem
-                canOpenProduct={canOpenProduct}
-                key={row.id}
-                onOpen={handleOpen}
-                otherPanelOpen={
-                  panelMounted &&
-                  open !== null &&
-                  (open.standalone || open.target.variantId !== row.id)
-                }
-                panelOpen={
-                  open?.standalone === false && open.target.variantId === row.id
-                }
-                row={row}
-              >
-                {open?.standalone === false &&
-                open.target.variantId === row.id ? (
-                  <StockCommandPanel
-                    action={open.action}
-                    key={`${open.target.variantId}-${open.action}`}
-                    local={offlineWorkspace ?? undefined}
-                    onBalance={applyBalance}
-                    onClose={handleClose}
-                    onInformCost={handleInformCost}
-                    onReloadList={reload}
-                    organizationId={organizationId}
-                    target={open.target}
-                    today={today}
-                  />
-                ) : null}
-              </StockItem>
-            ))}
-          </ul>
-        </Card>
+            Ir para Produtos
+          </a>
+        </EmptyState>
       ) : null}
+      {framedState === null ? null : (
+        <ListBlock
+          count={countText ?? ""}
+          emptyNotice={frameNotice(view)}
+          skeleton={ROW_SKELETON}
+          state={framedState}
+          title={LIST_TITLE}
+        >
+          {view.kind === "ready"
+            ? view.rows.map((row) => (
+                <StockItem
+                  canOpenProduct={canOpenProduct}
+                  key={row.id}
+                  onOpen={handleOpen}
+                  otherPanelOpen={
+                    panelMounted &&
+                    open !== null &&
+                    (open.standalone || open.target.variantId !== row.id)
+                  }
+                  panelOpen={
+                    open?.standalone === false &&
+                    open.target.variantId === row.id
+                  }
+                  row={row}
+                >
+                  {open?.standalone === false &&
+                  open.target.variantId === row.id ? (
+                    <StockCommandPanel
+                      action={open.action}
+                      key={`${open.target.variantId}-${open.action}`}
+                      local={offlineWorkspace ?? undefined}
+                      onBalance={applyBalance}
+                      onClose={handleClose}
+                      onInformCost={handleInformCost}
+                      onReloadList={reload}
+                      organizationId={organizationId}
+                      target={open.target}
+                      today={today}
+                    />
+                  ) : null}
+                </StockItem>
+              ))
+            : null}
+        </ListBlock>
+      )}
 
       {more.error ? (
         <Alert variant="destructive">
@@ -545,7 +577,9 @@ export function InventoryPage() {
         <Button
           className="justify-self-start"
           disabled={more.busy}
+          onBlur={focus.onBlur}
           onClick={loadMore}
+          onFocus={focus.onFocus}
           type="button"
           variant="outline"
         >

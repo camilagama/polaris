@@ -8,11 +8,7 @@ import {
 } from "../src/expense-repository";
 import { createGoal } from "../src/goal-repository";
 import { inventoryCount, receiveStock } from "../src/inventory-repository";
-import {
-  archiveProduct,
-  createProduct,
-  deleteProduct,
-} from "../src/product-repository";
+import { archiveProduct, createProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
@@ -34,6 +30,7 @@ import {
   isLocalGateHost,
   neonDisposableHostPattern,
 } from "./gate-hosts";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 
 /**
  * Operator script: fills a QA store
@@ -613,6 +610,7 @@ export async function seedQaStore(
         authenticatedUserId: options.userId,
         capability,
         requestedOrganizationId: options.organizationId,
+        requireLegalAcceptance: false,
       },
       operation
     );
@@ -634,7 +632,7 @@ export async function seedQaStore(
     })
   );
   await as("product:update", (tx, identity) =>
-    deleteProduct(tx, identity, {
+    archiveThenDeleteProduct(tx, identity, {
       expectedVersion: catalog.deleted.version,
       id: catalog.deleted.productId,
       requestId: null,

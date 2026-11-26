@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
+import { InsetBlock } from "@/ui/inset-block";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
@@ -59,21 +60,20 @@ function ConfiguredVariants({
       </div>
       <ul aria-label="Variantes cadastradas" className="grid gap-2">
         {configuration.variants.map((variant, index) => (
-          <li
-            className="flex items-baseline gap-3 rounded-lg bg-muted px-3 py-2"
-            key={variant.id}
-          >
-            <span className="text-muted-foreground text-support tabular-nums">
-              {index + 1}
-            </span>
-            <span className="min-w-0 [overflow-wrap:anywhere]">
-              {variant.values
-                .map(
-                  (value) =>
-                    `${optionLabel(value.optionName)}: ${value.optionValueName}`
-                )
-                .join(" · ")}
-            </span>
+          <li key={variant.id}>
+            <InsetBlock className="flex items-baseline gap-3 px-3 py-2">
+              <span className="text-muted-foreground text-support tabular-nums">
+                {index + 1}
+              </span>
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                {variant.values
+                  .map(
+                    (value) =>
+                      `${optionLabel(value.optionName)}: ${value.optionValueName}`
+                  )
+                  .join(" · ")}
+              </span>
+            </InsetBlock>
           </li>
         ))}
       </ul>

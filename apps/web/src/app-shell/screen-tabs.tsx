@@ -3,11 +3,9 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useId,
-  useRef,
   useState,
 } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { SectionTabContent, SectionTabs } from "@/ui/section-tabs";
 import { UnsentWorkScope, useUnsentWorkScope } from "../lib/unsent-work";
 import { replaceAddress, useAddress } from "./address";
 import { ErrorBoundary } from "./error-boundary";
@@ -19,7 +17,7 @@ import {
   type TabScreenId,
 } from "./navigation-model";
 import { PageLoading } from "./page-loading";
-import { TabPanelScope } from "./screen-title";
+import { TabPanelScope, type TitleBack, TitleLine } from "./screen-title";
 
 /** The links into a tab: the goals of the Início, a new product or one of them, the return of a checkout, the part of Despesas. */
 const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno", "ver"];
@@ -74,209 +72,15 @@ export interface TabPanel {
   value: string;
 }
 
-/** A named set of tabs drawn as its own row: "Da loja" and "Da conta" in Configurações. */
-export interface TabGroup {
-  label: string;
-  values: readonly string[];
-}
-
 /**
  * A phone's way into the tabs of a screen: no strip, but a `menu` of rows that opens each tab, and, with a tab open,
- * `back` above its screen to return to the menu. `showMenu` says the menu is what is on screen; the screens kept for
+ * `back`, the arrow before the title, to return to the menu. `showMenu` says the menu is what is on screen; the screens kept for
  * work typed and not sent stay drawn, hidden, while it is.
  */
 export interface TabPhone {
-  back: ReactNode;
+  back: TitleBack;
   menu: ReactNode;
   showMenu: boolean;
-}
-
-/** What the edges of the list hide: tabs to the left (already passed) and to the right (not reached yet). */
-interface HiddenEdges {
-  end: boolean;
-  start: boolean;
-}
-
-/** The room kept between the open tab and the edge of the list, so it is not under the fade that warns of more tabs. */
-const EDGE_ROOM = 32;
-const EDGE_FADE =
-  "pointer-events-none absolute inset-y-1.5 z-10 w-6 from-background to-transparent";
-
-/**
- * The list of tabs of a screen, on one line: on a narrow phone it scrolls sideways (Configurações has six), with room
- * above and below for the 44 px touch area of each tab; `grouped` draws it in named rows instead. The tab that opened
- * is brought into view, again when the set of tabs or the way they are drawn changes (`signature`), and a fade at the
- * edge that hides tabs says there are more to reach.
- */
-export function ScreenTabList({
-  children,
-  grouped = false,
-  label,
-  signature = "",
-  value,
-}: {
-  children: ReactNode;
-  /** The tabs come in rows (`ScreenTabGroup`) instead of one segmented strip. */
-  grouped?: boolean;
-  label: string;
-  /** Changes when the tabs of the list change (one more, one less): the open tab is placed again. */
-  signature?: string;
-  value: string;
-}) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const [hidden, setHidden] = useState<HiddenEdges>({
-    end: false,
-    start: false,
-  });
-  const measure = useCallback(() => {
-    const list = scroller.current;
-    if (!list) {
-      return;
-    }
-    const start = list.scrollLeft > 1;
-    const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
-    setHidden((current) =>
-      current.start === start && current.end === end ? current : { end, start }
-    );
-  }, []);
-  // the scroll is the list's own: `scrollIntoView` would also move the page; no animation (movement is opacity only)
-  useEffect(() => {
-    const list = scroller.current;
-    const active = list?.querySelector<HTMLElement>(
-      `[data-value="${CSS.escape(value)}"]`
-    );
-    if (list && active) {
-      const box = active.getBoundingClientRect();
-      const area = list.getBoundingClientRect();
-      if (box.left < area.left + EDGE_ROOM) {
-        list.scrollLeft -= area.left + EDGE_ROOM - box.left;
-      } else if (box.right > area.right - EDGE_ROOM) {
-        list.scrollLeft += box.right - (area.right - EDGE_ROOM);
-      }
-    }
-    measure();
-  }, [measure, signature, value]);
-  useEffect(() => {
-    const list = scroller.current;
-    if (!list || typeof ResizeObserver === "undefined") {
-      return;
-    }
-    const observer = new ResizeObserver(measure);
-    observer.observe(list);
-    return () => observer.disconnect();
-  }, [measure]);
-  return (
-    <div className="relative -my-1.5 max-w-full">
-      <div
-        className="overflow-x-auto py-1.5 [scrollbar-width:none]"
-        onScroll={measure}
-        ref={scroller}
-      >
-        <TabsList
-          aria-label={label}
-          className={
-            grouped
-              ? "h-auto w-full flex-col items-start gap-3 bg-transparent p-0"
-              : "justify-start"
-          }
-        >
-          {children}
-        </TabsList>
-      </div>
-      {hidden.start ? (
-        <span
-          aria-hidden="true"
-          className={`${EDGE_FADE} left-0 bg-linear-to-r`}
-          data-tabs-edge="start"
-        />
-      ) : null}
-      {hidden.end ? (
-        <span
-          aria-hidden="true"
-          className={`${EDGE_FADE} right-0 bg-linear-to-l`}
-          data-tabs-edge="end"
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * One row of a grouped list: the name of the group as plain text, then its tabs on the muted strip. Neither a heading nor
- * a `role="group"` is allowed among the children of a `tablist` (axe, `aria-required-children`), so the name is text a
- * screen reader reads in browse mode, and each tab of the row points at it with `aria-describedby` (`ScreenTabTrigger`),
- * which is what says the group when the arrows land on a tab. The row owns no tab stop of its own (`role="none"`): the
- * arrows keep walking the whole list, as they do in the single strip, and the name of each tab is the same.
- */
-function ScreenTabGroup({
-  children,
-  label,
-  nameId,
-}: {
-  children: ReactNode;
-  label: string;
-  nameId: string;
-}) {
-  return (
-    <div className="flex max-w-full items-center gap-3" role="none">
-      <span
-        className="min-w-16 shrink-0 text-muted-foreground text-xs"
-        data-tabs-group={label}
-        id={nameId}
-      >
-        {label}
-      </span>
-      <div
-        className="inline-flex h-ctl-md items-center rounded-lg bg-muted p-0.75"
-        role="none"
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/** The tabs of the list, row by row, the rows with no tab to show left out (not even their name). */
-export function groupedTabsOf<Tab extends { value: string }>(
-  tabs: readonly Tab[],
-  groups: readonly TabGroup[]
-): { label: string; tabs: Tab[] }[] {
-  return groups
-    .map((group) => ({
-      label: group.label,
-      tabs: tabs.filter((tab) => group.values.includes(tab.value)),
-    }))
-    .filter((group) => group.tabs.length > 0);
-}
-
-/**
- * A tab of the list, with its name in the address. `reserved` holds the place of a tab whose condition the server has
- * not answered yet (it is off and busy until then), so the tabs beside it do not move when the answer arrives.
- */
-export function ScreenTabTrigger({
-  children,
-  groupNameId,
-  reserved = false,
-  value,
-}: {
-  children: ReactNode;
-  /** The id of the name of the row this tab is in, when the list is drawn in named rows. */
-  groupNameId?: string | undefined;
-  reserved?: boolean;
-  value: string;
-}) {
-  return (
-    <TabsTrigger
-      aria-busy={reserved || undefined}
-      aria-describedby={groupNameId}
-      className="flex-none"
-      data-value={value}
-      disabled={reserved}
-      value={value}
-    >
-      {children}
-    </TabsTrigger>
-  );
 }
 
 /**
@@ -322,7 +126,7 @@ export function ScreenTabPanel({
 }) {
   const { Screen } = panel;
   return (
-    <TabsContent
+    <SectionTabContent
       className={className}
       keepMounted={keepMounted}
       value={panel.value}
@@ -336,7 +140,7 @@ export function ScreenTabPanel({
           </ErrorBoundary>
         </TabPanelScope>
       </PanelUnsentWork>
-    </TabsContent>
+    </SectionTabContent>
   );
 }
 
@@ -370,7 +174,6 @@ function useKeptPanels(): [
  * listed off, in their place, with no panel.
  */
 export function ScreenTabs({
-  groups,
   label,
   panels,
   phone,
@@ -378,8 +181,6 @@ export function ScreenTabs({
   screen,
   title,
 }: {
-  /** Draws the tabs in named rows instead of one strip (Configurações, from 760 px). */
-  groups?: readonly TabGroup[] | undefined;
   /** The name of the list of tabs, for a screen reader. */
   label: string;
   panels: readonly TabPanel[];
@@ -396,51 +197,27 @@ export function ScreenTabs({
   });
   const [kept, hold] = useKeptPanels();
   const tabs = listedTabs(screen, available, reserved);
-  const namesId = useId();
-  const phoneHead = phone?.showMenu ? phone.menu : phone?.back;
-  const trigger = (groupNameId?: string) => (tab: (typeof tabs)[number]) => (
-    <ScreenTabTrigger
-      groupNameId={groupNameId}
-      key={tab.value}
-      reserved={tab.reserved}
-      value={tab.value}
-    >
-      {tab.label}
-    </ScreenTabTrigger>
-  );
+  const phoneMenu = phone?.showMenu ? phone.menu : null;
+  const phoneBack = phone && !phone.showMenu ? phone.back : undefined;
+  // one tab alone has nothing to choose between: the screen shows its content under the title
+  const showStrip = !phone && tabs.length > 1;
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <h1 className="text-title">{title}</h1>
-      <Tabs
-        className="min-w-0 gap-5"
+      {phoneBack ? (
+        <TitleLine back={phoneBack}>
+          <h1 className="text-title">{title}</h1>
+        </TitleLine>
+      ) : (
+        <h1 className="text-title">{title}</h1>
+      )}
+      <SectionTabs
+        hideList={!showStrip}
+        label={label}
+        leading={phone ? phoneMenu : null}
         onValueChange={select}
+        tabs={tabs}
         value={phone?.showMenu ? "" : value}
       >
-        {phone ? (
-          phoneHead
-        ) : (
-          <ScreenTabList
-            grouped={groups !== undefined}
-            label={label}
-            signature={`${groups === undefined ? "strip" : "rows"}:${tabs.map((tab) => tab.value).join()}`}
-            value={value}
-          >
-            {groups === undefined
-              ? tabs.map(trigger())
-              : groupedTabsOf(tabs, groups).map((group, index) => {
-                  const nameId = `${namesId}-${index}`;
-                  return (
-                    <ScreenTabGroup
-                      key={group.label}
-                      label={group.label}
-                      nameId={nameId}
-                    >
-                      {group.tabs.map(trigger(nameId))}
-                    </ScreenTabGroup>
-                  );
-                })}
-          </ScreenTabList>
-        )}
         {panels.map((panel) => (
           <ScreenTabPanel
             active={!phone?.showMenu && panel.value === value}
@@ -450,7 +227,7 @@ export function ScreenTabs({
             panel={panel}
           />
         ))}
-      </Tabs>
+      </SectionTabs>
     </div>
   );
 }

@@ -31,6 +31,7 @@ import {
   archiveCustomer,
   createCustomer,
   findPossibleCustomerDuplicates,
+  getCustomer,
   listCustomers,
   restoreCustomer,
   updateCustomer,
@@ -121,6 +122,7 @@ import {
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
   ProductDeletedError,
+  ProductDeleteRateLimitedError,
   ProductDescriptionError,
   ProductIdConflictError,
   ProductLifecycleError,
@@ -233,6 +235,7 @@ import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
   UnsupportedConfirmSaleCommandVersionError,
 } from "@polaris/domain/sales/confirm-sale";
@@ -283,6 +286,10 @@ import {
   type readPeriodSummary,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
+import type {
+  readActivationPreference,
+  setActivationTips,
+} from "@polaris/db/activation-preference";
 import type { DataExportRepository } from "./data-export-handlers";
 import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
@@ -323,6 +330,7 @@ import {
 } from "./billing-handlers";
 import { createExpenseRpcHandlers } from "./expense-handlers";
 import { createDataExportRpcHandlers } from "./data-export-handlers";
+import { createEmailPreferenceRpcHandlers } from "./email-preference-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
 import { createPlanRpcHandlers } from "./plan-handlers";
 import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
@@ -389,11 +397,13 @@ interface RpcRouterDependencies {
   /** The one use case of `product.create` (the sync command runs it too); tests give a fake one. */
   createProductWithOpeningStock: typeof createProductWithOpeningStock;
   createSaleReturn: typeof createSaleReturn;
+  setActivationTips: typeof setActivationTips;
   expenseRepository: Partial<ExpenseRepository>;
   dataExportRepository: Partial<DataExportRepository>;
   goalRepository: Partial<GoalRepository>;
   planRepository: Partial<PlanRepository>;
   publicCatalogRepository: Partial<PublicCatalogRepository>;
+  readActivationPreference: typeof readActivationPreference;
   readDailySales: typeof readDailySales;
   readPeriodSummary: typeof readPeriodSummary;
   readAcceptedLegalVersions: typeof readAcceptedLegalVersions;
@@ -401,6 +411,7 @@ interface RpcRouterDependencies {
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
   findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
+  getCustomer: typeof getCustomer;
   getInventoryBalance: typeof getInventoryBalance;
   getProductVariants: typeof getProductVariants;
   getSale: typeof getSale;
@@ -515,10 +526,12 @@ function customerReadModel(customer: {
   createdAt: Date;
   email: string | null;
   id: string;
+  lastPurchaseOn?: string | null;
   name: string;
   notes: string | null;
   organizationId: string;
   phone: string | null;
+  summary?: NonNullable<CustomerReadModel["summary"]>;
   updatedAt: Date;
   version: number;
 }): CustomerReadModel {
@@ -535,6 +548,10 @@ function customerReadModel(customer: {
     status: customer.archivedAt === null ? "active" : "archived",
     updatedAt: customer.updatedAt.toISOString(),
     version: customer.version,
+    ...(customer.lastPurchaseOn === undefined
+      ? {}
+      : { lastPurchaseOn: customer.lastPurchaseOn }),
+    ...(customer.summary === undefined ? {} : { summary: customer.summary }),
   };
 }
 
@@ -659,7 +676,7 @@ function initialOrganizationErrorCode(
 function clientRpcError(
   code: "BAD_REQUEST" | "CONFLICT" | "NOT_FOUND",
   error: unknown
-): ORPCError<typeof code, { reason: string } | undefined> {
+): ORPCError<typeof code, { part?: number; reason: string } | undefined> {
   const reason =
     typeof error === "object" &&
     error !== null &&
@@ -667,9 +684,20 @@ function clientRpcError(
     typeof error.code === "string"
       ? error.code
       : undefined;
+  // a payment profile refused for one part of a sale names that part (its position), never the profile
+  const part =
+    typeof error === "object" &&
+    error !== null &&
+    "part" in error &&
+    typeof error.part === "number"
+      ? error.part
+      : undefined;
   return new ORPCError(code, {
     cause: error,
-    data: reason === undefined ? undefined : { reason },
+    data:
+      reason === undefined
+        ? undefined
+        : { reason, ...(part === undefined ? {} : { part }) },
   });
 }
 
@@ -857,6 +885,7 @@ const badRequestRpcErrors = [
   [
     InvalidConfirmSaleCommandError,
     SaleOccurredInFutureError,
+    SalePaymentSplitMismatchError,
     InvalidSaleCustomerLinkError,
     InvalidSaleCancellationError,
     InvalidSaleReturnError,
@@ -974,6 +1003,19 @@ const notFoundRpcErrors = [
   [DeviceNotFoundError, OfflineGrantNotFoundError],
 ] as const;
 
+function productDeleteRateLimitedRpcError(
+  error: ProductDeleteRateLimitedError
+) {
+  return new ORPCError("TOO_MANY_REQUESTS", {
+    cause: error,
+    data: {
+      limit: error.limit,
+      reason: error.code,
+      retryAfterSeconds: error.retryAfterSeconds,
+    },
+  });
+}
+
 async function productLifecycleCommand(
   context: PolarisRpcContext,
   input: ProductLifecycleInput,
@@ -999,6 +1041,9 @@ async function productLifecycleCommand(
       product: productReadModel(result.product),
     };
   } catch (error) {
+    if (error instanceof ProductDeleteRateLimitedError) {
+      throw productDeleteRateLimitedRpcError(error);
+    }
     return toRpcError(error);
   }
 }
@@ -1039,6 +1084,7 @@ function createCustomerRpcHandlers(
       | "archiveCustomer"
       | "createCustomer"
       | "findPossibleCustomerDuplicates"
+      | "getCustomer"
       | "listCustomers"
       | "restoreCustomer"
       | "updateCustomer"
@@ -1053,12 +1099,31 @@ function createCustomerRpcHandlers(
   const findTenantCustomerDuplicates =
     dependencies.findPossibleCustomerDuplicates ??
     findPossibleCustomerDuplicates;
+  const getTenantCustomer = dependencies.getCustomer ?? getCustomer;
   const listTenantCustomers = dependencies.listCustomers ?? listCustomers;
   const restoreTenantCustomer = dependencies.restoreCustomer ?? restoreCustomer;
   const updateTenantCustomer = dependencies.updateCustomer ?? updateCustomer;
   const tenantRequest = dependencies.withTenantRequestContext;
   const implementContract =
     implement(polarisContract).$context<PolarisRpcContext>();
+
+  const get = implementContract.customer.get.handler(
+    async ({ context, input }) => {
+      try {
+        const customer = await tenantRequest({
+          bindings: context.bindings,
+          capability: "customer:update",
+          operation: (transaction, identity) =>
+            getTenantCustomer(transaction, identity, input.id),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return customerReadModel(customer);
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
 
   const list = implementContract.customer.list.handler(
     async ({ context, input }) => {
@@ -1217,6 +1282,7 @@ function createCustomerRpcHandlers(
     archive,
     create,
     findPossibleDuplicates,
+    get,
     list,
     restore,
     update,
@@ -1525,6 +1591,12 @@ export function createRpcRouter(
     recordLegalAcceptance: overrides.recordLegalAcceptance,
     toRpcError,
     withAuthenticatedRequestContext: authenticatedRequest,
+  });
+  const emailPreferenceHandlers = createEmailPreferenceRpcHandlers({
+    readPreference: overrides.readActivationPreference,
+    setTips: overrides.setActivationTips,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
   });
   const reportHandlers = createReportRpcHandlers({
     readDailySales: overrides.readDailySales,
@@ -2134,7 +2206,7 @@ export function createRpcRouter(
       return next();
     })
     .router({
-      account: accountHandlers,
+      account: { ...accountHandlers, ...emailPreferenceHandlers },
       billing: billingHandlers,
       category: { archive, create, delete: remove, list, rename, restore },
       customer: customerHandlers,

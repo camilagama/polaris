@@ -16,6 +16,7 @@ const AT = "2026-10-14T12:00:00.000Z";
 const PRODUCT_ID = "0199c2d0-0000-7000-8000-0000000000f1";
 const SHIRT = "0199c2d0-0000-7000-8000-0000000000b1";
 const SOCK = "0199c2d0-0000-7000-8000-0000000000b2";
+const UNPRICED = "0199c2d0-0000-7000-8000-0000000000b3";
 
 const products: LocalProductReadModel[] = [
   {
@@ -49,6 +50,16 @@ const variants: LocalVariantReadModel[] = [
     values: [{ optionName: "color", optionValueName: "Vermelha" }],
   },
 ];
+
+const unpricedVariant: LocalVariantReadModel = {
+  id: UNPRICED,
+  isDefault: false,
+  listPrice: null,
+  position: 2,
+  productId: PRODUCT_ID,
+  sku: "CAM-VD-M",
+  values: [{ optionName: "color", optionValueName: "Verde" }],
+};
 
 const recent = (
   n: number,
@@ -87,10 +98,19 @@ export class SaleLabServer extends FakeStockServer {
     return Promise.resolve(recentSalesWindow);
   }
 
-  constructor() {
+  private readonly catalog: LocalVariantReadModel[];
+
+  /** `withUnpricedVariant` adds a variant with no list price (Verde), which the other screens of the lab do not list. */
+  constructor(withUnpricedVariant = false) {
     super();
+    this.catalog = withUnpricedVariant
+      ? [...variants, unpricedVariant]
+      : variants;
     this.seed(SHIRT, 5, 1);
     this.seed(SOCK, 20, 1);
+    if (withUnpricedVariant) {
+      this.seed(UNPRICED, 8, 1);
+    }
     const accept = this.push;
     // A sale priced with a profile version that is not the server's is refused, like the real server.
     this.push = (input) => {
@@ -151,7 +171,7 @@ export class SaleLabServer extends FakeStockServer {
     if (collection === "variants") {
       return Promise.resolve({
         nextAfterId: null,
-        rows: variants.filter(
+        rows: this.catalog.filter(
           (row) => !request.ids || request.ids.includes(row.productId)
         ) as unknown as LocalRows[K][],
       });

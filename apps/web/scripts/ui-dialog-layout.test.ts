@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FORM_BODY_CLASS,
   FORM_CLOSE_CLASS,
@@ -148,9 +148,21 @@ const fakePopup = () => {
   };
 };
 
+function stubFrames() {
+  vi.stubGlobal("requestAnimationFrame", (callback: () => void) =>
+    setTimeout(callback, 16)
+  );
+  vi.stubGlobal("cancelAnimationFrame", (id: number) =>
+    clearTimeout(id as unknown as NodeJS.Timeout)
+  );
+}
+
 describe("Dialog, segue a janela visível (teclado aberto)", () => {
+  beforeEach(stubFrames);
+
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("grava altura, topo e centro da parte visível, de novo a cada resize e scroll, e solta os ouvintes", () => {
@@ -202,6 +214,40 @@ describe("Dialog, segue a janela visível (teclado aberto)", () => {
       expect(count()).toBe(0);
     }
   );
+
+  it("passado o prazo da abertura, a rolagem sem nenhum gesto fica onde está", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {});
+    const { count, fire, popup, scroll } = fakePopup();
+    const cleanup = followVisualViewport(popup);
+    vi.advanceTimersByTime(399);
+    scroll.scrollTop = 29;
+    fire("scroll");
+    expect(scroll.scrollTop).toBe(0);
+    vi.advanceTimersByTime(1);
+    scroll.scrollTop = 29;
+    fire("scroll");
+    expect(scroll.scrollTop).toBe(0);
+    vi.advanceTimersByTime(16);
+    scroll.scrollTop = 29;
+    fire("scroll");
+    expect(scroll.scrollTop).toBe(29);
+    cleanup?.();
+    expect(count()).toBe(0);
+  });
+
+  it("fechar o diálogo antes do prazo, ou no quadro que o solta, cancela o temporizador", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {});
+    const { popup } = fakePopup();
+    followVisualViewport(popup)?.();
+    expect(vi.getTimerCount()).toBe(0);
+    const late = followVisualViewport(popup);
+    vi.advanceTimersByTime(400);
+    expect(vi.getTimerCount()).toBe(1);
+    late?.();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it("não devolve ao topo a rolagem que levou o foco a um campo", () => {
     vi.stubGlobal("window", {});

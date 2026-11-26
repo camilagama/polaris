@@ -10,6 +10,7 @@ import {
   type ClippedElement,
   expectReflowFont,
   findClipped,
+  HIDDEN_WARNING_DETAIL,
   openReflowViewport,
   skipOutsideChromium,
 } from "./reflow";
@@ -78,13 +79,29 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 /** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise and never an excuse. */
 const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
-    clientWidth: 207,
+    clientWidth: 276,
     reason:
-      'no formulário de Nova despesa, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (207 px) e o campo não quebra a linha',
-    screens: ["despesas erros nos campos"],
-    scrollWidth: 219,
+      'no Resultado sem custo conhecido, o cartão "Resultado estimado" tem 276 px e a linha de apoio única (o sinal "Incompleta" e a causa, que não cabe e fica invisível) deixa a frase para o leitor de tela fora da caixa: o conteúdo mede 333 px, 57 px além da borda direita do cartão',
+    screens: ["resultado sem custo conhecido"],
+    scrollWidth: 333,
     selector:
-      'div[data-slot="field"] > button#expense-categoryId > span[data-slot="select-value"]',
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
+  },
+  {
+    clientWidth: 212,
+    reason:
+      'em Configurações no celular, dentro de uma aba, o título "Configurações" (221 px, uma palavra só) divide a linha com a seta de voltar e passa 9 px da borda direita da coluna',
+    screens: [
+      "assinatura oferta com Pix",
+      "assinatura Pix aguardando o banco",
+      "assinatura Pro ativo",
+      "assinatura em teste, com o pé do menu",
+      "assinatura cancelar a renovação",
+      "assinatura carência com o aviso",
+      "seus dados com uma cópia pronta e um pedido em andamento",
+    ],
+    scrollWidth: 221,
+    selector: "main#conteudo > h1",
   },
   {
     clientWidth: 272,
@@ -96,15 +113,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
-    clientWidth: 207,
-    reason:
-      'no diálogo da regra recorrente, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (207 px)',
-    screens: ["despesas recorrentes e o diálogo da regra"],
-    scrollWidth: 219,
-    selector:
-      'div[data-slot="field"] > button#expense-rule-categoryId > span[data-slot="select-value"]',
-  },
-  {
     clientWidth: 272,
     reason:
       'na aba Categorias, o cartão tem 272 px e o conteúdo (o "Mostrar categorias arquivadas" e a lista de categorias, com Renomear e Arquivar) mede 291 px: passa 19 px da borda direita do cartão',
@@ -114,44 +122,11 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
-    clientWidth: 207,
-    reason:
-      'no diálogo da categoria, o campo Grupo mostra "Operacional/Administrativa" cortado: o texto (265 px) não cabe na caixa do campo (207 px)',
-    screens: ["despesas categorias e o diálogo da categoria"],
-    scrollWidth: 265,
-    selector:
-      'div[data-slot="field"] > button#expense-new-category-group > span[data-slot="select-value"]',
-  },
-  {
-    clientWidth: 272,
-    reason:
-      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
-    screens: ["ajuda"],
-    scrollWidth: 290,
-    selector: 'main#conteudo > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 272,
-    reason:
-      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
-    screens: ["ajuda"],
-    scrollWidth: 290,
-    selector: 'main#conteudo > div[data-slot="card"]',
-  },
-  {
     clientWidth: 320,
     reason:
-      "a página de Categorias rola 35 px para o lado; na medida, a faixa de abas Ativas, Arquivadas e Removidas mede 331 px e o título e o texto de apoio vão até 355 px; as abas têm de caber em 272 px ou rolar dentro da faixa",
-    screens: ["categorias lista", "categorias remover"],
-    scrollWidth: 355,
-    selector: "html",
-  },
-  {
-    clientWidth: 320,
-    reason:
-      "no diálogo de produto, o conteúdo do corpo mede 366 px em 320 px e passa 46 px: a faixa de abas Dados, Variantes e Imagens vai até 342 px e a aba Imagens termina em 338 px, além da janela",
+      "no diálogo de produto, o conteúdo do corpo mede 342 px em 320 px e passa 22 px: o painel Variantes (as seções de opções e de combinações, com o formulário de cada uma) pede 318 px numa coluna de 272 px; a faixa de abas Dados, Variantes e Imagens rola dentro da própria caixa e já não alarga o corpo",
     screens: ["produtos variantes, opções e combinação"],
-    scrollWidth: 366,
+    scrollWidth: 342,
     selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
   },
   {
@@ -164,24 +139,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       "detalhe da venda trocar o cliente",
     ],
     scrollWidth: 274,
-    selector: 'main > section > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 320,
-    reason:
-      "no Detalhe da venda com o cancelamento revisado, a página rola 21 px para o lado (341 px de conteúdo em 320 px); a causa dentro da coluna não foi isolada",
-    screens: ["detalhe da venda cancelamento revisado"],
-    scrollWidth: 341,
-    selector: "html",
-  },
-  {
-    clientWidth: 272,
-    reason:
-      'na Assinatura, o cartão "Plano Pro" tem 272 px e o conteúdo da oferta mede 310 px: passa 38 px da borda direita do cartão',
-    screens: ["assinatura oferta com Pix"],
-    scrollWidth: 310,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
+    selector: 'main > div[data-slot="card-frame"]',
   },
   {
     clientWidth: 272,
@@ -248,10 +206,11 @@ const SETTINGS_LIST: Case = {
     await serve(page);
     await page.goto("/configuracoes");
     await expect(
-      page.getByRole("heading", { exact: true, level: 2, name: "Da loja" })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { exact: true, level: 2, name: "Da conta" })
+      page.getByRole("heading", {
+        exact: true,
+        level: 1,
+        name: "Configurações da loja",
+      })
     ).toBeVisible();
     await expect(
       page.getByRole("link", { exact: true, name: "Seus dados" })
@@ -316,10 +275,17 @@ const DATA_EXPORT: Case = {
         })
       )
     );
+    await page.route("**/rpc/account/emailPreference", (route) =>
+      route.fulfill(rpc({ sent: 2, tips: true }))
+    );
     await page.goto("/configuracoes?aba=seus-dados");
     await expect(
       page.getByRole("heading", { exact: true, level: 2, name: "Seus dados" })
     ).toBeVisible();
+    await expect(
+      page.getByRole("switch", { name: "Dicas para começar" })
+    ).toBeVisible();
+    await expect(page.getByText("Enviados até agora: 2 de 3.")).toBeVisible();
     await expect(
       page.getByRole("region", { name: "Suas cópias" })
     ).toContainText("dados.json");
@@ -328,6 +294,15 @@ const DATA_EXPORT: Case = {
 
 /** The cases of each screen of `screenKeys()` this file measures. */
 const COVERED: Readonly<Record<string, readonly Case[]>> = {
+  "account:aparelhos": states(
+    "aparelhos lista",
+    "aparelhos confirmação aberta"
+  ),
+  "account:senha": states(
+    "trocar senha",
+    "trocar senha atual errada",
+    "trocar senha conta do Google"
+  ),
   customers: states("clientes cliente parecido"),
   "dashboard:metas": states("resultado metas", "resultado nova meta com erro"),
   "dashboard:resultado": states(
@@ -349,17 +324,14 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "produtos lista",
     "produtos novo produto num passo só",
     "produtos variantes, opções e combinação",
-    "produtos imagens, remoção pedindo confirmação"
+    "produtos imagens, remoção pedindo confirmação",
+    "produtos excluir arquivado"
   ),
   "sale-detail": states(
     "detalhe da venda aberto",
     "detalhe da venda cancelamento revisado",
     "detalhe da venda cliente da venda",
     "detalhe da venda trocar o cliente"
-  ),
-  "settings:aparelhos": states(
-    "aparelhos lista",
-    "aparelhos confirmação aberta"
   ),
   "settings:assinatura": states(
     "assinatura oferta com Pix",
@@ -379,11 +351,6 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "perfis de pagamento erros nos campos"
   ),
   "settings:lista": [SETTINGS_LIST],
-  "settings:senha": states(
-    "trocar senha",
-    "trocar senha atual errada",
-    "trocar senha conta do Google"
-  ),
   "settings:seus-dados": [DATA_EXPORT],
 };
 
@@ -402,11 +369,11 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
 const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
   {
     "resultado gráfico de vendas e custos e a tabela": {
-      file: "dashboard.e2e.ts",
+      file: "dashboard/reflow-320.e2e.ts",
       test: "com a letra em 24 px, o gráfico lê inteiro, com a tabela dos dias invisível, sem rolagem lateral",
     },
     "resultado mês incompleto e gráfico de vendas": {
-      file: "dashboard.e2e.ts",
+      file: "dashboard/reflow-320.e2e.ts",
       test: "com a letra em 24 px, o R$ e o número de cada valor ficam na mesma linha",
     },
   };
@@ -422,7 +389,7 @@ const UNREACHABLE_AT_24: Readonly<Record<string, string>> = {};
 const EXCLUDED: Readonly<Record<string, string>> = {
   attention: "pendencias-reflow.e2e.ts",
   customers: "clientes-reflow.e2e.ts",
-  home: "home.e2e.ts",
+  home: "home/valores-e-ranking.e2e.ts",
   inventory: "estoque-reflow.e2e.ts",
   sale: "sale-item-reflow.e2e.ts",
   "sale-history": "historico-reflow.e2e.ts",
@@ -541,7 +508,10 @@ async function sweep(
     // biome-ignore lint/performance/noAwaitInLoops: one root at a time, the page is shared
     const found = await findClipped(locator, {
       allowScroll: SCROLLS_ON_PURPOSE.map(({ selector }) => selector),
-      skip,
+      skip:
+        skip === undefined
+          ? HIDDEN_WARNING_DETAIL
+          : `${skip},${HIDDEN_WARNING_DETAIL}`,
     });
     measured += found.measured;
     seen.push(
@@ -929,9 +899,44 @@ const insideDialog = (target: Locator) =>
     );
   });
 
-async function tabStop(page: Page) {
+/**
+ * The focus trap sends the focus from its guard back into the dialog in the next animation frame, so right after a Tab
+ * that wraps around, the focus is for a moment on a guard outside the dialog. A late frame, as on a loaded runner,
+ * makes that moment long enough to be seen: this delays every frame of the page by 150 ms (and the cancelling of one),
+ * so the test observes the window instead of depending on the speed of the machine. It goes in after the dialog is
+ * open and settled, so the measures of the opening are not made emptier by it.
+ */
+const delayFrames = (page: Page) =>
+  page.evaluate(() => {
+    const frame = window.requestAnimationFrame.bind(window);
+    const cancel = window.cancelAnimationFrame.bind(window);
+    const late = new Map<number, ReturnType<typeof setTimeout>>();
+    window.requestAnimationFrame = (callback) => {
+      const id = frame((time) => {
+        late.set(
+          id,
+          setTimeout(() => {
+            late.delete(id);
+            callback(time);
+          }, 150)
+        );
+      });
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+      cancel(id);
+      clearTimeout(late.get(id));
+      late.delete(id);
+    };
+  });
+
+async function tabStop(page: Page, dialog: Locator) {
   await page.keyboard.press("Tab");
-  const focused = page.locator(":focus");
+  const focused = dialog.locator(":focus");
+  await expect(
+    focused,
+    "the focus is back on a control of the dialog"
+  ).toHaveCount(1);
   expect(await insideDialog(focused), "the focused control is in view").toBe(
     true
   );
@@ -987,10 +992,11 @@ async function expectSmallDialogScrolls(
     element.scrollTop = 0;
   });
 
+  await delayFrames(page);
   const reached = new Set<string>();
   for (let step = 0; step < 6; step += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: one Tab after the other
-    reached.add(await tabStop(page));
+    reached.add(await tabStop(page, dialog));
   }
   expect([...reached]).toEqual(
     expect.arrayContaining([

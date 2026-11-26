@@ -11,19 +11,33 @@ import {
 } from "react";
 import { buttonVariants } from "@/ui/button";
 import { dialogEntries } from "@/ui/dialog-history";
+import { TextLink } from "@/ui/text-link";
 import { navigateInApp } from "../app-shell/address";
 import { tabHref } from "../app-shell/navigation-model";
+import { ARCHIVED_PRODUCTS_HREF } from "../catalog/products-link-model";
 import { canManageBilling } from "../lib/billing-access";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { leaveForReturn } from "../lib/kept-for-return";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { isPlainClick } from "../lib/plain-click";
+import { planRead } from "../lib/plan-read";
+import { isSigningOut } from "../lib/sign-out";
+import { isSessionOver } from "../offline/runtime/session-ended";
 import {
   LIMIT_ASK_OWNER,
   type LimitHelpView,
   type LimitSubject,
+  freeableLineText,
   limitHelpFor,
   limitUsageText,
+  nearLimitFor,
+  nearLimitProText,
+  type NearLimitSubject,
+  type NearLimitView,
+  nearLimitText,
 } from "./limit-help-model";
+import { rememberPlanNotice } from "./plan-notice";
 
 const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
@@ -33,6 +47,13 @@ const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
  */
 const LimitLeaveContext = createContext<(() => void) | null>(null);
 export const LimitLeaveScope = LimitLeaveContext.Provider;
+
+/**
+ * What "Ver arquivados" does where the list of Produtos is already the screen: shows "Arquivados" without leaving the
+ * page (the screen is not opened again by an address it already has). Elsewhere the link opens Produtos by its address.
+ */
+const ViewArchivedContext = createContext<(() => void) | null>(null);
+export const ViewArchivedScope = ViewArchivedContext.Provider;
 
 export interface LimitHelpState {
   clear: () => void;
@@ -123,16 +144,64 @@ export function useLimitFocus(
   return useCallback(() => setAsked((count) => count + 1), []);
 }
 
-/** A plain click: a new tab or window asked by a key or the middle button keeps the browser's own way. */
-export function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
-  return !(
-    event.defaultPrevented ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey
+/**
+ * The click of a link of the warning that leaves the place: inside the app, so nothing typed is lost; a dialog closes
+ * first and keeps its draft. A second tap while the first one is on its way does not run it twice.
+ */
+function useLeavingClick(
+  go: () => void
+): (event: MouseEvent<HTMLAnchorElement>) => void {
+  const leave = useContext(LimitLeaveContext);
+  const going = useRef<boolean>(false);
+  const latest = useRef(go);
+  latest.current = go;
+  return useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if (!isPlainClick(event)) {
+        return;
+      }
+      event.preventDefault();
+      if (going.current) {
+        return;
+      }
+      going.current = true;
+      leave?.();
+      // after the render that closed the dialog, and after the step back that takes its entry out of the history
+      window.setTimeout(() => {
+        dialogEntries().afterSteps(() => {
+          latest.current();
+          going.current = false;
+        });
+      }, 0);
+    },
+    [leave]
   );
+}
+
+const openSubscription = () => {
+  leaveForReturn();
+  navigateInApp(SUBSCRIPTION_HREF);
+};
+
+/** The click of "Conhecer o Pro": the Assinatura, with the draft kept. */
+function useProLinkClick(): (event: MouseEvent<HTMLAnchorElement>) => void {
+  return useLeavingClick(openSubscription);
+}
+
+/** The click of "Ver arquivados": the list of archived products, with the draft kept as the Pro link keeps it. */
+function useArchivedLinkClick(): (
+  event: MouseEvent<HTMLAnchorElement>
+) => void {
+  const viewArchived = useContext(ViewArchivedContext);
+  const go = useCallback(() => {
+    if (viewArchived) {
+      viewArchived();
+    } else {
+      leaveForReturn();
+      navigateInApp(ARCHIVED_PRODUCTS_HREF);
+    }
+  }, [viewArchived]);
+  return useLeavingClick(go);
 }
 
 /**
@@ -150,31 +219,7 @@ export function LimitHelp({
   /** Whether the limit's text is the one on screen: the help goes only with it. */
   shown?: boolean;
 }) {
-  const leave = useContext(LimitLeaveContext);
-  // a second tap while the first one is on its way does not open the Assinatura twice
-  const going = useRef<boolean>(false);
-  const handleClick = useCallback(
-    (event: MouseEvent<HTMLAnchorElement>) => {
-      if (!isPlainClick(event)) {
-        return;
-      }
-      event.preventDefault();
-      if (going.current) {
-        return;
-      }
-      going.current = true;
-      leave?.();
-      // after the render that closed the dialog, and after the step back that takes its entry out of the history
-      window.setTimeout(() => {
-        dialogEntries().afterSteps(() => {
-          leaveForReturn();
-          navigateInApp(SUBSCRIPTION_HREF);
-          going.current = false;
-        });
-      }, 0);
-    },
-    [leave]
-  );
+  const handleClick = useProLinkClick();
   if (help === null && pending && shown) {
     return (
       <span aria-hidden="true" className="mt-1 grid justify-items-start gap-2">
@@ -200,5 +245,201 @@ export function LimitHelp({
         <span>{LIMIT_ASK_OWNER}</span>
       )}
     </span>
+  );
+}
+
+/**
+ * The plan's warning of a cadastro screen (nearLimitFor): read when the screen opens, from the memory of the plan the
+ * screens share for 10 s (`planRead`), and again, fresh, when `version` of this screen changes (after the person saved
+ * something that changes the use). No read offline: a read that fails, or the connection going, takes the line away
+ * instead of leaving an old number. The latest read wins.
+ */
+export function useNearLimit(
+  subject: NearLimitSubject,
+  version = 0
+): NearLimitView | null {
+  return useNearLimitRead(subject, version).view;
+}
+
+/**
+ * `useNearLimit` plus whether the read of this store has answered (`settled`): not while offline, nor while the first
+ * read is on the way. A screen that keeps the line's space reads it to know when it can let the space go.
+ */
+export function useNearLimitRead(
+  subject: NearLimitSubject,
+  version = 0
+): { settled: boolean; view: NearLimitView | null } {
+  const { billingSelfService, organization, organizationId } =
+    useCurrentOrganization();
+  const online = useConnectionOnline();
+  const [read, setRead] = useState<{
+    organizationId: string;
+    view: NearLimitView | null;
+  } | null>(null);
+  const { role } = organization;
+  const askedVersion = useRef<number | null>(null);
+  const clearedAtLastRead = useRef(0);
+  useEffect(() => {
+    if (!online) {
+      planRead.clear();
+    }
+    if (!(online && canManageBilling(billingSelfService, role))) {
+      setRead(null);
+      return;
+    }
+    let current = true;
+    const fresh =
+      askedVersion.current !== null && askedVersion.current !== version;
+    askedVersion.current = version;
+    const since = clearedAtLastRead.current;
+    const clearedBefore = planRead.clearedAt;
+    clearedAtLastRead.current = clearedBefore;
+    planRead
+      .get(organizationId, { fresh, since })
+      .then((plan) => {
+        // the card of the foot of the menu takes this number instead of waiting for its own read; an answer that a
+        // write cleared on its way is older than that write and is not handed over
+        if (
+          planRead.clearedAt === clearedBefore &&
+          !(isSessionOver() || isSigningOut())
+        ) {
+          rememberPlanNotice(organizationId, plan);
+        }
+        if (current) {
+          setRead({
+            organizationId,
+            view: nearLimitFor({
+              billingSelfService,
+              canManageBilling: true,
+              plan,
+              subject,
+            }),
+          });
+        }
+      })
+      .catch(() => {
+        if (current) {
+          setRead({ organizationId, view: null });
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [billingSelfService, online, organizationId, role, subject, version]);
+  // a number read for another store is never shown for this one while its own read is on the way
+  const settled = online && read?.organizationId === organizationId;
+  return { settled, view: settled ? read.view : null };
+}
+
+/** How the second line ("N produtos arquivados sem estoque") shows: with its link, without it (already in Arquivados) or not. */
+export type FreeableLine = "hidden" | "link" | "plain";
+
+/**
+ * Whether the second line has its link where the warning is drawn: the screen that holds the list says it (in
+ * "Arquivados" there is no link to what is already on screen); the default is the link.
+ */
+const FreeableLineContext =
+  createContext<Exclude<FreeableLine, "hidden">>("link");
+export const FreeableLineScope = FreeableLineContext.Provider;
+export const useFreeableLine = () => useContext(FreeableLineContext);
+
+function FreeableNotice({
+  line,
+  text,
+}: {
+  line: Exclude<FreeableLine, "hidden">;
+  text: string;
+}) {
+  const handleClick = useArchivedLinkClick();
+  return (
+    <p
+      className="text-muted-foreground text-support"
+      data-near-limit-freeable=""
+    >
+      {text}
+      {line === "link" ? (
+        <>
+          {" "}
+          <TextLink
+            className="text-foreground"
+            href={ARCHIVED_PRODUCTS_HREF}
+            onClick={handleClick}
+          >
+            Ver arquivados
+          </TextLink>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/**
+ * The warning line, at the end of a block (never above what the person touches): supporting text, no icon, no
+ * background, no alert role, with "Conhecer o Pro" ending the sentence. A second paragraph, below, tells how many
+ * archived products with no stock deleting would free (`freeable`: where the person can act on it, never the Início).
+ * `hidden` is for when the line must not show although there is a view: the refusal's help is on screen (the two never
+ * go together), or the screen is still loading what sits above it or has no session. `holdSpace` is for a block that
+ * must not change size when the line goes: from 760 px the dialog box is centred, so it would move; below 760 px what
+ * sits under the line would move. While it is true and the line is gone (the connection went, or the first read of
+ * this store is on the way), the line's space stays, unseen and out of the reading order; the space goes when it turns
+ * false with no line, and it is never there for a line that was not shown. The second paragraph is not held: a block
+ * that holds space does not ask for it.
+ */
+export function NearLimitNotice({
+  freeable = "hidden",
+  hidden = false,
+  holdSpace = false,
+  view,
+}: {
+  freeable?: FreeableLine;
+  hidden?: boolean;
+  holdSpace?: boolean;
+  view: NearLimitView | null;
+}) {
+  const handleClick = useProLinkClick();
+  const [lastView, setLastView] = useState<NearLimitView | null>(view);
+  if (view !== null && view !== lastView) {
+    setLastView(view);
+  } else if (view === null && !holdSpace && lastView !== null) {
+    setLastView(null);
+  }
+  const held = holdSpace && view === null && !hidden;
+  const shown = held ? lastView : view;
+  if (shown === null || hidden) {
+    return null;
+  }
+  const sentences = [nearLimitText(shown), nearLimitProText(shown)]
+    .filter((sentence) => sentence !== null)
+    .join(" ");
+  const freeableText =
+    freeable === "hidden" || view === null ? null : freeableLineText(view);
+  const proLine = (
+    <p
+      aria-hidden={held ? true : undefined}
+      className={
+        held
+          ? "invisible text-muted-foreground text-support"
+          : "text-muted-foreground text-support"
+      }
+      data-near-limit={held ? undefined : shown.kind}
+    >
+      {sentences}{" "}
+      <TextLink
+        className="text-foreground"
+        href={SUBSCRIPTION_HREF}
+        onClick={handleClick}
+      >
+        Conhecer o Pro
+      </TextLink>
+    </p>
+  );
+  if (freeable === "hidden" || freeableText === null) {
+    return proLine;
+  }
+  return (
+    <div className="grid gap-3 touch:gap-6">
+      {proLine}
+      <FreeableNotice line={freeable} text={freeableText} />
+    </div>
   );
 }

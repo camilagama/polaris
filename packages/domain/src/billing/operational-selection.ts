@@ -1,4 +1,9 @@
-import { type BillingState, grantsPro, type PlanId } from "./entitlements";
+import {
+  accessInForceUntil,
+  type BillingState,
+  grantsPro,
+  type PlanId,
+} from "./entitlements";
 
 /**
  * Free Over Limit (plan PR82). An organization that leaves Pro holding more
@@ -38,11 +43,14 @@ export interface EpisodeFacts {
 /**
  * When the current "left Pro" episode began: the end of the Pro access (a lapse
  * not yet swept into the record counts from the same moment the sweep will
- * store), or what the record says once it is free. Null when nothing says: the
- * adaptation window is then treated as over, never as open.
+ * store; a trial's with its slack, `accessInForceUntil`), or what the record
+ * says once it is free. Null when nothing says: the adaptation window is then
+ * treated as over, never as open.
  */
 export function episodeStart(facts: EpisodeFacts): Date | null {
-  return grantsPro(facts.state) ? facts.accessEndsAt : facts.overLimitSince;
+  return grantsPro(facts.state)
+    ? accessInForceUntil(facts)
+    : facts.overLimitSince;
 }
 
 /**
@@ -74,10 +82,9 @@ export function episodeStartAfter(input: {
     // a free organization that is not over the limits has no episode to keep
     return null;
   }
-  if (grantsPro(input.before.state) && input.before.accessEndsAt) {
-    return input.before.accessEndsAt.getTime() < input.now.getTime()
-      ? input.before.accessEndsAt
-      : input.now;
+  const until = accessInForceUntil(input.before);
+  if (until) {
+    return until.getTime() < input.now.getTime() ? until : input.now;
   }
   return input.now;
 }

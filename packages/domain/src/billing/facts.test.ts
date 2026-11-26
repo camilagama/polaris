@@ -15,6 +15,7 @@ import {
   serializeBillingFact,
 } from "./facts";
 import { GRACE_DAYS, TRIAL_DAYS } from "./subscription-state";
+import { trialAccessEndsAt } from "./trial-access";
 
 const DAY = 86_400_000;
 const base = new Date("2026-10-14T12:00:00.000Z");
@@ -274,6 +275,62 @@ describe("what a fact cannot do", () => {
   });
 });
 
+describe("a trial waits for its first charge (AC-47)", () => {
+  // the trial of the first Gate 7 store, stored to end at `2026-11-17 13:46` in São Paulo
+  const brt = (local: string) => new Date(`${local}-03:00`);
+  const stored = brt("2026-11-17T13:46:00.000");
+  const trial = pro("trialing", stored);
+
+  it("keeps the trial, with access, after the stored end and through the night", () => {
+    for (const local of [
+      "2026-11-17T13:47:00.000",
+      "2026-11-17T17:30:00.000",
+      "2026-11-17T23:59:59.999",
+      "2026-11-18T05:59:00.000",
+      "2026-11-18T05:59:59.999",
+    ]) {
+      expect(dueTransition(trial, ctx(brt(local)))).toBeNull();
+    }
+  });
+
+  it("ends the trial at 06:00 of the next day when no charge was confirmed", () => {
+    for (const local of [
+      "2026-11-18T06:00:00.000",
+      "2026-11-18T06:01:00.000",
+    ]) {
+      expect(dueTransition(trial, ctx(brt(local), true))).toMatchObject({
+        record: { accessEndsAt: null, state: "free_over_limit" },
+        transition: "trial_ended_without_payment",
+      });
+    }
+  });
+
+  it("turns a charge confirmed inside the slack into a paid period, never through Free", () => {
+    for (const local of [
+      "2026-11-17T17:30:00.000",
+      "2026-11-18T05:59:00.000",
+    ]) {
+      const now = brt(local);
+      const periodEnd = brt("2026-12-18T00:00:00.000");
+      expect(dueTransition(trial, ctx(now))).toBeNull();
+      const result = applied(trial, succeeded(now, periodEnd), ctx(now));
+      expect(result.record).toMatchObject({
+        accessEndsAt: periodEnd,
+        state: "active",
+      });
+      expect(result.transition).toBe("payment_succeeded");
+    }
+  });
+
+  it("still ends the trial at once when the first charge fails", () => {
+    const now = brt("2026-11-17T17:30:00.000");
+    expect(applied(trial, failed(now), ctx(now, true)).record).toMatchObject({
+      accessEndsAt: null,
+      state: "free_over_limit",
+    });
+  });
+});
+
 describe("what time does by itself", () => {
   it("does nothing before the access ends, nor in a free state", () => {
     expect(dueTransition(pro("active", at(30)), ctx(at(29)))).toBeNull();
@@ -281,7 +338,10 @@ describe("what time does by itself", () => {
   });
 
   it("ends a trial nobody charged, ends a cancelled period, and gives an unrenewed one its grace", () => {
-    expect(dueTransition(pro("trialing", at(7)), ctx(at(7)))).toMatchObject({
+    expect(dueTransition(pro("trialing", at(7)), ctx(at(7)))).toBeNull();
+    expect(
+      dueTransition(pro("trialing", at(7)), ctx(trialAccessEndsAt(at(7))))
+    ).toMatchObject({
       record: { state: "free" },
       transition: "trial_ended_without_payment",
     });

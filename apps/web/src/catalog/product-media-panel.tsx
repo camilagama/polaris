@@ -23,9 +23,8 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
+import { CheckableOption } from "@/ui/checkable-option";
 import { Field, FieldDescription, FieldLegend, FieldSet } from "@/ui/field";
-import { Label } from "@/ui/label";
 import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
 import {
   listProductMedia,
@@ -39,8 +38,10 @@ import { useHoldSwap } from "../lib/unsent-work";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import {
   LimitHelp,
+  NearLimitNotice,
   useLimitFocus,
   useLimitHelp,
+  useNearLimitRead,
 } from "../subscription/limit-help";
 import {
   describeMediaFailure,
@@ -201,14 +202,13 @@ function VariantOption({
     [onToggle, variantId]
   );
   return (
-    <Label className="min-h-ctl-md rounded-md border border-border px-3">
-      <Checkbox
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={handleChange}
-      />
-      <span className="[overflow-wrap:anywhere]">{label}</span>
-    </Label>
+    <CheckableOption
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={handleChange}
+    >
+      {label}
+    </CheckableOption>
   );
 }
 
@@ -242,6 +242,9 @@ export function ProductMediaPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
+  // each upload or removal changes the use of the plan's images: the warning reads it again
+  const [usageVersion, setUsageVersion] = useState(0);
+  const nearLimit = useNearLimitRead("images", usageVersion);
   const [running, setRunning] = useState<RunningCommand | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replacementPending, setReplacementPending] = useState(false);
@@ -585,6 +588,7 @@ export function ProductMediaPanel({
         setSelectedVariantIds([]);
         setUploadCommandId(null);
         setReloadVersion((version) => version + 1);
+        setUsageVersion((version) => version + 1);
       } catch (cause: unknown) {
         failCommand("upload", cause);
       } finally {
@@ -700,6 +704,7 @@ export function ProductMediaPanel({
           setNotice(removedNotice(result.removed, position + 1));
           focusRequest.current = { type: "heading" };
         }
+        setUsageVersion((version) => version + 1);
         loadAssets(true);
       } catch (cause: unknown) {
         failCommand("remove", cause);
@@ -885,6 +890,11 @@ export function ProductMediaPanel({
             {uploadButtonLabel}
           </Button>
         </div>
+        <NearLimitNotice
+          hidden={error !== null && isImageLimitText(error)}
+          holdSpace={!nearLimit.settled}
+          view={nearLimit.view}
+        />
       </form>
 
       <section

@@ -11,7 +11,6 @@ import {
 } from "@polaris/domain/sales/sale-return";
 import { createDatabase } from "../src/client";
 import { receiveStock } from "../src/inventory-repository";
-import { deleteProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { getSale, listSales } from "../src/sale-query-repository";
 import {
@@ -27,6 +26,7 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -563,7 +563,7 @@ async function run() {
       tenantA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: removed.version,
           id: removed.productId,
         })
@@ -1466,7 +1466,6 @@ async function run() {
       await concurrent.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     await admin.pool.end();

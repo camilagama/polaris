@@ -1,5 +1,8 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { InvalidConfirmSaleCommandError } from "@polaris/domain/sales/confirm-sale";
+import {
+  InvalidConfirmSaleCommandError,
+  SalePaymentSplitMismatchError,
+} from "@polaris/domain/sales/confirm-sale";
 import { describe, expect, it } from "vitest";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { MemoryOutboxStorage } from "./outbox/memory-storage";
@@ -8,10 +11,12 @@ import {
   confirmedSales,
   createOfflineSale,
   discardPendingSale,
+  InvalidOfflinePaymentFormError,
   MissingSalePriceError,
   pendingSales,
   resubmitRejectedSale,
   UnknownLocalVariantError,
+  unitCountOf,
 } from "./sale-confirm";
 import { effectiveStock } from "./stock-commands";
 import { syncOutbox } from "./sync-runner";
@@ -120,6 +125,22 @@ async function setup() {
     });
   return { lease, outbox, sell, server, stockUp, sync, writer };
 }
+
+describe("the units of a sale the device kept", () => {
+  it("sums whole quantities and counts anything else as zero, never NaN", () => {
+    expect(unitCountOf([{ quantity: 2 }, { quantity: 3 }])).toBe(5);
+    expect(
+      unitCountOf([
+        { quantity: 2 },
+        {},
+        null,
+        { quantity: "4" },
+        { quantity: 1.5 },
+      ])
+    ).toBe(2);
+    expect(unitCountOf([])).toBe(0);
+  });
+});
 
 describe("selling offline", () => {
   it("queues one sale command with the list prices, the commercial time and the device's evidence", async () => {
@@ -261,8 +282,9 @@ describe("a sale through its states", () => {
       {
         code: null,
         commandId: command.commandId,
-        itemCount: 1,
+        lineCount: 1,
         state: "pending",
+        unitCount: 2,
       },
     ]);
     await outbox.markSending(command.commandId);
@@ -474,5 +496,124 @@ describe("a sale priced with a payment profile", () => {
       })
     ).rejects.toThrow("sale_not_profile_refused");
     expect((await outbox.snapshot()).commands).toHaveLength(1);
+  });
+});
+
+describe("a sale paid in parts, made offline", () => {
+  const parts = [
+    { amount: "40.00", method: "pix", paymentProfile: null },
+    {
+      amount: "60.00",
+      method: "debit_card",
+      paymentProfile: { expectedVersion: 2, id: uuid(601) },
+    },
+  ] as const;
+
+  it("queues the parts in the order given, each with its profile, and no single payment", async () => {
+    const { outbox, sell } = await setup();
+
+    const sale = await sell([{ quantity: 2, variantId: shirt }], {
+      payment: undefined,
+      payments: parts,
+    });
+
+    expect(sale.totalDue).toBe("100.00");
+    expect(sale.command.payload).toEqual({
+      adjustments: [],
+      items: [
+        {
+          chargedUnitPrice: "50.00",
+          listedUnitPrice: "50.00",
+          quantity: 2,
+          variantId: shirt,
+        },
+      ],
+      occurredAt: now.toISOString(),
+      payments: [
+        {
+          amount: "40.00",
+          anticipationRequested: false,
+          installmentPlan: null,
+          installments: null,
+          method: "pix",
+          paymentProfile: null,
+        },
+        {
+          amount: "60.00",
+          anticipationRequested: false,
+          installmentPlan: null,
+          installments: null,
+          method: "debit_card",
+          paymentProfile: { expectedVersion: 2, id: uuid(601) },
+        },
+      ],
+      recordedAt: now.toISOString(),
+    });
+    expect(Object.keys(sale.command.payload as object)).not.toContain(
+      "payment"
+    );
+    expect(await pendingSales(outbox)).toMatchObject([
+      { lineCount: 1, state: "pending", totalDue: "100.00", unitCount: 2 },
+    ]);
+  });
+
+  it("lists the methods of the parts in order for the panels, and none for a sale of one payment", async () => {
+    const { outbox, sell } = await setup();
+    await sell([{ quantity: 1, variantId: shirt }]);
+    await sell([{ quantity: 2, variantId: shirt }], {
+      payment: undefined,
+      payments: parts,
+    });
+    expect(
+      (await pendingSales(outbox)).map((sale) => sale.partMethods)
+    ).toEqual([null, ["pix", "debit_card"]]);
+  });
+
+  it("refuses both forms of payment, neither, or a sale-level profile next to parts, and queues nothing", async () => {
+    const { outbox, sell } = await setup();
+    const lines = [{ quantity: 2, variantId: shirt }];
+
+    await expect(sell(lines, { payments: parts })).rejects.toThrow(
+      InvalidOfflinePaymentFormError
+    );
+    await expect(sell(lines, { payment: undefined })).rejects.toThrow(
+      InvalidOfflinePaymentFormError
+    );
+    await expect(
+      sell(lines, {
+        payment: undefined,
+        paymentProfile: { expectedVersion: 2, id: uuid(601) },
+        payments: parts,
+      })
+    ).rejects.toThrow(InvalidOfflinePaymentFormError);
+    expect((await outbox.snapshot()).commands).toEqual([]);
+  });
+
+  it("refuses parts that do not add up to the total, or that break the contract, before queueing", async () => {
+    const { outbox, sell } = await setup();
+    const lines = [{ quantity: 2, variantId: shirt }];
+
+    await expect(
+      sell(lines, {
+        payment: undefined,
+        payments: [parts[0], { ...parts[1], amount: "59.99" }],
+      })
+    ).rejects.toThrow(SalePaymentSplitMismatchError);
+    await expect(
+      sell(lines, {
+        payment: undefined,
+        payments: [parts[0], parts[1], parts[0]],
+      })
+    ).rejects.toThrow(InvalidConfirmSaleCommandError);
+    await expect(
+      sell(lines, {
+        payment: undefined,
+        payments: [
+          { ...parts[0], amount: "0.00" },
+          { ...parts[1], amount: "100.00" },
+        ],
+      })
+    ).rejects.toThrow(InvalidConfirmSaleCommandError);
+    expect((await outbox.snapshot()).commands).toEqual([]);
   });
 });

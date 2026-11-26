@@ -84,6 +84,9 @@ export async function readActivationFunnel(
       `SET LOCAL statement_timeout = ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS}`,
       []
     );
+    // a read of ~120 ms of CPU does not pay back compiling it: its plan costs more than jit_above_cost (100,000), and
+    // the gate saw 178 functions compiled for ~100 ms of a 220 ms read, time that grows when the CPU is shared
+    await client.query("SET LOCAL jit = off", []);
     const { rows } = await client.query(
       // `clock_timestamp() AS at` is not read: a pooler that caches by the text of the statement cannot tell that a
       // user function writes, and with it the statement is one it will not answer from a copy (no read without its event)

@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
@@ -149,8 +150,9 @@ export const activationNotices = pgTable(
  * Who asked not to receive the e-mails sent on legitimate interest (ADR 0106, D8): the person and when, valid in every
  * store of that person. The row leaves with the account (foreign key in cascade); deleting it turns the e-mails back on.
  * Forced row security, no policy for the tenant. No runtime reads or writes it: the owner of the series reads it (the
- * candidates) and records it through `activation_record_opt_out` (migration 0129), the only thing the billing runtime
- * may call.
+ * candidates), records it through `activation_record_opt_out` (migration 0129), the only thing the billing runtime may
+ * call, and reads and changes it for the person's own session through `activation_email_preference` and
+ * `activation_set_tips` (migration 0134), which only the tenant runtime executes.
  */
 export const emailOptOuts = pgTable(
   "email_opt_outs",
@@ -177,11 +179,17 @@ export const emailOptOuts = pgTable(
       to: activationNoticeOwnerRole,
       using: sql`true`,
     }),
-    // only through activation_record_opt_out, the one way to record it
+    // only through activation_record_opt_out and activation_set_tips, the ways to record it
     pgPolicy("email_opt_outs_owner_insert", {
       for: "insert",
       to: activationNoticeOwnerRole,
       withCheck: sql`true`,
+    }),
+    // only through activation_set_tips, the one way to turn the tips back on
+    pgPolicy("email_opt_outs_owner_delete", {
+      for: "delete",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
     }),
   ]
 ).enableRLS();
@@ -200,12 +208,17 @@ export const activationEmailSuppressions = pgTable(
     recordedAt: timestamp("recorded_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    keyId: text("key_id"),
   },
   (table) => [
     primaryKey({
       columns: [table.addressHmac, table.reason],
       name: "activation_email_suppressions_pk",
     }),
+    check(
+      "activation_email_suppressions_key_id_format",
+      sql`${table.keyId} IS NULL OR ${table.keyId} ~ '^[0-9a-f]{8}$'`
+    ),
     check(
       "activation_email_suppressions_hmac_length",
       sql`octet_length(${table.addressHmac}) = 32`
@@ -228,6 +241,151 @@ export const activationEmailSuppressions = pgTable(
       for: "update",
       to: billingRuntimeRole,
       using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    // the only role with grants on the table (migration 0135): the functions that record, find and re-key
+    pgPolicy("activation_email_suppressions_owner_select", {
+      for: "select",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("activation_email_suppressions_owner_insert", {
+      for: "insert",
+      to: activationNoticeOwnerRole,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("activation_email_suppressions_owner_update", {
+      for: "update",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("activation_email_suppressions_owner_delete", {
+      for: "delete",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * The stop of the series after a complaint (ADR 0106, D7), a state and not an event: one row per stop and at most one
+ * active (the partial unique index), so a second complaint while it stands opens nothing. The row leaves the active
+ * state only when `released_at` goes from null to a value and a row of `activation_series_stop_releases` for the same
+ * stop exists at that instant (trigger); nothing else about it changes and no row is deleted. No runtime has a policy,
+ * a grant or an EXECUTE on it: `activation_record_email_event` opens it and `activation_release_stop`, which no role of
+ * the application executes, releases it (migration 0135).
+ */
+export const activationSeriesStops = pgTable(
+  "activation_series_stops",
+  {
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    reason: text("reason").notNull(),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    stoppedAt: timestamp("stopped_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "activation_series_stops_reason_allowed",
+      sql`${table.reason} IN ('complaint')`
+    ),
+    uniqueIndex("activation_series_stops_one_active")
+      .on(sql`(true)`)
+      .where(sql`${table.releasedAt} IS NULL`),
+    pgPolicy("activation_series_stops_owner_select", {
+      for: "select",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("activation_series_stops_owner_insert", {
+      for: "insert",
+      to: activationNoticeOwnerRole,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("activation_series_stops_owner_update", {
+      for: "update",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * The record of each release of a stop, append-only (triggers refuse UPDATE, DELETE and TRUNCATE to any role): who
+ * released it as the login of the connection (`session_user`, which the function cannot forge, the identity of the
+ * decision being in the note) and why, in 10 to 200 characters without "@" or control characters.
+ */
+export const activationSeriesStopReleases = pgTable(
+  "activation_series_stop_releases",
+  {
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    note: text("note").notNull(),
+    releasedAt: timestamp("released_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    releasedBy: text("released_by").default(sql`session_user`).notNull(),
+    stopId: uuid("stop_id")
+      .notNull()
+      .references(() => activationSeriesStops.id),
+  },
+  (table) => [
+    unique("activation_series_stop_releases_stop_unique").on(table.stopId),
+    check(
+      "activation_series_stop_releases_note_format",
+      sql`char_length(${table.note}) BETWEEN 10 AND 200 AND ${table.note} !~ '[[:cntrl:]@]'`
+    ),
+    check(
+      "activation_series_stop_releases_by_format",
+      sql`char_length(${table.releasedBy}) BETWEEN 1 AND 128 AND ${table.releasedBy} !~ '@'`
+    ),
+    pgPolicy("activation_series_stop_releases_owner_select", {
+      for: "select",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("activation_series_stop_releases_owner_insert", {
+      for: "insert",
+      to: activationNoticeOwnerRole,
+      withCheck: sql`true`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * The inbox of the provider's webhook (ADR 0106, D7): the `svix-id` of each bounce or complaint recorded, so that a
+ * resend of the same event, which the provider's panel allows long after, does nothing a second time and does not stop
+ * the series again after a release. The `svix-id` is an opaque identifier of the delivery, not personal data, so
+ * nothing purges the table (ADR 0106, D11).
+ */
+export const activationEmailEvents = pgTable(
+  "activation_email_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    kind: text("kind").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "activation_email_events_event_id_format",
+      sql`${table.eventId} ~ '^[A-Za-z0-9_-]{8,100}$'`
+    ),
+    check(
+      "activation_email_events_kind_allowed",
+      sql`${table.kind} IN ('bounce', 'complaint')`
+    ),
+    pgPolicy("activation_email_events_owner_select", {
+      for: "select",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("activation_email_events_owner_insert", {
+      for: "insert",
+      to: activationNoticeOwnerRole,
       withCheck: sql`true`,
     }),
   ]

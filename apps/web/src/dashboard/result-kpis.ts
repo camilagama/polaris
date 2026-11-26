@@ -19,6 +19,14 @@ import {
   type StoredDay,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
+import { NO_SALES_UNTIL_DAY, TICKET_UNAVAILABLE } from "./dashboard-model";
+import {
+  type MissingDays,
+  type MissingInput,
+  type MissingQuality,
+  missingInputOf,
+  singleUnknownMonth,
+} from "./missing-input";
 import {
   addDays,
   dayCount,
@@ -175,16 +183,23 @@ function dayCounts(day: Day): { total: number; unknown: number } {
 
 /**
  * Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9): with a month that has an
- * unknown day, "N de M dias" counts the days of the months (D1-4).
+ * unknown day, "N de M dias" counts the days of the months (D1-4), or the days of the one month that has them, named.
  */
-function resultKindOf(days: readonly Day[]): ResultKind {
+function resultKindOf(
+  days: readonly Day[],
+  input: MissingInput,
+  thisYear: string
+): ResultKind {
   const counts = days.map(dayCounts);
   const unknown = counts.reduce((sum, count) => sum + count.unknown, 0);
   if (unknown > 0 || days.some((day) => day.operatingResult === null)) {
     return {
+      input,
       kind: "incomplete",
+      month: null,
       total: counts.reduce((sum, count) => sum + count.total, 0),
       unknown: Math.max(unknown, 1),
+      ...singleUnknownMonth(days, thisYear),
     };
   }
   if (
@@ -208,7 +223,7 @@ export function resultChipPeriod(
 ): Period | null {
   const days = daysUpToToday(summary.daily ?? [], summary.period, today);
   if (
-    resultKindOf(days).kind !== "known" ||
+    resultKindOf(days, "cost", today.slice(0, 4)).kind !== "known" ||
     cogsCoverageOf(summary.quality) === "none"
   ) {
     return null;
@@ -227,7 +242,7 @@ export interface ResultKpiCards {
 /** Why the result has no sparkline and no chip: "N de M dias sem custo informado", or no series at all. */
 type ResultKind =
   | { kind: "known" }
-  | { kind: "incomplete"; total: number; unknown: number }
+  | ({ kind: "incomplete" } & MissingDays)
   | { kind: "unsent" };
 
 export interface ResultKpis {
@@ -275,9 +290,16 @@ interface ReadContext {
   whole: string;
 }
 
-/** "ainda" only for a period that is still open at its end; a closed one, or a day of it already gone, has none. */
-function noSalesText(open: boolean): string {
-  return open ? "Nenhuma venda ainda" : "Sem vendas no período";
+/**
+ * What a reading with no sale says. "ainda" only for a period that is still open at its end. A day read before the
+ * first sale of a period that has sales says only what is true of the day: the dates beside it give the reach, and
+ * "no período" would deny the sales the card itself counts. A closed period, or a day of a period with none, has none.
+ */
+function noSalesText(open: boolean, dayOfPeriodWithSales: boolean): string {
+  if (open) {
+    return "Nenhuma venda ainda";
+  }
+  return dayOfPeriodWithSales ? NO_SALES_UNTIL_DAY : "Sem vendas no período";
 }
 
 function salesReading({
@@ -305,7 +327,10 @@ function salesReading({
   }
   const count = atRest ? cards.salesCount : sum.count;
   return {
-    count: count === 0 ? noSalesText(open) : salesCountText(count),
+    count:
+      count === 0
+        ? noSalesText(open, !atRest && cards.salesCount > 0)
+        : salesCountText(count),
     date: range,
     delta,
     help: `Vendas líquidas de ${range}.${compare}`,
@@ -361,6 +386,17 @@ function resultReading({
 const ticketOf = (sum: Cumulative | undefined): bigint | null =>
   sum && sum.count > 0 ? divideHalfUp(sum.net, BigInt(sum.count)) : null;
 
+/**
+ * No ticket: with sales and none sent at rest the card says it is unavailable instead of denying the sales the Vendas
+ * card counts; a day read before the first sale of a period that has sales says only "Sem vendas".
+ */
+function noTicketText(atRest: boolean, salesCount: number): string {
+  if (atRest && salesCount > 0) {
+    return TICKET_UNAVAILABLE;
+  }
+  return noSalesText(false, !atRest && salesCount > 0);
+}
+
 function ticketReading({
   atRest,
   cards,
@@ -384,7 +420,7 @@ function ticketReading({
     value = ticket === null ? null : Money.fromMinorUnits(ticket).toString();
   }
   return {
-    count: value === null ? "Sem vendas no período" : "",
+    count: value === null ? noTicketText(atRest, cards.salesCount) : "",
     date: range,
     delta,
     help: ticketHelp(range, delta ? priorSales.range : null),
@@ -437,6 +473,7 @@ export function resultKpis({
   period,
   previous,
   previousSales,
+  quality,
   today,
 }: {
   cards: ResultKpiCards;
@@ -444,6 +481,7 @@ export function resultKpis({
   period: Period;
   previous: PriorSeries | null;
   previousSales: PriorSeries | null;
+  quality: MissingQuality;
   today: string;
 }): ResultKpis {
   const days = daysUpToToday(daily, period, today);
@@ -454,7 +492,7 @@ export function resultKpis({
   const month = isWholeMonth(period) ? monthName(period.from) : null;
 
   // the same day the chart hatches: the contract sends `costs` and `operatingResult` null together (AC-8)
-  const result = resultKindOf(days);
+  const result = resultKindOf(days, missingInputOf(quality), thisYear);
   const whole = month
     ? `${month} inteiro`
     : periodShort(period.from, period.to, thisYear);

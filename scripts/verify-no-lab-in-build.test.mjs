@@ -453,6 +453,7 @@ describe("the list stays complete as the labs change", () => {
       }
     }
     expect(withCommonName.sort()).toEqual([
+      "offline-poc/runtime.test.ts",
       "offline-poc/runtime.ts",
       "ui-gallery/chart-states.tsx",
     ]);

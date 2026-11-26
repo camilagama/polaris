@@ -94,6 +94,13 @@ interface ExpenseClient {
       expenses: ExpenseReadModel[];
       nextCursor: string | null;
       total: string;
+      totalsByCategory?: {
+        categoryArchived?: boolean;
+        categoryId: string;
+        categoryName?: string;
+        count: number;
+        total: string;
+      }[];
     }>;
     listCategories: (
       input: unknown
@@ -222,6 +229,15 @@ describe("expense RPCs", () => {
       expenses: [expenseRow],
       nextCursor: "2026-10-01|0199c2d0-0000-7000-8000-0000000000e1",
       total: "2000.50",
+      totalsByCategory: [
+        {
+          categoryArchived: false,
+          categoryId: "0199c2d0-0000-7000-8000-0000000000c1",
+          categoryName: "Aluguel",
+          count: 2,
+          total: "2000.50",
+        },
+      ],
     }));
     const client = createRpcClient(
       createRpcRouter({
@@ -237,7 +253,19 @@ describe("expense RPCs", () => {
         organizationId,
         to: "2026-10-31",
       })
-    ).resolves.toMatchObject({ count: 2, total: "2000.50" });
+    ).resolves.toMatchObject({
+      count: 2,
+      total: "2000.50",
+      totalsByCategory: [
+        {
+          categoryArchived: false,
+          categoryId: "0199c2d0-0000-7000-8000-0000000000c1",
+          categoryName: "Aluguel",
+          count: 2,
+          total: "2000.50",
+        },
+      ],
+    });
     expect(listExpenses).toHaveBeenCalledWith({}, identity, {
       categoryId: null,
       cursor: null,
@@ -448,4 +476,66 @@ describe("expense RPCs", () => {
       })
     ).rejects.toMatchObject({ code });
   });
+});
+
+type RouterOptions = NonNullable<Parameters<typeof createRpcRouter>[0]>;
+type ReadCase = [
+  procedure: string,
+  overrides: Partial<RouterOptions>,
+  call: (client: ExpenseClient) => Promise<unknown>,
+];
+
+describe("expense read RPCs open one tenant context", () => {
+  it.each<ReadCase>([
+    [
+      "expense.list",
+      {
+        expenseRepository: {
+          listExpenses: vi.fn(async () => ({
+            count: 0,
+            expenses: [],
+            nextCursor: null,
+            total: "0.00",
+            totalsByCategory: [],
+          })),
+        },
+      },
+      (client: ExpenseClient) => client.expense.list({ organizationId }),
+    ],
+    [
+      "expense.listCategories",
+      {
+        expenseRepository: {
+          listExpenseCategories: vi.fn(async () => [categoryRow]),
+        },
+      },
+      (client: ExpenseClient) =>
+        client.expense.listCategories({ organizationId }),
+    ],
+    [
+      "expense.listRules",
+      { expenseRepository: { listExpenseRules: vi.fn(async () => []) } },
+      (client: ExpenseClient) => client.expense.listRules({ organizationId }),
+    ],
+  ])(
+    "%s uses exactly one expense:create context",
+    async (procedure, overrides, call) => {
+      const capabilities: string[] = [];
+      const client = createRpcClient(
+        createRpcRouter({
+          ...overrides,
+          withTenantRequestContext: tenantStub((capability) =>
+            capabilities.push(capability)
+          ),
+        })
+      );
+
+      await call(client);
+
+      expect(
+        capabilities,
+        `${procedure} opened ${capabilities.length} tenant contexts, expected 1`
+      ).toEqual(["expense:create"]);
+    }
+  );
 });

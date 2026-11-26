@@ -1,56 +1,62 @@
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { type RefObject, useCallback, useState } from "react";
+import { Block } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader } from "@/ui/card";
 import { MoneyText } from "@/ui/hidden-values";
 import { Separator } from "@/ui/separator";
-import { ConfirmedDetails, ConfirmedItems } from "./confirmed-sale-parts";
+import { TextLink } from "@/ui/text-link";
+import {
+  ConfirmedDetails,
+  ConfirmedItems,
+  ConfirmedPaymentParts,
+} from "./confirmed-sale-parts";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { saleDetailHref } from "./sale-history-model";
 import { LeaderRow, Perforation } from "./sale-summary-panel";
 
-const TEXT_LINK =
-  "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
-
 /** The confirmed sale exactly as stored: items, totals, payment and fees (the detail page has its own, in `Receipt`). */
 function ConfirmedReceipt({ sale }: { sale: ConfirmedSaleView }) {
   return (
     <>
-      <CardContent className="grid gap-4">
+      <div className="grid gap-4">
         <ConfirmedDetails details={sale.saleDetails} />
         <ConfirmedItems headingId="sale-confirmed-items" items={sale.items} />
-      </CardContent>
-      <Perforation />
-      <CardContent>
-        <dl className="grid gap-2">
-          {sale.totals.map((row) =>
-            row.tone === "total" ? (
-              <div
-                className="flex items-baseline justify-between gap-3 border-border border-t pt-2 font-semibold text-value-md"
-                key={row.key}
-              >
-                <dt>{row.label}</dt>
-                <dd className="tabular-nums">
-                  <MoneyText text={row.value} />
-                </dd>
-              </div>
-            ) : (
-              <LeaderRow
-                key={row.key}
-                label={row.label}
-                tone={row.tone}
-                value={<MoneyText text={row.value} />}
-              />
-            )
-          )}
-        </dl>
-      </CardContent>
-      <CardContent className="grid gap-2">
+      </div>
+      <div className="-mx-(--card-spacing)">
+        <Perforation />
+      </div>
+      <dl className="grid gap-2">
+        {sale.totals.map((row) =>
+          row.tone === "total" ? (
+            <div
+              className="flex items-baseline justify-between gap-3 border-border border-t pt-2 font-semibold text-value-md"
+              key={row.key}
+            >
+              <dt>{row.label}</dt>
+              <dd className="tabular-nums">
+                <MoneyText text={row.value} />
+              </dd>
+            </div>
+          ) : (
+            <LeaderRow
+              key={row.key}
+              label={row.label}
+              tone={row.tone}
+              value={<MoneyText text={row.value} />}
+            />
+          )
+        )}
+      </dl>
+      <div className="grid gap-2">
         <h3 className="font-medium">Pagamento</h3>
-        <ConfirmedDetails details={sale.paymentDetails} />
+        {sale.paymentParts ? (
+          <ConfirmedPaymentParts parts={sale.paymentParts} />
+        ) : (
+          <ConfirmedDetails details={sale.paymentDetails} />
+        )}
         <p className="text-muted-foreground text-support">{sale.note}</p>
-      </CardContent>
+      </div>
     </>
   );
 }
@@ -104,19 +110,17 @@ const FIRST_SALE_LINE_ID = "sale-first-sale-line";
 /** Only for the first sale of the store the server confirmed in this tab: where the day and the estimated result are. */
 function FirstSaleLine() {
   return (
-    <CardContent>
-      <p className="text-muted-foreground text-support" id={FIRST_SALE_LINE_ID}>
-        1ª venda registrada. Veja o Hoje no{" "}
-        <a aria-label="Ver o Início" className={TEXT_LINK} href="/">
-          Início
-        </a>{" "}
-        e o resultado estimado em{" "}
-        <a aria-label="Ver o Resultado" className={TEXT_LINK} href="/dashboard">
-          Resultado
-        </a>
-        .
-      </p>
-    </CardContent>
+    <p className="text-muted-foreground text-support" id={FIRST_SALE_LINE_ID}>
+      1ª venda registrada. Veja o Hoje no{" "}
+      <TextLink aria-label="Ver o Início" href="/">
+        Início
+      </TextLink>{" "}
+      e o resultado estimado em{" "}
+      <TextLink aria-label="Ver o Resultado" href="/dashboard">
+        Resultado
+      </TextLink>
+      .
+    </p>
   );
 }
 
@@ -133,43 +137,44 @@ export function ConfirmedSalePanel({
   panelRef,
   sale,
 }: ConfirmedPanelProps) {
+  const focusTarget = useCallback(
+    (node: HTMLDivElement | null) => {
+      panelRef.current = node;
+    },
+    [panelRef]
+  );
   return (
-    <section
+    <Block
       aria-describedby={firstSale ? FIRST_SALE_LINE_ID : undefined}
-      aria-labelledby="sale-confirmed-title"
-      className="focus-ring rounded-xl"
-      ref={panelRef}
+      className="focus-ring"
+      ref={focusTarget}
       tabIndex={-1}
+      title={
+        <span className="flex items-center gap-2" role="status">
+          <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+          {sale.headline}
+        </span>
+      }
+      variant="plain"
     >
-      <Card>
-        <CardHeader>
-          <div role="status">
-            <h2
-              className="flex items-center gap-2 text-section"
-              id="sale-confirmed-title"
-            >
-              <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
-              {sale.headline}
-            </h2>
-          </div>
-        </CardHeader>
-        <ConfirmedReceipt sale={sale} />
+      <ConfirmedReceipt sale={sale} />
+      <div className="-mx-(--card-spacing)">
         <Separator />
-        <CardContent className="grid justify-items-start gap-3">
-          <a className={TEXT_LINK} href={saleDetailHref(sale.saleId)}>
-            Ver detalhes e histórico da venda
-          </a>
-          <p className="text-muted-foreground text-support">
-            O formulário abaixo foi reiniciado para uma nova venda.
-          </p>
-          <CustomerDisclosure
-            key={sale.saleId}
-            organizationId={organizationId}
-            saleId={sale.saleId}
-          />
-        </CardContent>
-        {firstSale ? <FirstSaleLine /> : null}
-      </Card>
-    </section>
+      </div>
+      <div className="grid justify-items-start gap-3">
+        <TextLink href={saleDetailHref(sale.saleId)}>
+          Ver detalhes e histórico da venda
+        </TextLink>
+        <p className="text-muted-foreground text-support">
+          O formulário abaixo foi reiniciado para uma nova venda.
+        </p>
+        <CustomerDisclosure
+          key={sale.saleId}
+          organizationId={organizationId}
+          saleId={sale.saleId}
+        />
+      </div>
+      {firstSale ? <FirstSaleLine /> : null}
+    </Block>
   );
 }

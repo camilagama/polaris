@@ -4,15 +4,17 @@ import { historyStates, WORST_CUSTOMER_NAME } from "./ui-history-states";
 
 /**
  * The line of a sale in the history, "cliente · forma de pagamento · itens": with a connection the row is a link
- * that ends in a chevron. On a phone the line is one line: the customer name is cut with an ellipsis and the short
- * payment method and the item count are not cut nor pushed under the total. In the widest case (the longest name,
- * "Transferência", twelve items, a total of five digits) the name is at its minimum, the method is cut last (the item
- * count stays) and nothing reaches the total. The date and time stay on one line. Without a connection the row is
- * plain text, with no link and no chevron.
+ * that ends in a chevron. On a phone the line wraps instead of cutting: when the method and the item count do not fit
+ * beside the customer they go under it, whole, and only the end of a name wider than the line is cut with an
+ * ellipsis. Nothing reaches the total. The date is plain text that may wrap; the time (`· hh:mm`) is a `nowrap` span
+ * in `RowBody` (`sale-history-list.tsx`), so it is one piece: at the widths below date and time fit on one line, and
+ * where they would not the time drops whole under the date, never split. Without a connection the row is plain text,
+ * with no link and no chevron.
  */
 const LONG_NAME =
   "Maria Aparecida da Conceição Albuquerque de Oliveira Santos Filho";
 const DATE_AND_TIME = /^\d\d\/\d\d\/\d{4} · \d\d:\d\d$/;
+const TIME_PIECE = /^· \d\d:\d\d$/;
 const WIDTHS = [320, 359, 360];
 const ROW_NAMES = [
   /^14\/10\/2026 · \d\d:\d\d Confirmada Ângela Souza · Pix · 2 itens/,
@@ -33,7 +35,7 @@ for (const width of WIDTHS) {
   test.describe(`${width} px`, () => {
     test.use({ viewport: { height: 740, width } });
 
-    test("com conexão, o nome longo é cortado em uma linha, o método e os itens ficam inteiros e antes do total, e a linha termina no chevron", async ({
+    test("com conexão, só o fim do nome longo é cortado, o método e os itens ficam inteiros e antes do total, e a linha termina no chevron", async ({
       page,
     }) => {
       await historyStates.list(page);
@@ -41,22 +43,13 @@ for (const width of WIDTHS) {
       const support = row.getByText(`${LONG_NAME} · Crédito · 2 itens`);
       await expect(support).toBeVisible();
       const name = support.getByText(LONG_NAME, { exact: true });
-      const rest = support.getByText(" · Crédito · 2 itens");
-      expect(
-        await rest.evaluate((el) => {
-          const text = el.firstElementChild?.firstChild;
-          const range = document.createRange();
-          range.setStart(text as Node, 0);
-          range.setEnd(text as Node, 1);
-          return range.getBoundingClientRect().width;
-        })
-      ).toBeGreaterThan(1);
-      const measured = await support.evaluate(lineCount);
-      expect(measured.height).toBeGreaterThan(0);
-      expect(measured.lines).toBeLessThan(1.05);
+      const rest = support.getByText("Crédito · 2 itens");
       expect(await name.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
         true
       );
+      expect(
+        await rest.evaluate((el) => el.scrollWidth <= el.clientWidth)
+      ).toBe(true);
       const restBox = await rest.boundingBox();
       const nameBox = await name.boundingBox();
       const totalBox = await row.getByText("1.234,50").boundingBox();
@@ -69,7 +62,7 @@ for (const width of WIDTHS) {
       expect(chevronBox).not.toBeNull();
       expect(nameBox?.width ?? 0).toBeGreaterThan(0);
       expect((nameBox?.x ?? 0) + (nameBox?.width ?? 0)).toBeLessThanOrEqual(
-        (restBox?.x ?? 0) + 1
+        totalBox?.x ?? 0
       );
       expect((restBox?.x ?? 0) + (restBox?.width ?? 0)).toBeLessThanOrEqual(
         totalBox?.x ?? 0
@@ -80,46 +73,40 @@ for (const width of WIDTHS) {
     });
 
     for (const customer of [WORST_CUSTOMER_NAME, "Ana Lima"]) {
-      test(`no pior caso (${customer.split(" ")[0]}, Transferência, 12 itens, R$ 12.345,67) a linha de apoio não toca o valor nem o chevron (o nome e, se preciso, por último o método são cortados; os itens ficam)`, async ({
+      test(`no pior caso (${customer.split(" ")[0]}, Transferência, 12 itens, R$ 12.345,67) a linha de apoio não toca o valor nem o chevron (só o nome é cortado; o método e os itens ficam inteiros)`, async ({
         page,
       }) => {
         await historyStates.worstCase(page);
         const row = page.getByRole("link").filter({ hasText: customer });
         const support = row.getByText(`${customer} · Transferência · 12 itens`);
         await expect(support).toBeVisible();
-        expect((await support.evaluate(lineCount)).lines).toBeLessThan(1.05);
-        const items = support.getByText(" · 12 itens", { exact: true });
+        const rest = support.getByText("Transferência · 12 itens");
+        expect(
+          await rest.evaluate((el) => el.scrollWidth <= el.clientWidth)
+        ).toBe(true);
         const chevron = row.locator("svg[aria-hidden='true']").last();
-        const [name, rest, itemsBox, total, chevronBox, supportBox] =
+        const [name, restBox, total, chevronBox, supportBox] =
           await Promise.all([
             support.getByText(customer, { exact: true }).boundingBox(),
-            support.getByText(" · Transferência · 12 itens").boundingBox(),
-            items.boundingBox(),
+            rest.boundingBox(),
             row.getByText("12.345,67").boundingBox(),
             chevron.boundingBox(),
             support.boundingBox(),
           ]);
-        for (const box of [
-          name,
-          rest,
-          itemsBox,
-          total,
-          chevronBox,
-          supportBox,
-        ]) {
+        for (const box of [name, restBox, total, chevronBox, supportBox]) {
           expect(box).not.toBeNull();
         }
         const right = (box: typeof name) => (box?.x ?? 0) + (box?.width ?? 0);
-        for (const box of [name, rest, itemsBox, supportBox]) {
+        for (const box of [name, restBox, supportBox]) {
           expect(right(box)).toBeLessThanOrEqual(total?.x ?? 0);
         }
         expect(right(total)).toBeLessThanOrEqual(chevronBox?.x ?? 0);
         expect(name?.width ?? 0).toBeGreaterThan(30);
-        expect(right(itemsBox)).toBeLessThanOrEqual(right(supportBox) + 0.5);
+        expect(right(restBox)).toBeLessThanOrEqual(right(supportBox) + 0.5);
       });
     }
 
-    test("um nome curto aparece inteiro, e a data e a hora ficam em uma linha em toda venda", async ({
+    test("um nome curto aparece inteiro, e a data e a hora cabem em uma linha, com a hora inteira, em toda venda", async ({
       page,
     }) => {
       await historyStates.list(page);
@@ -131,7 +118,7 @@ for (const width of WIDTHS) {
         false
       );
       const dates = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .getByText(DATE_AND_TIME);
       expect(await dates.count()).toBe(4);
       const measures = await Promise.all(
@@ -141,6 +128,23 @@ for (const width of WIDTHS) {
         expect(measured.height).toBeGreaterThan(0);
         expect(measured.lines).toBeLessThan(1.05);
       }
+      const times = page
+        .getByRole("list", { exact: true, name: "Vendas do período" })
+        .getByText(TIME_PIECE);
+      expect(await times.count()).toBe(4);
+      const timeMeasures = await Promise.all(
+        (await times.all()).map((time) => time.evaluate(lineCount))
+      );
+      for (const measured of timeMeasures) {
+        expect(measured.height).toBeGreaterThan(0);
+        expect(measured.lines).toBeLessThan(1.05);
+      }
+      const whiteSpaces = await Promise.all(
+        (await times.all()).map((time) =>
+          time.evaluate((el) => getComputedStyle(el).whiteSpace)
+        )
+      );
+      expect(whiteSpaces).toEqual(new Array(4).fill("nowrap"));
     });
   });
 }
@@ -166,14 +170,18 @@ test.describe("em 360 px", () => {
   }) => {
     await historyStates.offline(page);
     const rows = page
-      .getByRole("list", { name: "Vendas" })
+      .getByRole("list", { exact: true, name: "Vendas do período" })
       .getByRole("listitem");
     await expect(rows.first()).toBeVisible();
     await expect(
-      page.getByRole("list", { name: "Vendas" }).getByRole("link")
+      page
+        .getByRole("list", { exact: true, name: "Vendas do período" })
+        .getByRole("link")
     ).toHaveCount(0);
     await expect(
-      page.getByRole("list", { name: "Vendas" }).locator("svg")
+      page
+        .getByRole("list", { exact: true, name: "Vendas do período" })
+        .locator("svg")
     ).toHaveCount(0);
   });
 });
@@ -190,7 +198,7 @@ for (const [width, height] of [
     }) => {
       await historyStates.list(page);
       const links = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .getByRole("link");
       const withCustomer = links.filter({ hasText: "Ângela Souza" });
       const without = links.filter({ hasText: "Sem cliente" });
@@ -249,7 +257,10 @@ for (const [width, height] of [
       page,
     }) => {
       await historyStates.list(page);
-      const list = page.getByRole("list", { name: "Vendas" });
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Vendas do período",
+      });
       await expect(list.getByRole("link")).toHaveCount(4);
       await expect(list.locator("[data-slot='badge']")).toHaveText([
         "Cancelada",
@@ -268,7 +279,7 @@ for (const [width, height] of [
     }) => {
       await historyStates.list(page);
       const links = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .getByRole("link");
       const withoutBadge = links.filter({ hasText: "Ângela Souza" });
       const withBadge = links.filter({ hasText: "Cancelada" });

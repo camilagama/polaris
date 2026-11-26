@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   expectFormDialogLayout,
   expectKeyboardKeepsMainButton,
@@ -14,6 +15,7 @@ import {
 } from "./csp-fixture";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
+import { chooseProfileAction } from "./payment-profile-actions";
 
 /**
  * The payment profiles screen on the components of src/ui (v5.1):
@@ -75,14 +77,19 @@ const badRequest = rpc(
   400
 );
 
+const NOW = new Date("2026-10-02T12:00:00-03:00");
+const DAY = 86_400_000;
+const CREATED_AT = new Date(NOW.getTime() - DAY).toISOString();
+const ARCHIVED_AT = NOW.toISOString();
+
 const fee = (mode: string, percentage: string | null) => ({
   fixedAmount: null,
   mode,
   percentage,
 });
 const profile = (n: number, name: string, status = "active") => ({
-  archivedAt: status === "archived" ? "2026-10-02T12:00:00.000Z" : null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  archivedAt: status === "archived" ? ARCHIVED_AT : null,
+  createdAt: CREATED_AT,
   id: `0199c2d0-0000-7000-8000-0000000000c${n}`,
   name,
   organizationId: ORGANIZATION.id,
@@ -98,7 +105,7 @@ const profile = (n: number, name: string, status = "active") => ({
     },
   ],
   status,
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: CREATED_AT,
   version: 1,
 });
 const MACHINE = profile(1, "Maquininha da loja");
@@ -114,6 +121,7 @@ const title = (page: Page) =>
 // ---- the lab: the same screen without the shell ---------------------------------------------------------------
 
 async function openLab(page: Page, stored = "claro") {
+  await page.clock.setFixedTime(NOW);
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
@@ -152,9 +160,7 @@ async function useEveryControl(page: Page) {
   ).toBeVisible();
 
   // the edit of a profile: the form comes filled, with the cursor in the name
-  await page
-    .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Editar", "Maquininha da loja");
   await expect(page.getByLabel("Nome do perfil")).toHaveValue(
     "Maquininha da loja"
   );
@@ -182,15 +188,22 @@ async function useEveryControl(page: Page) {
   await expect(
     page.getByRole("combobox", { exact: true, name: "Método" }).nth(1)
   ).toBeFocused();
+  const addRule = page.getByRole("button", { name: "Adicionar regra" });
+  const [ruleBox, rowBox] = await Promise.all([
+    page.getByRole("group", { name: "Regra 2" }).boundingBox(),
+    addRule.boundingBox(),
+  ]);
+  expect(rowBox?.y ?? 0).toBeGreaterThanOrEqual(
+    (ruleBox?.y ?? 0) + (ruleBox?.height ?? 0)
+  );
+  expect(rowBox?.width ?? 0).toBeGreaterThanOrEqual((ruleBox?.width ?? 0) - 1);
   await page.getByRole("button", { name: "Remover regra 2" }).click();
-  await expect(
-    page.getByRole("button", { name: "Adicionar regra" })
-  ).toBeFocused();
+  await expect(addRule).toBeFocused();
 
-  // cancelling the edit gives the focus back to the button of the profile
+  // cancelling the edit gives the focus back to the "…" button of the profile
   await page.getByRole("button", { name: "Cancelar edição" }).click();
   await expect(
-    page.getByRole("button", { name: "Editar perfil Maquininha da loja" })
+    page.getByRole("button", { name: "Mais ações para Maquininha da loja" })
   ).toBeFocused();
 }
 
@@ -249,6 +262,12 @@ async function expectNoSidewaysScroll(page: Page) {
   expect(found.past).toEqual([]);
 }
 
+/** Runs the clock and then sends one call of its own: it reaches the route after any resend the run let go. */
+async function runClockFor(page: Page, milliseconds: number) {
+  await page.clock.runFor(milliseconds);
+  await page.evaluate(() => fetch("/rpc/settle").catch(() => undefined));
+}
+
 test("a 320 px nada transborda: a lista, a edição com as duas taxas e os erros nos campos", async ({
   page,
 }, testInfo) => {
@@ -258,9 +277,7 @@ test("a 320 px nada transborda: a lista, a edição com as duas taxas e os erros
   await page.getByRole("checkbox", { name: "Incluir arquivados" }).check();
   await expectNoSidewaysScroll(page);
 
-  await page
-    .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Editar", "Maquininha da loja");
   const mode = page.getByRole("combobox", { name: "Como a taxa é informada" });
   await chooseOption(page, mode.first(), "Fixo e percentual");
   await chooseOption(page, mode.nth(1), "Fixo e percentual");
@@ -287,6 +304,7 @@ interface ServerOptions {
 
 async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
   let calls = 0;
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
@@ -344,6 +362,7 @@ test("sem perfil a tela diz que nenhum foi cadastrado; só com arquivados diz qu
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
   await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
 
   await page.unroute("**/rpc/**");
   await openServerScreen(page, { lists: [answer([OLD_LINK])] });
@@ -528,13 +547,13 @@ for (const theme of THEMES) {
     }, theme.stored);
     await openServerScreen(page, { lists: [answer([MACHINE])] });
 
-    const rule = await boxOf(page.locator("ul ul > li").first());
+    const rule = await boxOf(
+      page.locator('ul ul > li > [data-slot="inset-block"]').first()
+    );
     expect(rule.borders).toEqual(["0px", "0px", "0px", "0px"]);
     expect(rule.background).toBe(rule.muted);
 
-    await page
-      .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-      .click();
+    await chooseProfileAction(page, "Editar", "Maquininha da loja");
     const feeBlock = await boxOf(
       page.getByRole("group", { name: "Taxa de processamento" })
     );
@@ -563,9 +582,7 @@ test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
       },
     },
   });
-  await page
-    .getByRole("button", { name: "Arquivar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Arquivar", "Maquininha da loja");
   await expect(
     page.getByText("Perfil “Maquininha da loja” arquivado.")
   ).toBeVisible();
@@ -579,6 +596,7 @@ test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
 test("salvar com o 503 server_busy diz que pode ter sido salvo, oferece só 'Fechar e conferir' e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let creates = 0;
   await openServerScreen(page, {
     lists: [answer([])],
@@ -603,7 +621,7 @@ test("salvar com o 503 server_busy diz que pode ter sido salvo, oferece só 'Fec
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(creates).toBe(1);
 });
 
@@ -634,6 +652,7 @@ test("salvar que o servidor cortou, com o prefixo 'O servidor está ocupado.', t
 test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de novo e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let archives = 0;
   let lists = 0;
   await openServerScreen(page, {
@@ -650,9 +669,7 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
       },
     },
   });
-  await page
-    .getByRole("button", { name: "Arquivar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Arquivar", "Maquininha da loja");
   await expect(
     page.getByText(
       "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
@@ -662,7 +679,7 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(archives).toBe(1);
   await page.getByRole("button", { name: "Novo perfil" }).click();
   await expect(
@@ -673,6 +690,7 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
 test("restaurar com o 503 sem motivo diz que pode ter sido salvo, lê a lista de novo e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let restores = 0;
   let lists = 0;
   await openServerScreen(page, {
@@ -704,7 +722,7 @@ test("restaurar com o 503 sem motivo diz que pode ter sido salvo, lê a lista de
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(restores).toBe(1);
 });
 
@@ -795,12 +813,23 @@ test("o valor fixo aparece com vírgula na lista e no campo, e vai ao servidor c
   // the rule with no settlement said so
   await expect(row).toContainText("não informado");
 
-  await page
-    .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Editar", "Maquininha da loja");
   await expect(page.getByLabel("Valor fixo por pagamento")).toHaveValue("0,50");
   await page.getByRole("button", { name: "Salvar alterações" }).click();
   await expect
     .poll(() => sent.json?.rules?.[0]?.processingFee?.fixedAmount)
     .toBe("0.50");
+});
+
+test("Regra 1 pesa 500, o peso do rótulo do campo", async ({ page }) => {
+  await openServerScreen(page, { lists: [answer([])] });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
+  const weightOf = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((element) => getComputedStyle(element).fontWeight);
+  const rule = page.getByRole("group", { name: "Regra 1" });
+  await expect(rule).toBeVisible();
+  expect(await weightOf(rule.locator("> legend"))).toBe("500");
+  expect(
+    await weightOf(page.locator("label", { hasText: "Nome do perfil" }))
+  ).toBe("500");
 });

@@ -67,13 +67,16 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Venda:** transação comercial registrada pelo revendedor, com seus próprios itens e fatos econômicos.
 
+**Linha da venda e unidade:** a linha é cada produto ou variante escolhido na venda; a unidade é cada peça, a soma das quantidades das linhas. A Venda mostra as duas contagens ("3 linhas · 8 unidades"), nunca "N itens"; o Histórico segue com "N itens" nas vendas guardadas.
+
 **Negociação por item:** preço cobrado registrado no próprio item em relação ao preço de tabela; não cria um segundo desconto para a mesma diferença.
 **Subtotal da venda:** soma dos valores dos itens pelo preço cobrado, antes dos ajustes da venda.
 **Ajuste de venda:** desconto, acréscimo, frete cobrado ou sobretaxa de pagamento aplicada à venda.
 **Sobretaxa de pagamento:** valor cobrado do comprador por um meio de pagamento; é distinto das taxas de processamento e antecipação pagas pelo negócio.
-**Parcela:** divisão de uma cobrança no cartão de crédito; a quantidade de parcelas é registrada na venda.
+**Parcela:** divisão de uma cobrança no cartão de crédito; a quantidade de parcelas é registrada na parte do pagamento em cartão de crédito, não na venda; os demais métodos não têm parcelas.
 **Modalidade do parcelamento** (na interface, "Quem parcela"): classificação registrada no cartão de crédito como `merchant` (parcelamento do lojista) ou `issuer` (parcelamento do emissor); não é evidência de liquidação.
-**Perfil de pagamento:** configuração manual da organização que descreve regras de taxa por método e, para cartão, modalidade e quantidade de parcelas. O operador seleciona o perfil na venda; o snapshot registra a regra aplicada.
+**Parte do pagamento:** cada uma das formas de pagar uma venda confirmada, de uma a três por venda no banco, na ordem em que o operador as informou; a soma dos valores das partes é exatamente o total devido, sem pagamento parcial nem saldo pendente (não existe fiado), e cada parte escolhe o seu perfil de pagamento, ou nenhum. O troco é só uma conta da tela e não é gravado.
+**Perfil de pagamento:** configuração manual da organização que descreve regras de taxa por método e, para cartão, modalidade e quantidade de parcelas. O operador seleciona o perfil de cada parte do pagamento; o snapshot registra a regra aplicada.
 **Prazo esperado de recebimento:** estimativa em número de dias da regra de pagamento; não cria data de liquidação nem contas a receber.
 
 **Devolução:** registro de itens devolvidos e da quantidade que volta ao estoque vendável.

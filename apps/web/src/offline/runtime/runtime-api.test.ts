@@ -1,10 +1,18 @@
 import { ORPCError } from "@orpc/client";
 import type { PolarisRpcClient } from "@polaris/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUnreachableError } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
+import { isConnectionFailure, isPlatformCut } from "../../lib/rpc-error";
+import { bootstrapLocalStore } from "../bootstrap";
+import { FakeWriter } from "../test-support";
+import { BootstrapResponseMismatchError } from "./runtime-api";
 
-const api = createRpcRuntimeApi({} as PolarisRpcClient);
+let api = createRpcRuntimeApi({} as PolarisRpcClient);
+
+beforeEach(() => {
+  api = createRpcRuntimeApi({} as PolarisRpcClient);
+});
 
 function answerWith(response: Response | Error) {
   vi.stubGlobal(
@@ -67,6 +75,94 @@ describe("who is signed in, as the server answers", () => {
     answerWith(new Response("nope", { status: 404 }));
     await expect(api.sessionUserId()).rejects.toThrow("session_unavailable");
   });
+
+  it("reads the server again when the caller asks for a fresh answer", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(Response.json({ user: { id: "user-1" } }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await api.sessionUserId();
+    await api.sessionUserId();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await api.sessionUserId({ fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the session of a start, as the server answers it now", () => {
+  it("names the user and the id of the session row, never its token", async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        Response.json({
+          session: {
+            expiresAt: "2026-11-20T00:00:00.000Z",
+            id: "session-1",
+            token: "secret-session-token",
+            userId: "user-1",
+          },
+          user: { email: "a@example.com", id: "user-1" },
+        })
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = await api.signedInSession?.();
+    expect(session).toEqual({ sessionId: "session-1", userId: "user-1" });
+    expect(JSON.stringify(session)).not.toContain("secret-session-token");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/auth/get-session",
+      expect.objectContaining({ cache: "no-store" })
+    );
+  });
+
+  it("asks the server at every call, never reusing an answer", async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ session: { id: "s" }, user: { id: "u" } })
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    await api.signedInSession?.();
+    await api.signedInSession?.();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("goes to the server even right after the tab's memory answered a start", async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ session: { id: "s" }, user: { id: "u" } })
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    await api.sessionUserId();
+    await api.sessionUserId();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(await api.signedInSession?.()).toEqual({
+      sessionId: "s",
+      userId: "u",
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("has no session id when the answer carries none, so the start asks whose the device is", async () => {
+    answerWith(Response.json({ user: { id: "user-1" } }));
+    expect(await api.signedInSession?.()).toEqual({
+      sessionId: null,
+      userId: "user-1",
+    });
+    answerWith(Response.json({ session: { id: "" }, user: { id: "user-1" } }));
+    expect((await api.signedInSession?.())?.sessionId).toBeNull();
+  });
+
+  it("has no one when the server says there is no session, and no answer is still no answer", async () => {
+    answerWith(Response.json(null));
+    expect(await api.signedInSession?.()).toBeNull();
+    answerWith(new Response("{}", { status: 401 }));
+    expect(await api.signedInSession?.()).toBeNull();
+    answerWith(new Response("busy", { status: 503 }));
+    await expect(api.signedInSession?.()).rejects.toBeInstanceOf(
+      SessionUnreachableError
+    );
+  });
 });
 
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
@@ -122,5 +218,179 @@ describe("runtime api deviceIsMine", () => {
       );
       expect(check).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+describe("the bootstrap source of the runtime", () => {
+  const organizationId = "org-1";
+  const expectedUserId = "user-1";
+
+  function fakeSourceClient() {
+    const bootstrapPage = vi.fn(() =>
+      Promise.resolve({
+        collection: "categories" as const,
+        nextAfterId: "next",
+        rows: [{ id: "category-1" }],
+      })
+    );
+    const getCursor = vi.fn(() => Promise.resolve({ cursor: "12" }));
+    const pull = vi.fn(() =>
+      Promise.resolve({ changes: [], hasMore: false, nextCursor: "13" })
+    );
+    const list = vi.fn(() =>
+      Promise.resolve({ hasMore: false, sales: [{ id: "sale-1" }] })
+    );
+    const client = {
+      sale: { list },
+      sync: { bootstrapPage, getCursor, pull },
+    } as unknown as PolarisRpcClient;
+    const source = (signal?: AbortSignal) =>
+      createRpcRuntimeApi(client).source(
+        organizationId,
+        signal,
+        expectedUserId
+      );
+    return { bootstrapPage, getCursor, list, pull, source };
+  }
+
+  it("reads the cursor of its organization", async () => {
+    const { getCursor, source } = fakeSourceClient();
+    await expect(source().getCursor()).resolves.toBe("12");
+    expect(getCursor).toHaveBeenCalledWith({ organizationId }, undefined);
+  });
+
+  it("asks for pages with the keyset position and page size", async () => {
+    const { bootstrapPage, source } = fakeSourceClient();
+    await expect(
+      source().page("categories", { afterId: "after", limit: 50 })
+    ).resolves.toEqual({ nextAfterId: "next", rows: [{ id: "category-1" }] });
+    expect(bootstrapPage).toHaveBeenCalledWith(
+      {
+        afterId: "after",
+        collection: "categories",
+        ids: null,
+        limit: 50,
+        organizationId,
+      },
+      undefined
+    );
+  });
+
+  it("asks for entities by id without a keyset position, 200 to a page unless told", async () => {
+    const { bootstrapPage, source } = fakeSourceClient();
+    await source().page("categories", { ids: ["a", "b"] });
+    expect(bootstrapPage).toHaveBeenCalledWith(
+      {
+        afterId: null,
+        collection: "categories",
+        ids: ["a", "b"],
+        limit: 200,
+        organizationId,
+      },
+      undefined
+    );
+  });
+
+  it("pulls with the cursor, the limit, the user it expects and its organization", async () => {
+    const { pull, source } = fakeSourceClient();
+    await source().pull("5", 500);
+    expect(pull).toHaveBeenCalledWith(
+      { cursor: "5", expectedUserId, limit: 500, organizationId },
+      undefined
+    );
+  });
+
+  it("reads the latest 100 sales of the sale list", async () => {
+    const { list, source } = fakeSourceClient();
+    await expect(source().recentSales()).resolves.toEqual([{ id: "sale-1" }]);
+    expect(list).toHaveBeenCalledWith(
+      { limit: 100, organizationId },
+      undefined
+    );
+  });
+
+  it("hands its abort signal to every call, and none when it has none", async () => {
+    const { bootstrapPage, getCursor, list, pull, source } = fakeSourceClient();
+    const { signal } = new AbortController();
+    const aborting = source(signal);
+    await aborting.getCursor();
+    await aborting.page("categories", {});
+    await aborting.pull("5", 500);
+    await aborting.recentSales();
+    for (const call of [getCursor, bootstrapPage, pull, list]) {
+      expect(call.mock.calls).toHaveLength(1);
+      expect((call.mock.calls[0] as unknown[])[1]).toEqual({ signal });
+    }
+    const plain = source();
+    await plain.getCursor();
+    await plain.page("categories", {});
+    await plain.pull("5", 500);
+    await plain.recentSales();
+    for (const call of [getCursor, bootstrapPage, pull, list]) {
+      expect(call.mock.calls).toHaveLength(2);
+      expect((call.mock.calls[1] as unknown[])[1]).toBeUndefined();
+    }
+  });
+});
+
+describe("the bootstrap source refuses an answer for another collection", () => {
+  const organizationId = "org-1";
+
+  function clientAnswering(collection: string) {
+    const bootstrapPage = vi.fn(() =>
+      Promise.resolve({
+        collection,
+        nextAfterId: null,
+        rows: [{ id: "product-1" }],
+      })
+    );
+    const client = {
+      sale: { list: vi.fn(() => Promise.resolve({ sales: [] })) },
+      sync: {
+        bootstrapPage,
+        getCursor: vi.fn(() => Promise.resolve({ cursor: "12" })),
+        pull: vi.fn(),
+      },
+    } as unknown as PolarisRpcClient;
+    return createRpcRuntimeApi(client).source(organizationId, undefined, "u-1");
+  }
+
+  it("rejects a page by keyset and a read by ids when the collection is not the one asked", async () => {
+    const source = clientAnswering("products");
+    for (const request of [{ afterId: "after", limit: 50 }, { ids: ["a"] }]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each request is verified on its own
+      const failure = await source
+        .page("categories", request)
+        .catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(BootstrapResponseMismatchError);
+      expect((failure as Error).name).toBe("BootstrapResponseMismatchError");
+      expect((failure as Error).message).toBe("bootstrap_response_mismatch");
+    }
+  });
+
+  it("passes the page of the collection asked for", async () => {
+    await expect(
+      clientAnswering("products").page("products", { limit: 50 })
+    ).resolves.toEqual({ nextAfterId: null, rows: [{ id: "product-1" }] });
+  });
+
+  it("writes and removes nothing from the first collection the engine reads, and leaves the store bootstrapping", async () => {
+    const writer = new FakeWriter();
+    writer.data.categories.set("category-1", { id: "category-1" });
+    const upsert = vi.spyOn(writer, "upsert");
+    const remove = vi.spyOn(writer, "remove");
+    await expect(
+      bootstrapLocalStore(clientAnswering("products"), writer)
+    ).rejects.toBeInstanceOf(BootstrapResponseMismatchError);
+    expect(upsert).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect([...writer.data.categories.keys()]).toEqual(["category-1"]);
+    expect(writer.meta?.status).toBe("bootstrapping");
+  });
+
+  it("is a failure to show, not an answer that never came", () => {
+    const refusal = new BootstrapResponseMismatchError();
+    expect(isConnectionFailure(refusal)).toBe(false);
+    expect(isPlatformCut(refusal)).toBe(false);
   });
 });

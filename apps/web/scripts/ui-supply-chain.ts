@@ -60,16 +60,24 @@ export const UI_ALLOWED_PACKAGES = [
 
 /**
  * Test tools of the interface: development dependencies only, held like the list above (exact version,
- * closure under review) but never importable by src/ui/ nor declared as a runtime dependency.
+ * closure under review) but never imported by production code (any file of src/ that is not a test) nor declared as a runtime dependency.
  * `axe-core` came with the components of the sale (ADR 0103, section 8, item 3): the Playwright checks
  * evaluate it inside the gallery (no violation in each theme). It has no dependencies and no install script.
+ * `@testing-library/react`, `@testing-library/user-event` (and `@testing-library/dom`, the peer both need) and `happy-dom`
+ * came with the component tests that render the real tree and click it, instead of replacing React's hooks: the DOM
+ * environment is chosen per test file (`// @vitest-environment happy-dom`), so the node project stays as fast as it was.
+ * None has an install script; the closure under review is in `ui-dependency-closure.txt`.
  * `@types/d3-shape` and `@types/d3-array` are types only, no code at run time; `d3-array` is imported by
  * the time-series block of Bklit UI and its types are the ones `@visx/vendor` already brings (same version).
  */
 export const UI_TEST_PACKAGES = [
+  "@testing-library/dom",
+  "@testing-library/react",
+  "@testing-library/user-event",
   "@types/d3-array",
   "@types/d3-shape",
   "axe-core",
+  "happy-dom",
 ] as const;
 
 /**
@@ -420,6 +428,74 @@ export function scanUiFolderFile(
   return scanUiSource(file, source, srcRoot, repoRoot).filter(
     ({ rule }) => !(TEST_FILE.test(file) && rule === TEST_RUNNER_IMPORT)
   );
+}
+
+const TEST_OR_SPEC_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
+
+/**
+ * The production folders of apps/web (from apps/web) that the test-library check walks: the app and the code
+ * outside `src/` that the build bundles or runs (the Worker, the PWA build plugins, the legal guard).
+ */
+export const TEST_LIBRARY_SCAN_FOLDERS: readonly string[] = [
+  "src",
+  "worker",
+  "pwa",
+  "legal",
+];
+
+/**
+ * The only files of those folders outside `*.test.*` and `*.spec.*` that may import a test library (a name of
+ * `UI_TEST_PACKAGES` that is not a types package), each with the reason: the path from the repository root,
+ * matched whole. Empty: the helpers that sit beside the tests (`*-test-support.ts`) do not import any of them.
+ */
+export const TEST_LIBRARY_EXCEPTIONS: readonly {
+  file: string;
+  why: string;
+}[] = [];
+
+const TEST_LIBRARIES = new Set<string>(
+  UI_TEST_PACKAGES.filter((name) => !name.startsWith("@types/"))
+);
+
+function isTestLibrary(specifier: string) {
+  const name = packageName(specifier);
+  return TEST_LIBRARIES.has(name) || name.startsWith("@testing-library/");
+}
+
+/**
+ * The test libraries (the whole `@testing-library/` scope, happy-dom, axe-core) imported by a file of
+ * `TEST_LIBRARY_SCAN_FOLDERS` that is not a test: `vite build` bundles whatever production code imports, whichever field of the manifest declares it.
+ * The comments are the caller's to strip.
+ */
+export function scanTestLibraryImports(
+  file: string,
+  source: string,
+  repoRoot: string = REPO_ROOT,
+  exceptions: typeof TEST_LIBRARY_EXCEPTIONS = TEST_LIBRARY_EXCEPTIONS
+): SourceFinding[] {
+  const fromRepoRoot = repoRelative(file, repoRoot);
+  if (
+    TEST_OR_SPEC_FILE.test(file) ||
+    exceptions.some((exception) => exception.file === fromRepoRoot)
+  ) {
+    return [];
+  }
+  return [...source.matchAll(IMPORT_SPECIFIER)]
+    .map((match) => match[1] as string)
+    .filter(
+      (specifier) =>
+        isTestLibrary(specifier) ||
+        (specifier.startsWith(".") &&
+          specifier.split("/").some((part, index, parts) => {
+            const next = parts[index + 1];
+            return (
+              part === "node_modules" &&
+              next !== undefined &&
+              isTestLibrary(parts.slice(index + 1).join("/"))
+            );
+          }))
+    )
+    .map((specifier) => ({ file, rule: `import of ${specifier}` }));
 }
 
 // What installs dependencies or runs repository code (a build, a test run that builds inside): none of it may hold a secret.

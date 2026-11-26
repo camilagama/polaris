@@ -10,8 +10,11 @@ import {
 } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
+  activationEmailEvents,
   activationEmailSuppressions,
   activationNotices,
+  activationSeriesStopReleases,
+  activationSeriesStops,
   emailOptOuts,
 } from "./schema/activation-notices";
 
@@ -65,7 +68,9 @@ const SESSION_GRANT_TO_OWNER =
   /GRANT[^;]*public\.session[^;]*TO polaris_activation_notice_owner/;
 const CLOSED_LIST = String.raw`IN \('[a-z0-9_]+'`;
 const SHORT_CODE = String.raw`~ '\^\[a-z\]\[a-z0-9_\]\{0,63\}\$'`;
-const REFUSAL = String.raw`!~ '\[\[:space:\]\[:cntrl:\]@\]'`;
+// an anchored class with a length (a hexadecimal identifier, an opaque delivery id), which has no "@" in it
+const FIXED_FORMAT = String.raw`~ '\^\[[^\]@]*\]\{\d+(?:,\d+)?\}\$'`;
+const REFUSAL = String.raw`!~ '(?:\[\[:space:\]\[:cntrl:\]@\]|\[\[:cntrl:\]@\]|@)'`;
 
 type SeriesTable =
   | PgTable
@@ -81,7 +86,9 @@ function checksOf(table: SeriesTable): string[] {
 
 /** A check holds the column to a closed list or a short code of lower-case letters, or refuses "@" outright. */
 function refusesAt(column: string): RegExp {
-  return new RegExp(`"${column}" (${CLOSED_LIST}|${SHORT_CODE}|${REFUSAL})`);
+  return new RegExp(
+    `"${column}" (${CLOSED_LIST}|${SHORT_CODE}|${FIXED_FORMAT}|${REFUSAL})`
+  );
 }
 
 function textColumnsWithoutRefusal(table: SeriesTable): string[] {
@@ -141,13 +148,44 @@ describe("the tables of the activation series", () => {
     ]);
   });
 
-  it("list the four tables of the series", () => {
+  it("list the seven tables of the series", () => {
     expect(TABLES.map((table) => getTableConfig(table).name).sort()).toEqual([
+      "activation_email_events",
       "activation_email_suppressions",
       "activation_notices",
       "activation_series_state",
+      "activation_series_stop_releases",
+      "activation_series_stops",
       "email_opt_outs",
     ]);
+  });
+
+  it("allow one active stop and one release per stop, and never delete a stop with its releases", () => {
+    const [oneActive] = getTableConfig(activationSeriesStops).indexes;
+    expect(oneActive?.config.unique).toBe(true);
+    expect(oneActive?.config.name).toBe("activation_series_stops_one_active");
+    const releases = getTableConfig(activationSeriesStopReleases);
+    expect(
+      releases.uniqueConstraints.map((constraint) =>
+        constraint.columns.map((column) => column.name)
+      )
+    ).toEqual([["stop_id"]]);
+    expect(releases.foreignKeys[0]?.onDelete).toBe("no action");
+  });
+
+  it("record who released a stop as the login of the connection, which the caller does not send", () => {
+    const releasedBy = getTableConfig(
+      activationSeriesStopReleases
+    ).columns.find((column) => column.name === "released_by");
+    expect(dialect.sqlToQuery(releasedBy?.default as never).sql).toBe(
+      "session_user"
+    );
+  });
+
+  it("key the inbox by an opaque delivery id and keep no body in it", () => {
+    expect(
+      getTableConfig(activationEmailEvents).columns.map((column) => column.name)
+    ).toEqual(["event_id", "kind", "received_at"]);
   });
 
   it("keep the suppression as a 32-byte HMAC, never as text", () => {

@@ -117,9 +117,16 @@ export interface StockListState {
   entries: InventoryBalanceEntryReadModel[];
   /** A failed first load; a showing list keeps `moreError` instead. */
   error: string | null;
+  /** The filter the rows on screen were read for; `null` while no first page has arrived. */
+  listKey: string | null;
   loadingMore: boolean;
+  /** A failed "load more" while a list is already showing. */
   moreError: string | null;
   nextCursor: string | null;
+  /** The filters the rows on screen were read for, while the inputs may already show others (the search waits to pause); `null` when the caller did not say. */
+  readFilters: StockFilters | null;
+  /** The first page being read again under a list that is already showing, or that read having failed for the same filter. */
+  refresh: "failed" | "idle" | "loading";
   status: "error" | "loading" | "ready";
 }
 
@@ -127,53 +134,90 @@ export function initialStockListState(): StockListState {
   return {
     entries: [],
     error: null,
+    listKey: null,
     loadingMore: false,
     moreError: null,
     nextCursor: null,
+    readFilters: null,
+    refresh: "idle",
     status: "loading",
   };
 }
 
 /** Starts a (re)load of the first page; a showing list stays visible. */
 export function stockLoading(state: StockListState): StockListState {
+  // Ao reler a 1ª página, a resposta da página seguinte em voo é descartada por ficar velha.
   return state.status === "ready"
-    ? { ...state, moreError: null }
-    : { ...state, error: null, status: "loading" };
+    ? { ...state, loadingMore: false, moreError: null, refresh: "loading" }
+    : { ...state, error: null, refresh: "idle", status: "loading" };
 }
 
+/** The first page replaces the rows, the filter they belong to and the cursor together. */
 export function stockLoaded(
   state: StockListState,
-  page: StockPage
+  page: StockPage,
+  listKey: string,
+  readFilters: StockFilters | null
 ): StockListState {
   return {
     ...state,
     entries: [...page.entries],
     error: null,
+    listKey,
     loadingMore: false,
     moreError: null,
     nextCursor: page.nextCursor,
+    readFilters,
+    refresh: "idle",
     status: "ready",
   };
 }
 
+/**
+ * A first page that failed. For the same filter the rows stay (they are its
+ * own) and say they may be out of date; for another filter they leave, since
+ * the filters would show one search and the rows another.
+ */
 export function stockLoadFailed(
   state: StockListState,
-  error: unknown
+  error: unknown,
+  listKey: string
 ): StockListState {
-  const message = readErrorMessage(error, "o estoque");
-  return state.status === "ready"
-    ? { ...state, moreError: message }
-    : { ...state, error: message, status: "error" };
+  if (state.status === "ready" && state.listKey === listKey) {
+    return { ...state, loadingMore: false, moreError: null, refresh: "failed" };
+  }
+  return {
+    ...state,
+    entries: [],
+    error: readErrorMessage(error, "o estoque"),
+    listKey: null,
+    loadingMore: false,
+    moreError: null,
+    nextCursor: null,
+    refresh: "idle",
+    status: "error",
+  };
 }
 
-export function canLoadMoreStock(state: StockListState): boolean {
+/** Only the next page of the list on screen, and only when that list was read for the filter in force. */
+export function canLoadMoreStock(
+  state: StockListState,
+  listKey: string
+): boolean {
   return (
-    state.status === "ready" && state.nextCursor !== null && !state.loadingMore
+    state.status === "ready" &&
+    state.listKey === listKey &&
+    state.refresh === "idle" &&
+    state.nextCursor !== null &&
+    !state.loadingMore
   );
 }
 
-export function stockMoreStarted(state: StockListState): StockListState {
-  return canLoadMoreStock(state)
+export function stockMoreStarted(
+  state: StockListState,
+  listKey: string
+): StockListState {
+  return canLoadMoreStock(state, listKey)
     ? { ...state, loadingMore: true, moreError: null }
     : state;
 }
@@ -361,6 +405,10 @@ function unknownCostUnanswerable(
   return filters.unknownCost && costUnavailable;
 }
 
+export const STOCK_NO_VARIANTS_TITLE = "Nenhuma variante cadastrada.";
+export const STOCK_NO_VARIANTS_SUPPORT =
+  "Cadastre um produto para controlar o estoque dele.";
+
 export function stockEmptyMessage(
   filters: StockFilters,
   costUnavailable = false
@@ -383,11 +431,11 @@ export function stockEmptyMessage(
   if (filters.stock === "without_stock") {
     return "Todas as variantes têm saldo.";
   }
-  return "Nenhuma variante cadastrada. Cadastre um produto para controlar o estoque dele.";
+  return `${STOCK_NO_VARIANTS_TITLE} ${STOCK_NO_VARIANTS_SUPPORT}`;
 }
 
 export type StockListView =
-  | { kind: "loading"; message: string }
+  | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "empty"; message: string; showCatalogLink: boolean }
   | { kind: "ready"; rows: StockRow[] };
@@ -398,7 +446,7 @@ export function stockListView(
   costUnavailable = false
 ): StockListView {
   if (state.status === "loading") {
-    return { kind: "loading", message: "Carregando o estoque…" };
+    return { kind: "loading" };
   }
   if (state.status === "error") {
     return {
@@ -407,32 +455,67 @@ export function stockListView(
     };
   }
   if (state.entries.length === 0) {
+    const readFor = state.readFilters ?? filters;
     const unfiltered =
-      filters.query.trim() === "" &&
-      filters.stock === "all" &&
-      !filters.unknownCost;
+      readFor.query.trim() === "" &&
+      readFor.stock === "all" &&
+      !readFor.unknownCost;
     return {
       kind: "empty",
-      message: stockEmptyMessage(filters, costUnavailable),
+      message: stockEmptyMessage(readFor, costUnavailable),
       showCatalogLink: unfiltered,
     };
   }
   return { kind: "ready", rows: stockRows(state.entries, costUnavailable) };
 }
 
+/**
+ * The state of the one framed list, or null when the screen draws no frame (the read failed, or there is no variant
+ * at all and the empty state takes its place). One frame for every state keeps the count's live region mounted, so a
+ * screen reader hears it change between the list and a search with no result.
+ */
+export function framedListState(
+  view: StockListView
+): "filtered-empty" | "loading" | "rows" | null {
+  switch (view.kind) {
+    case "loading":
+      return "loading";
+    case "ready":
+      return "rows";
+    case "empty":
+      return view.showCatalogLink ? null : "filtered-empty";
+    default:
+      return null;
+  }
+}
+
 export interface StockMoreView {
   busy: boolean;
   error: string | null;
   label: string;
+  /** The list on screen could not be read again for the same filter: it may be out of date. */
+  refreshFailed: boolean;
+  /** The first page is being read again under the list that is showing. */
+  refreshing: boolean;
   visible: boolean;
 }
 
-export function stockMoreView(state: StockListState): StockMoreView {
+/** The button is hidden, not disabled, until the list on screen was read for the filter in force. */
+export function stockMoreView(
+  state: StockListState,
+  listKey: string
+): StockMoreView {
   return {
     busy: state.loadingMore,
     error: state.moreError,
     label: state.loadingMore ? "Carregando…" : "Carregar mais",
-    visible: state.status === "ready" && state.nextCursor !== null,
+    refreshFailed: state.status === "ready" && state.refresh === "failed",
+    refreshing: state.status === "ready" && state.refresh === "loading",
+    visible:
+      state.status === "ready" &&
+      state.listKey === listKey &&
+      state.refresh === "idle" &&
+      state.nextCursor !== null,
   };
 }
 

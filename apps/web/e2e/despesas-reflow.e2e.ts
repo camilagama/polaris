@@ -29,10 +29,14 @@ const uuid = (n: number) =>
 const FILTER_BUTTON_NAME = /^Filtrar( despesas)?$/;
 const CATEGORY_ITEM = /^Categoria/;
 const ROWS = 14;
+const LONG_CATEGORY = "Material de embalagem e limpeza do ateliê";
+const LONG_GROUP = "Operacional/Administrativa";
+const SHORT_CATEGORY = "Aluguel";
 
 const CATEGORIES = [
   ["commercial", "Marketing"],
-  ["operational", "Aluguel"],
+  ["operational", SHORT_CATEGORY],
+  ["operational", LONG_CATEGORY],
 ].map(([groupKey, name], index) => ({
   archivedAt: null,
   createdAt: NOW,
@@ -71,9 +75,42 @@ const answer = (json: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+const SPLIT_AMOUNTS = ["1234567.89", "12.30", "1234567.89"];
+const toCents = (amount: string) => Math.round(Number(amount) * 100);
+const fromCents = (cents: number) => (cents / 100).toFixed(2);
+
+const SPLIT_EXPENSES = EXPENSES.map((expense, index) => {
+  const target = CATEGORIES[index % 3] as (typeof CATEGORIES)[number];
+  return {
+    ...expense,
+    amount: SPLIT_AMOUNTS[index % 3] as string,
+    categoryGroup: target.groupKey,
+    categoryId: target.id,
+    categoryName: target.name,
+  };
+});
+
+function splitTotals() {
+  return CATEGORIES.map((target) => {
+    const own = SPLIT_EXPENSES.filter(
+      (expense) => expense.categoryId === target.id
+    );
+    return {
+      categoryId: target.id,
+      count: own.length,
+      total: fromCents(
+        own.reduce((sum, expense) => sum + toCents(expense.amount), 0)
+      ),
+    };
+  });
+}
+
 async function openExpenses(
   page: Page,
-  { categoriesFail = false }: { categoriesFail?: boolean } = {}
+  {
+    categoriesFail = false,
+    split = false,
+  }: { categoriesFail?: boolean; split?: boolean } = {}
 ) {
   await page.clock.setFixedTime(new Date(NOW));
   await serveLabWorker(page);
@@ -89,12 +126,25 @@ async function openExpenses(
           : route.fulfill(answer({ categories: CATEGORIES }));
       case "expense/list":
         return route.fulfill(
-          answer({
-            count: EXPENSES.length,
-            expenses: EXPENSES,
-            nextCursor: null,
-            total: (EXPENSES.length * 1500.5).toFixed(2),
-          })
+          split
+            ? answer({
+                count: SPLIT_EXPENSES.length,
+                expenses: SPLIT_EXPENSES,
+                nextCursor: null,
+                total: fromCents(
+                  SPLIT_EXPENSES.reduce(
+                    (sum, expense) => sum + toCents(expense.amount),
+                    0
+                  )
+                ),
+                totalsByCategory: splitTotals(),
+              })
+            : answer({
+                count: EXPENSES.length,
+                expenses: EXPENSES,
+                nextCursor: null,
+                total: (EXPENSES.length * 1500.5).toFixed(2),
+              })
         );
       case "expense/listRules":
         return route.fulfill(answer({ rules: [] }));
@@ -235,20 +285,20 @@ test.describe("a 320 px com letra de 20 px", () => {
         exact: true,
         name: "Filtrar despesas",
       });
-      const segmented = bar.getByRole("group", {
+      const segmented = bar.getByRole("tablist", {
         exact: true,
         name: "Situação",
       });
-      const voided = segmented.getByRole("button", {
+      const voided = segmented.getByRole("tab", {
         exact: true,
         name: "Anuladas",
       });
       await expect(
-        segmented.getByRole("button", { exact: true, name: "Ativas" })
+        segmented.getByRole("tab", { exact: true, name: "Ativas" })
       ).toBeInViewport({ ratio: 1 });
       await expect(voided).toBeInViewport({ ratio: 1 });
       await voided.click();
-      await expect(voided).toHaveAttribute("aria-pressed", "true");
+      await expect(voided).toHaveAttribute("aria-selected", "true");
 
       await bar.getByRole("button", { name: FILTER_BUTTON_NAME }).click();
       await page
@@ -279,6 +329,83 @@ test.describe("a 320 px com letra de 20 px", () => {
         .click();
       await expect(editor).toHaveCount(0);
       await expect(pill).toBeFocused();
+    }
+  );
+
+  reflowTest(
+    "o bloco Por categoria quebra o nome comprido, não corta o valor, não rola a página e a linha mantém 44 px de alvo",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await openExpenses(page, { split: true });
+      await expectReflowFont(page);
+      const block = page.getByRole("region", {
+        exact: true,
+        name: "Por categoria",
+      });
+      await expect(block).toBeVisible();
+      const lines = block.locator("[data-share-line]");
+      await expect(lines).toHaveCount(3);
+      await expect(
+        block.getByRole("button", {
+          name: new RegExp(`^Filtrar por ${LONG_CATEGORY}`),
+        })
+      ).toBeVisible();
+      await assertNothingClipped(block);
+      await assertNoEllipsis(block);
+      await assertNoPageScroll(page);
+      const heights = await lines.evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().height)
+      );
+      for (const height of heights) {
+        expect(height).toBeGreaterThanOrEqual(TOUCH);
+      }
+      const figuresInside = await lines.evaluateAll((elements) =>
+        elements.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return [...element.querySelectorAll("[data-money]")].every(
+            (money) => {
+              const at = money.getBoundingClientRect();
+              return at.left >= rect.left - 0.5 && at.right <= rect.right + 0.5;
+            }
+          );
+        })
+      );
+      expect(figuresInside, "an amount is cut by its line").toEqual([
+        true,
+        true,
+        true,
+      ]);
+      const longLine = lines.filter({ hasText: LONG_CATEGORY });
+      await expect(longLine).toHaveCount(1);
+      const gap = await longLine.evaluate((element) => {
+        const money = [...element.querySelectorAll("[data-money]")].at(-1);
+        const valueGroup = money?.parentElement;
+        const name = valueGroup?.previousElementSibling;
+        if (!(valueGroup && name)) {
+          throw new Error("the amount group or the name is gone from the line");
+        }
+        return (
+          valueGroup.getBoundingClientRect().top -
+          name.getBoundingClientRect().bottom
+        );
+      });
+      expect(
+        gap,
+        "the amount group of the long category did not wrap under its name, so the right edge check below proves nothing about ml-auto"
+      ).toBeGreaterThanOrEqual(-1);
+      const rightEdges = await lines.evaluateAll((elements) =>
+        elements.map((element) => {
+          const money = [...element.querySelectorAll("[data-money]")].at(-1);
+          return money ? money.getBoundingClientRect().right : Number.NaN;
+        })
+      );
+      const firstEdge = rightEdges[0] ?? Number.NaN;
+      for (const edge of rightEdges) {
+        expect(
+          Math.abs(edge - firstEdge),
+          "the amount right edge differs between lines"
+        ).toBeLessThanOrEqual(1);
+      }
     }
   );
 
@@ -332,4 +459,181 @@ test.describe("a 360 px com a letra padrão", () => {
       expect(height).toBeGreaterThanOrEqual(TOUCH);
     }
   );
+});
+
+interface ValueReading {
+  clientHeight: number;
+  clientWidth: number;
+  scrollHeight: number;
+  scrollWidth: number;
+  text: string;
+  title: string | null;
+  triggerHeight: number;
+}
+
+const readValue = (trigger: Locator) =>
+  trigger.evaluate((element): ValueReading => {
+    const value = element.querySelector<HTMLElement>(
+      '[data-slot="select-value"]'
+    );
+    if (value === null) {
+      throw new Error("the select has no value element");
+    }
+    return {
+      clientHeight: value.clientHeight,
+      clientWidth: value.clientWidth,
+      scrollHeight: value.scrollHeight,
+      scrollWidth: value.scrollWidth,
+      text: value.textContent ?? "",
+      title: value.getAttribute("title"),
+      triggerHeight: element.getBoundingClientRect().height,
+    };
+  });
+
+/** The value is whole in the DOM and in the title, and never cut sideways: only the end of its second line may be cut. */
+async function expectValueNotCutSideways(
+  trigger: Locator,
+  expected: string
+): Promise<ValueReading> {
+  const reading = await readValue(trigger);
+  expect(reading.text).toBe(expected);
+  expect(reading.scrollWidth, "the value is cut sideways").toBeLessThanOrEqual(
+    reading.clientWidth + 1
+  );
+  expect(reading.title, "the title has the whole name").toBe(expected);
+  return reading;
+}
+
+async function pick(page: Page, scope: Locator, label: string, option: string) {
+  await scope.getByRole("combobox", { exact: true, name: label }).click();
+  await page.getByRole("option", { exact: true, name: option }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+}
+
+const openExpenseForm = async (page: Page) => {
+  await newButton(page).click();
+  return page.getByRole("dialog", { exact: true, name: "Nova despesa" });
+};
+
+const openRuleForm = async (page: Page) => {
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  await page
+    .getByRole("button", { exact: true, name: "Nova despesa recorrente" })
+    .click();
+  return page.getByRole("dialog", {
+    exact: true,
+    name: "Nova despesa recorrente",
+  });
+};
+
+const openCategoryForm = async (page: Page) => {
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  await page
+    .getByRole("button", { exact: true, name: "Nova categoria" })
+    .click();
+  return page.getByRole("dialog", { exact: true, name: "Nova categoria" });
+};
+
+const SELECTS = [
+  {
+    label: "Categoria",
+    name: "o formulário de despesa",
+    open: openExpenseForm,
+    option: LONG_CATEGORY,
+    trigger: "#expense-categoryId",
+  },
+  {
+    label: "Categoria",
+    name: "a regra recorrente",
+    open: openRuleForm,
+    option: LONG_CATEGORY,
+    trigger: "#expense-rule-categoryId",
+  },
+  {
+    label: "Grupo",
+    name: "o formulário de categoria",
+    open: openCategoryForm,
+    option: LONG_GROUP,
+    trigger: "#expense-new-category-group",
+  },
+] as const;
+
+test.describe("o valor do seletor a 320 px com letra de 20 px", () => {
+  for (const select of SELECTS) {
+    reflowTest(
+      `${select.name}: o valor escolhido quebra de linha em vez de ser cortado seco, e o campo cresce sem passar da caixa`,
+      async ({ page }) => {
+        await openReflowViewport(page);
+        await openExpenses(page);
+        await expectReflowFont(page);
+        const dialog = await select.open(page);
+        await expect(dialog).toBeVisible();
+        const trigger = dialog.locator(select.trigger);
+        const before = await readValue(trigger);
+
+        await pick(page, dialog, select.label, select.option);
+
+        const after = await expectValueNotCutSideways(trigger, select.option);
+        const lineHeight = await trigger
+          .locator('[data-slot="select-value"]')
+          .evaluate((element) =>
+            Number.parseFloat(getComputedStyle(element).lineHeight)
+          );
+        expect(
+          after.triggerHeight - before.triggerHeight,
+          "the field grew by more than one line"
+        ).toBeLessThanOrEqual(lineHeight + 1);
+        expect(
+          after.clientHeight,
+          "the value shows more than two lines"
+        ).toBeLessThanOrEqual(2 * lineHeight + 1);
+        if (after.scrollHeight > after.clientHeight + 1) {
+          expect(
+            after.clientHeight,
+            "a cut value shows two lines, not one"
+          ).toBeGreaterThan(lineHeight * 1.5);
+        }
+        await assertNothingClipped(dialog);
+        await assertNoPageScroll(page);
+      }
+    );
+  }
+});
+
+test.describe("o valor do seletor a 360 px com letra de 16 px", () => {
+  for (const select of SELECTS.slice(0, 2)) {
+    reflowTest(
+      `${select.name}: valor curto deixa o campo na altura de hoje e valor longo cresce no máximo uma linha`,
+      async ({ page }) => {
+        await page.setViewportSize({ height: 740, width: 360 });
+        await openExpenses(page);
+        const dialog = await select.open(page);
+        const trigger = dialog.locator(select.trigger);
+        const empty = await readValue(trigger);
+
+        await pick(page, dialog, select.label, SHORT_CATEGORY);
+        const short = await readValue(trigger);
+        expect(
+          short.triggerHeight,
+          "a short value changes the height of the field"
+        ).toBe(empty.triggerHeight);
+        expect(
+          short.triggerHeight,
+          "the field is not at its height of always"
+        ).toBe(TOUCH);
+
+        await pick(page, dialog, select.label, select.option);
+        const long = await expectValueNotCutSideways(trigger, select.option);
+        const lineHeight = await trigger
+          .locator('[data-slot="select-value"]')
+          .evaluate((element) =>
+            Number.parseFloat(getComputedStyle(element).lineHeight)
+          );
+        expect(
+          long.triggerHeight - short.triggerHeight,
+          "the field grew by more than one line"
+        ).toBeLessThanOrEqual(lineHeight + 1);
+      }
+    );
+  }
 });

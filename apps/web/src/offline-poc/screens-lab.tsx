@@ -113,12 +113,16 @@ function labScreen(): LabScreen {
 const seededCatalog = () =>
   new URLSearchParams(window.location.search).get("catalog") === "seeded";
 
+/** `&variants=unpriced`: the sale screen with one more variant, which has no list price. */
+const unpricedVariant = () =>
+  new URLSearchParams(window.location.search).get("variants") === "unpriced";
+
 function newServer(screen: LabScreen) {
   if (screen === "products") {
     return seededCatalog() ? new ProductsLabServer() : new FakeCatalogServer();
   }
   return screen === "sale" || screen === "stock" || screen === "history"
-    ? new SaleLabServer()
+    ? new SaleLabServer(screen === "sale" && unpricedVariant())
     : new FakeCustomerServer();
 }
 
@@ -304,6 +308,7 @@ export function ScreensLab() {
         onVisible: (listener) => {
           const onVisibility = () => {
             if (document.visibilityState === "visible") {
+              runtime.pageReturned();
               listener();
             }
           };
@@ -337,7 +342,9 @@ export function ScreensLab() {
     async (event: ChangeEvent<HTMLInputElement>) => {
       network.online = event.currentTarget.checked;
       setOnline(event.currentTarget.checked);
-      // what the page does on the browser's online and offline events
+      // what the page does on the browser's online and offline events: the screens are told at once, since a sync
+      // still in flight answers syncNow() and would leave them with the old state
+      runtime.connectionChanged();
       await runtime.syncNow();
     },
     [network, runtime]

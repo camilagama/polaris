@@ -1,13 +1,29 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { Money } from "@polaris/domain/money/money";
-import CheckIcon from "lucide-react/dist/esm/icons/check";
-import { useEffect, useMemo } from "react";
+import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
+import StoreIcon from "lucide-react/dist/esm/icons/store";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { COLLAPSIBLE_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/lib/use-mobile";
 import { buttonVariants } from "@/ui/button";
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
+import { monoWidthEm } from "@/ui/money";
+import { ProgressRing } from "@/ui/progress-ring";
+import { SkeletonArt, type SkeletonArtKind } from "@/ui/skeleton-art";
+import { StepTile } from "@/ui/step-tile";
 import {
   currentFirstStep,
   FIRST_STEPS_ANCHOR,
+  FIRST_STEPS_TOTAL,
   firstStepsDone,
 } from "../app-shell/first-steps";
 import {
@@ -15,7 +31,7 @@ import {
   useThumbnailSequence,
 } from "../catalog/product-thumbnail";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
-import { checklistLink, checklistNext } from "./home-model";
+import { type ChecklistNext, checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
 import type { HomeChecklist } from "./use-home";
 
@@ -34,20 +50,50 @@ function barWidth(netSales: string, top: bigint): number {
   return Number((cents * 100n) / top);
 }
 
+const RANKING_FOOTER = {
+  capability: "catalog:read",
+  href: "/products",
+  label: "Ver os produtos",
+} as const;
+
+/**
+ * The units of a line: the quantity is a figure, in Geist Mono, and the " un." after it is a word, in the Geist of the
+ * line. The column keeps 2 em for the word, above what Geist takes to write it (under 1.7 em); `valores-e-ranking.e2e.ts`
+ * holds the whole units, word included, inside the column with a quantity of six characters.
+ */
+const UNIT_WORD = " un.";
+const UNIT_WORD_EM = 2;
+
 const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
 
 /** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
 const SPREAD_FROM = 3;
 
 /**
- * The five most sold products of the month, by units net of returns; none sold, or every sale of the period returned, the same box says so (AC-16). Each line has the
- * miniature of the product (its two initials when it has no photo or while it comes, in a box of the same size, so
- * nothing moves when the photo arrives) with the position in a small circle over its corner, the name, the net sales
- * and the units, and a green bar proportional to the net sales (v7 § 3 item 11), drawn in CSS: it says the same as
- * the value beside it. Each line is its own container: from 20.75 rem the five are one row, and the name is cut with
- * an ellipsis when it does not fit; under that (a phone, a narrow column, the browser font enlarged) the name takes its
- * own line, up to two, the miniature sits beside both lines, and the net sales and the units go to the line under
- * the name.
+ * The width of the widest of the formatted texts, in em of the line: the value and the quantity are in Geist Mono, whose
+ * every glyph (digit, point, comma, space) advances the same at every weight, the semibold of the value too, so the
+ * width is the count of characters times that advance. A `ch` would be the zero of the Geist of the line, not the
+ * advance of the mono.
+ */
+function widestEm(texts: readonly string[], extraEm = 0): number {
+  const widest = texts.reduce(
+    (most, text) => Math.max(most, monoWidthEm(text)),
+    0
+  );
+  return Number((widest + extraEm).toFixed(3));
+}
+
+/**
+ * The five most sold products of the month, by units net of returns; none sold, or every sale of the period returned, the same box says so (AC-16). Each line is
+ * a grid of columns that are the same in every line: the position (a figure, right-aligned), the miniature of the
+ * product (its two initials when it has no photo or while it comes, in a box of the same size, so nothing moves when
+ * the photo arrives), the name, the net sales and the units (both right-aligned, in the width of the widest of the
+ * five lines, so every line ends at the same x), and under them a green bar proportional to the net sales (v7 § 3
+ * item 11), drawn in CSS, from the name column to the units column: it says the same as the value beside it. Each
+ * line is its own container: from 20.75 rem the five columns are one row and the name is cut with an ellipsis when
+ * it does not fit; under that (a phone, a narrow column, the browser font enlarged) the name takes the width of the
+ * name and units columns, up to two lines, the miniature sits beside both rows, and the net sales and the units
+ * go to the row under the name.
  */
 export function TopProductsBlock({
   products,
@@ -70,7 +116,7 @@ export function TopProductsBlock({
   useThumbnailSequence(covers);
   if (products.length === 0) {
     return (
-      <HomeBlock id="home-top" title={title}>
+      <HomeBlock footer={RANKING_FOOTER} id="home-top" title={title}>
         <p className="grid flex-1 place-items-center text-center text-muted-foreground">
           {salesCount > 0 ? ALL_RETURNED_TEXT : "Sem vendas no período."}
         </p>
@@ -78,47 +124,57 @@ export function TopProductsBlock({
     );
   }
   const spread = products.length >= SPREAD_FROM;
+  const columns = {
+    "--top-units": `${widestEm(
+      products.map((product) => formatQuantity(product.quantity)),
+      UNIT_WORD_EM
+    )}em`,
+    "--top-value": `${widestEm(products.map((product) => formatBrlAmount(product.netSales)))}em`,
+  } as CSSProperties;
   return (
-    <HomeBlock id="home-top" title={title}>
-      <ol className="flex min-w-0 flex-1 flex-col">
+    <HomeBlock footer={RANKING_FOOTER} id="home-top" title={title}>
+      <ol className="flex min-w-0 flex-1 flex-col" style={columns}>
         {products.map((product, index) => {
           const content = (
             <>
               <span
-                data-top-line=""
-                className="@min-[20.75rem]:flex grid min-w-0 grid-cols-[32px_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5"
+                className="col-start-1 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 justify-self-end text-muted-foreground"
+                data-top-rank=""
               >
-                <span className="relative row-span-2 shrink-0 self-center">
-                  <ProductThumbnail
-                    assetId={product.coverAssetId}
-                    name={product.name}
-                    size={32}
-                  />
-                  <span className="absolute -top-1.5 -left-1.5 grid size-[1.125rem] place-items-center rounded-full bg-background font-semibold text-xs tabular-nums ring-1 ring-border">
-                    {index + 1}
-                  </span>
+                <Figure>{index + 1}</Figure>
+              </span>
+              <span className="col-start-2 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 grid self-center">
+                <ProductThumbnail
+                  assetId={product.coverAssetId}
+                  name={product.name}
+                  size={32}
+                />
+              </span>
+              <span
+                className="col-start-3 @min-[20.75rem]:col-end-4 col-end-5 row-start-1 line-clamp-2 @min-[20.75rem]:line-clamp-none min-w-0 @min-[20.75rem]:truncate break-words"
+                data-top-name=""
+              >
+                {product.name}
+              </span>
+              <span className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-1">
+                <span
+                  className="@min-[20.75rem]:col-start-4 @min-[20.75rem]:row-start-1 @min-[20.75rem]:justify-self-end font-semibold"
+                  data-top-value=""
+                >
+                  <MoneyText text={formatBrlAmount(product.netSales)} />
                 </span>
                 <span
-                  data-top-name=""
-                  className="line-clamp-2 @min-[20.75rem]:line-clamp-none min-w-0 @min-[20.75rem]:flex-1 @min-[20.75rem]:truncate break-words"
+                  className="@min-[20.75rem]:col-start-5 @min-[20.75rem]:row-start-1 @min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:justify-self-end text-muted-foreground"
+                  data-top-units=""
                 >
-                  {product.name}
-                </span>
-                <span
-                  data-top-figures=""
-                  className="col-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline gap-x-3"
-                >
-                  <span className="shrink-0 font-semibold tabular-nums">
-                    <MoneyText text={formatBrlAmount(product.netSales)} />
-                  </span>
-                  <span className="@min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:w-12 @min-[20.75rem]:shrink-0 text-right text-muted-foreground tabular-nums">
-                    {`${formatQuantity(product.quantity)} un.`}
-                  </span>
+                  <Figure>{formatQuantity(product.quantity)}</Figure>
+                  {UNIT_WORD}
                 </span>
               </span>
               <span
                 aria-hidden="true"
-                className="ml-[calc(32px+0.75rem)] block h-1.5 overflow-hidden rounded-full bg-muted"
+                className="col-start-3 @min-[20.75rem]:col-end-6 col-end-5 @min-[20.75rem]:row-start-2 row-start-3 block h-1.5 overflow-hidden rounded-full bg-muted"
+                data-top-track=""
               >
                 <span
                   className="block h-full rounded-full bg-chart-sales"
@@ -128,13 +184,15 @@ export function TopProductsBlock({
               </span>
             </>
           );
-          const row = "grid min-h-12 content-center gap-1.5 py-2";
+          const row =
+            "grid min-h-12 grid-cols-[1.25rem_auto_minmax(0,1fr)_auto] @min-[20.75rem]:grid-cols-[1.25rem_auto_minmax(0,1fr)_var(--top-value)_var(--top-units)] content-center items-center gap-x-1.5 @min-[20.75rem]:gap-x-2 gap-y-1 py-2";
           return (
             <li
               className={cn(
                 "@container grid min-w-0 border-t first:border-t-0",
                 spread && "flex-1"
               )}
+              data-top-line=""
               key={product.productId}
             >
               {product.deleted ? (
@@ -157,6 +215,42 @@ export function TopProductsBlock({
 }
 
 const STEPS = ["Loja criada", "Cadastrar o 1º produto", "Fazer a 1ª venda"];
+
+/** The icon of each step: the store has no destination in the menu; Produtos and Vender keep the icon they have there. */
+const STEP_ICONS = [StoreIcon, TagIcon, ShoppingBagIcon] as const;
+
+function stepState(isDone: boolean, isCurrent: boolean) {
+  if (isDone) {
+    return "done";
+  }
+  return isCurrent ? "current" : "todo";
+}
+
+/** The count beside the title: the ring and "N de 3", the figure always written. */
+function StepsCount({ done }: { done: number }) {
+  return (
+    <span className="flex items-center gap-1.5 text-muted-foreground">
+      <ProgressRing done={done} total={FIRST_STEPS_TOTAL} />
+      <span>
+        <Figure>{done}</Figure> de <Figure>{FIRST_STEPS_TOTAL}</Figure>
+      </span>
+    </span>
+  );
+}
+
+type NextKind = ChecklistNext["kind"];
+
+export const NEXT_STEP_SUPPORT: Record<NextKind, string> = {
+  product: "Nome, preço e quantas unidades você tem. Só o nome é obrigatório.",
+  sale: "Escolha o produto, o pagamento e confirme.",
+  stock: "Diga quantas unidades você tem para poder vender.",
+};
+
+export const NEXT_STEP_ART: Record<NextKind, SkeletonArtKind> = {
+  product: "products",
+  sale: "sale",
+  stock: "products",
+};
 
 /** The two ways of the step "Cadastrar o 1º produto" while it is not done (corte 2.5, T-5): by hand or a spreadsheet. */
 const FIRST_PRODUCT_WAYS = [
@@ -184,11 +278,98 @@ function FirstProductWays() {
   );
 }
 
-/**
- * The store that never sold (AC-22, § 5.4): three steps from its real data. While the first product is missing its
- * step has two small buttons (by hand, spreadsheet) and no button under the steps; after it, one button goes to the next step ("Dar entrada no estoque" on the
- * first product's panel while it has no stock).
- */
+function StepPreview({
+  children,
+  kind,
+}: {
+  children: ReactNode;
+  kind: NextKind;
+}) {
+  const opened = useRef(kind);
+  const changed = useRef<boolean>(false);
+  if (kind !== opened.current) {
+    changed.current = true;
+  }
+  const animate = changed.current;
+  return (
+    <div className="grid content-start gap-3" data-step-preview={kind}>
+      <div
+        className={cn(
+          "grid gap-3",
+          animate &&
+            "motion-full:fade-in-0 motion-full:animate-in motion-full:duration-150"
+        )}
+        key={kind}
+      >
+        <SkeletonArt kind={NEXT_STEP_ART[kind]} />
+        <p className="min-h-[2lh]" data-step-support="">
+          {NEXT_STEP_SUPPORT[kind]}
+        </p>
+      </div>
+      <div className="flex min-h-ctl-md flex-wrap items-center gap-x-2 gap-y-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function StepRow({
+  done,
+  index,
+  isCurrent,
+  support,
+  withWays,
+}: {
+  done: boolean;
+  index: number;
+  isCurrent: boolean;
+  support: string | null;
+  withWays: boolean;
+}) {
+  const tall = withWays || support !== null;
+  const line = tall ? "h-ctl-sm" : "";
+  const state = stepState(done, isCurrent);
+  const Icon = STEP_ICONS[index] ?? StoreIcon;
+  return (
+    <li
+      aria-current={isCurrent ? "step" : undefined}
+      className={cn(
+        "flex gap-2.5 rounded-md px-2 py-1",
+        tall ? "items-start" : "items-center",
+        state === "done" && "bg-muted/50"
+      )}
+    >
+      <span className={cn("flex items-center", line)}>
+        <StepTile state={state}>
+          <Icon />
+        </StepTile>
+      </span>
+      <span
+        className={cn(
+          "flex flex-wrap items-center gap-x-3 gap-y-2",
+          done && "text-muted-foreground"
+        )}
+      >
+        <span className={cn("flex items-center", line)}>
+          <span>
+            {STEPS[index]}
+            {done ? <span className="sr-only"> (feito)</span> : null}
+          </span>
+        </span>
+        {support ? (
+          <span
+            className="basis-full text-muted-foreground"
+            data-step-support=""
+          >
+            {support}
+          </span>
+        ) : null}
+        {withWays ? <FirstProductWays /> : null}
+      </span>
+    </li>
+  );
+}
+
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   // the foot of the menu links here from any screen: the block comes after the reads, past the browser's own scroll
   useEffect(() => {
@@ -198,69 +379,46 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
         ?.scrollIntoView({ block: "center" });
     }
   }, []);
+  const wide = useMediaQuery(COLLAPSIBLE_QUERY);
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
   const link = checklistLink(next);
   const done = firstStepsDone(checklist);
   const current = currentFirstStep(done);
+  const button = link ? (
+    <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
+      {link.label}
+    </a>
+  ) : (
+    <FirstProductWays />
+  );
   return (
     <HomeBlock
+      action={<StepsCount done={done.filter(Boolean).length} />}
       className="lg:col-span-2"
       id={FIRST_STEPS_ANCHOR}
       title="Primeiros passos"
     >
-      <ol className="grid gap-2">
-        {STEPS.map((step, index) => {
-          const withWays = index === 1 && next.kind === "product";
-          // with the two buttons the step is taller: number and name sit on the height of the first line of buttons
-          const line = withWays ? "h-ctl-sm" : "";
-          return (
-            <li
-              aria-current={index === current ? "step" : undefined}
-              className={cn(
-                "flex gap-2.5",
-                withWays ? "items-start" : "items-center"
-              )}
+      <div className="grid gap-(--card-spacing) lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+        <ol className="grid gap-1">
+          {STEPS.map((step, index) => (
+            <StepRow
+              done={done[index] === true}
+              index={index}
+              isCurrent={index === current}
               key={step}
-            >
-              <span className={cn("flex items-center", line)}>
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
-                    done[index] &&
-                      "border-primary bg-primary text-primary-foreground",
-                    index === current &&
-                      "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15"
-                  )}
-                >
-                  {done[index] ? <CheckIcon className="size-3" /> : index + 1}
-                </span>
-              </span>
-              <span
-                className={cn(
-                  "flex flex-wrap items-center gap-x-3 gap-y-2",
-                  done[index] && "text-muted-foreground"
-                )}
-              >
-                <span className={cn("flex items-center", line)}>
-                  <span>
-                    {step}
-                    {done[index] ? (
-                      <span className="sr-only"> (feito)</span>
-                    ) : null}
-                  </span>
-                </span>
-                {withWays ? <FirstProductWays /> : null}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-      {link ? (
-        <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
-          {link.label}
-        </a>
-      ) : null}
+              support={
+                !wide && index === current ? NEXT_STEP_SUPPORT[next.kind] : null
+              }
+              withWays={!wide && index === 1 && next.kind === "product"}
+            />
+          ))}
+        </ol>
+        {wide ? (
+          <StepPreview kind={next.kind}>{button}</StepPreview>
+        ) : (
+          link && button
+        )}
+      </div>
     </HomeBlock>
   );
 }

@@ -6,6 +6,14 @@ import {
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
 import type { PeriodChain, PeriodQuality } from "./dashboard-model";
+import {
+  type MissingDays,
+  type MissingInput,
+  missingDaysText,
+  missingInformed,
+  monthLabel,
+  singleUnknownMonth,
+} from "./missing-input";
 import { lastOfMonth, monthAbbreviation, monthName } from "./result-period";
 
 /**
@@ -15,12 +23,6 @@ import { lastOfMonth, monthAbbreviation, monthName } from "./result-period";
  * them up (AC-7), the parts of the cost and the sentences that depend on what is drawn. Money is added in exact cents
  * (`Money`); the numbers given to a drawing are only for the drawing.
  */
-
-/**
- * What the table, the reading of a day and the tooltip say for a day whose cost the server could not know (AC-9):
- * never 0,00. One text everywhere, so the eye and the screen reader meet the same words.
- */
-export const NO_COST_TEXT = "sem custo informado";
 
 const ZERO = Money.fromMinorUnits(0n);
 
@@ -94,11 +96,6 @@ export function costsKnown(days: readonly StoredDay[]): boolean {
         typeof day.costs === "string" && typeof day.operatingResult === "string"
     )
   );
-}
-
-/** True when the period has a day with an unknown cost, as opposed to costs the server never sent. */
-export function hasUnknownCostDay(days: readonly StoredDay[]): boolean {
-  return days.some(isUnknownDay);
 }
 
 /** A day the server could not know the cost of: both fields `null` (AC-8), or either one. */
@@ -197,14 +194,20 @@ export interface ResultSeries {
   grouped: boolean;
   /** The days up to today (or the months made of them): what is drawn and what the table lists. */
   rows: ResultRow[];
-  /** How many days up to today there are, and how many of them have an unknown cost ("3 de 25 dias"). */
-  days: { total: number; unknown: number };
+  /**
+   * How many days up to today there are, and how many of them have an unknown cost ("3 de 25 dias"); in a period by
+   * month whose unknown days are all in one month, the days of that month and its name ("novembro: 1 de 7 dias").
+   */
+  days: { month: string | null; total: number; unknown: number };
+  /** What the unknown days lack: the cost, or only the fee (`missingInputOf` of the period's quality). */
+  missing: MissingInput;
 }
 
 /** The shape of the summary's series: by date (no `granularity`), or by month with the days after today apart. */
 interface SeriesShape {
   afterToday?: StoredDay | undefined;
   granularity?: StoredPeriodSummary["granularity"] | undefined;
+  missing?: MissingInput | undefined;
 }
 
 /**
@@ -218,8 +221,9 @@ export function resultSeries(
   today: string,
   shape: SeriesShape = {}
 ): ResultSeries {
+  const missing = shape.missing ?? "cost";
   if (shape.granularity === "month") {
-    return monthlySeries(daily, today, shape.afterToday);
+    return monthlySeries(daily, today, shape.afterToday, missing);
   }
   const sent = costsSent(daily);
   const upToToday = daily.filter((day) => day.date <= today);
@@ -241,10 +245,12 @@ export function resultSeries(
     costsDrawn: sent && rows.some((row) => typeof row.costs === "string"),
     costsSent: sent,
     days: {
+      month: null,
       total: upToToday.length,
       unknown: sent ? upToToday.filter(isUnknownDay).length : 0,
     },
     grouped: false,
+    missing,
     rows,
   };
 }
@@ -258,7 +264,8 @@ export function resultSeries(
 function monthlySeries(
   months: readonly StoredDay[],
   today: string,
-  later: StoredDay | undefined
+  later: StoredDay | undefined,
+  missing: MissingInput
 ): ResultSeries {
   const upToToday = months.filter((month) => month.date <= today);
   const all = later ? [...months, later] : months;
@@ -268,17 +275,22 @@ function monthlySeries(
     later && costsKnown(all) && typeof later.costs === "string"
       ? later.costs
       : null;
+  const ofOneMonth = sent
+    ? singleUnknownMonth(upToToday, today.slice(0, 4))
+    : null;
   return {
     afterToday: laterCost !== null && cents(laterCost) > 0n ? laterCost : null,
     costsDrawn: sent && rows.some((row) => typeof row.costs === "string"),
     costsSent: sent,
-    days: {
+    days: ofOneMonth ?? {
+      month: null,
       total: upToToday.reduce((sum, month) => sum + (month.days ?? 0), 0),
       unknown: sent
         ? upToToday.reduce((sum, month) => sum + (month.unknownDays ?? 0), 0)
         : 0,
     },
     grouped: true,
+    missing,
     rows,
   };
 }
@@ -310,9 +322,12 @@ export function costSeries(rows: readonly ResultRow[]): (number | null)[] {
   );
 }
 
-/** "3 de 25 dias sem custo informado" (AC-11). */
-export function unknownDaysCount(unknown: number, total: number): string {
-  return `${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem custo informado`;
+/** "3 de 25 dias sem custo informado" (AC-11); "novembro: 1 de 7 dias sem taxa informada" for the days of one month. */
+export function unknownDaysCount(
+  missing: MissingDays,
+  opensSentence = false
+): string {
+  return missingDaysText(missing, "informed", opensSentence);
 }
 
 /** The row with the highest net sales (the first when two tie), or null when no row sold anything (AC-5). */
@@ -339,14 +354,34 @@ export function bestRowText(series: ResultSeries): string | null {
     : `Melhor dia: ${best.label}, ${amount}`;
 }
 
+/** "melhor dia" (or "melhor mês") for the row `bestRow` picks, null for every other row and for a period that sold nothing. */
+export function bestMark(
+  series: Pick<ResultSeries, "grouped" | "rows">,
+  index: number
+): string | null {
+  const best = bestRow(series.rows);
+  if (!best || series.rows[index] !== best) {
+    return null;
+  }
+  return series.grouped ? "melhor mês" : "melhor dia";
+}
+
 /**
  * The third part of the reading of a day or a month (AC-11): the expenses without a sale that fell on it, and, for a
- * month with days of unknown cost, how many of its days those are (AC-9: never a cost of zero).
+ * month with days of unknown cost, how many of its days those are, with the month's name (AC-9: never a cost of zero).
  */
-export function readingNote(row: ResultRow | undefined): string | null {
+export function readingNote(
+  row: ResultRow | undefined,
+  missing: MissingInput,
+  thisYear: string
+): string | null {
   const parts = [
     row?.unknownDays && row.unknownDays.unknown > 0
-      ? unknownDaysCount(row.unknownDays.unknown, row.unknownDays.total)
+      ? unknownDaysCount({
+          input: missing,
+          month: monthLabel(row.key, thisYear),
+          ...row.unknownDays,
+        })
       : null,
     row?.expenses
       ? `inclui ${formatBrlAmount(row.expenses)} de despesas do período`
@@ -355,9 +390,14 @@ export function readingNote(row: ResultRow | undefined): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** What the table says in the cost column of a row: the amount, or "sem custo" for a day the server could not know. */
-export function costText(value: string | null | undefined): string {
-  return typeof value === "string" ? formatBrlAmount(value) : NO_COST_TEXT;
+/** What the table says in the cost column of a row: the amount, or "sem custo" (or "sem taxa") for a day the server could not know. */
+export function costText(
+  value: string | null | undefined,
+  missing: MissingInput
+): string {
+  return typeof value === "string"
+    ? formatBrlAmount(value)
+    : missingInformed(missing);
 }
 
 /**
@@ -381,13 +421,16 @@ const SURCHARGED =
  * starts by how many there are; with no known day there is a single line and no equality. No line when the costs are not sent at all.
  */
 export function supportParts(
-  series: Pick<ResultSeries, "costsDrawn" | "costsSent" | "days" | "grouped">,
+  series: Pick<
+    ResultSeries,
+    "costsDrawn" | "costsSent" | "days" | "grouped" | "missing"
+  >,
   chain: PeriodChain
 ): { count: string | null; tail: string | null } {
   if (!series.costsSent) {
     return { count: null, tail: null };
   }
-  const { total, unknown } = series.days;
+  const { unknown } = series.days;
   const [unit, units] = series.grouped ? ["mês", "meses"] : ["dia", "dias"];
   const tail = hasSurcharges(chain)
     ? `${SURCHARGED} ${unit}. ${COMPETENCE}`
@@ -396,7 +439,7 @@ export function supportParts(
     return { count: null, tail: series.costsDrawn ? tail : null };
   }
   return {
-    count: `${unknownDaysCount(unknown, total)}.`,
+    count: `${unknownDaysCount({ ...series.days, input: series.missing }, true)}.`,
     tail: series.costsDrawn ? tail : COMPETENCE,
   };
 }

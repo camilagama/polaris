@@ -2,14 +2,16 @@ import {
   ACTIVATION_NOTICE_REREAD_REASONS,
   type ActivationNoticeSkipReason,
 } from "@polaris/domain/activation/notices";
+import { logger } from "@polaris/observability/logger";
 import { Pool } from "pg";
 import { guardPoolErrors } from "./pool-errors";
 
 /**
  * What the consumer of `activation.notice` reads and writes on the billing connection (ADR 0106): the notice still
  * owed, the database's re-read of it (`activation_notice_still_owed`, migration 0131), whether an address is
- * suppressed, and the outcome, written once. The billing runtime reads the notices and the suppressions directly and
- * no other table of the series' rules: those only through the re-read, which answers a code or what the e-mail needs.
+ * suppressed (`activation_address_suppressed`, migration 0135), and the outcome, written once. The billing runtime reads
+ * the notices directly and no other table of the series' rules: those only through the re-read, which answers a code or
+ * what the e-mail needs, and the suppressions only through the function that finds and re-keys them.
  */
 
 export interface ActivationNoticeClaim {
@@ -18,6 +20,18 @@ export interface ActivationNoticeClaim {
 }
 
 export type ActivationNoticeStep = "a1" | "a2" | "a3";
+
+/** The HMAC of one normalized address under one secret of the suppression, and the identifier of that secret. */
+export interface ActivationSuppressionKey {
+  hmac: Uint8Array;
+  keyId: string;
+}
+
+/** The HMAC under the current secret and, while one is set, under the previous one. */
+export interface ActivationSuppressionKeys {
+  current: ActivationSuppressionKey;
+  previous?: ActivationSuppressionKey;
+}
 
 /** The re-read: null when the notice is not owed any more; the first rule that stopped holding; or the e-mail's facts. */
 export type ActivationNoticeReread =
@@ -32,8 +46,15 @@ export interface ActivationNoticeStore {
     organizationId: string
   ) => Promise<ActivationNoticeClaim | null>;
   close: () => Promise<void>;
-  /** Whether any of these HMACs (the current and the previous secret's) is suppressed, for any reason. */
-  isSuppressed: (addressHmacs: readonly Uint8Array[]) => Promise<boolean>;
+  /**
+   * Whether the address is suppressed and still in force at `now`, for any reason; a row found under the previous
+   * secret is re-keyed under the current one by the database. A database that does not have the function yet (the
+   * Worker deployed before the migration) answers suppressed: nothing is sent without the check.
+   */
+  isSuppressed: (
+    keys: ActivationSuppressionKeys,
+    now: Date
+  ) => Promise<boolean>;
   /** Writes the attempt (last always, first once) on its own, before the send, so it stays if the send throws. */
   markAttempted: (noticeId: string, organizationId: string) => Promise<boolean>;
   markFailed: (
@@ -60,6 +81,19 @@ const OWED = "sent_at IS NULL AND failed_at IS NULL AND skipped_reason IS NULL";
 const STEPS: readonly string[] = ["a1", "a2", "a3"];
 const REREAD_CODES: readonly string[] = ACTIVATION_NOTICE_REREAD_REASONS;
 const HMAC_BYTES = 32;
+const KEY_ID = /^[0-9a-f]{8}$/;
+const UNDEFINED_FUNCTION = "42883";
+
+/** The statement of the suppression check: the function of migration 0135, the HMACs as hexadecimal text. */
+export const ACTIVATION_ADDRESS_SUPPRESSED_STATEMENT = `SELECT public.activation_address_suppressed(
+  p_current => pg_catalog.decode($1::text, 'hex'), p_current_key_id => $2::text,
+  p_previous => pg_catalog.decode($3::text, 'hex'), p_previous_key_id => $4::text,
+  p_now => $5::timestamptz) AS suppressed`;
+
+export type ActivationSuppressionQuery = (
+  statement: string,
+  values: readonly (string | null)[]
+) => Promise<{ rows: readonly { suppressed: boolean }[] }>;
 
 function isRereadCode(
   value: unknown
@@ -98,10 +132,64 @@ export function parseActivationNoticeReread(
   throw new Error("activation_notice_reread_unknown");
 }
 
-function hexOf(bytes: Uint8Array): string {
+/** Lower-case hexadecimal of the bytes: the form the statements send an HMAC in. */
+export function hexOf(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
     ""
   );
+}
+
+/** 42883 about this function only: the same code for another function missing inside a body is a defect, not a deploy order. */
+function isMissingSuppressionFunction(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  return (
+    code === UNDEFINED_FUNCTION &&
+    typeof message === "string" &&
+    message.includes("activation_address_suppressed")
+  );
+}
+
+function assertSuppressionKey(key: ActivationSuppressionKey): void {
+  if (key.hmac.length !== HMAC_BYTES || !KEY_ID.test(key.keyId)) {
+    throw new Error("activation_suppression_hmac_invalid");
+  }
+}
+
+/**
+ * Asks the database whether the address is suppressed. SQLSTATE 42883 (the function does not exist, the Worker
+ * deployed before the migration) counts as suppressed: failing closed sends nothing, whereas failing open could send to
+ * whoever complained.
+ */
+export async function addressSuppressed(
+  query: ActivationSuppressionQuery,
+  keys: ActivationSuppressionKeys,
+  now: Date
+): Promise<boolean> {
+  assertSuppressionKey(keys.current);
+  if (keys.previous) {
+    assertSuppressionKey(keys.previous);
+  }
+  try {
+    const result = await query(ACTIVATION_ADDRESS_SUPPRESSED_STATEMENT, [
+      hexOf(keys.current.hmac),
+      keys.current.keyId,
+      keys.previous ? hexOf(keys.previous.hmac) : null,
+      keys.previous ? keys.previous.keyId : null,
+      now.toISOString(),
+    ]);
+    return result.rows[0]?.suppressed === true;
+  } catch (error) {
+    if (isMissingSuppressionFunction(error)) {
+      logger.warn("activation_suppression_function_missing", {
+        outcome: "skipped",
+      });
+      return true;
+    }
+    throw error;
+  }
 }
 
 export function createActivationNoticeStore(
@@ -162,21 +250,13 @@ export function createActivationNoticeStore(
         : null;
     },
     close: () => pool.end(),
-    async isSuppressed(addressHmacs) {
-      if (
-        addressHmacs.length === 0 ||
-        addressHmacs.some((hmac) => hmac.length !== HMAC_BYTES)
-      ) {
-        throw new Error("activation_suppression_hmac_invalid");
-      }
-      const result = await pool.query<{ suppressed: boolean }>(
-        `SELECT EXISTS (
-           SELECT 1 FROM public.activation_email_suppressions
-            WHERE address_hmac IN (SELECT pg_catalog.decode(hex, 'hex') FROM unnest($1::text[]) AS hex)
-         ) AS suppressed`,
-        [addressHmacs.map(hexOf)]
+    isSuppressed(keys, now) {
+      return addressSuppressed(
+        (statement, values) =>
+          pool.query<{ suppressed: boolean }>(statement, [...values]),
+        keys,
+        now
       );
-      return result.rows[0]?.suppressed === true;
     },
     async markAttempted(noticeId, organizationId) {
       if (!NOTICE_ID.test(noticeId)) {

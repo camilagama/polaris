@@ -1,7 +1,10 @@
 import type { CategoryReadModel } from "@polaris/contracts";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { EMPTY_SUPPORT_MAX, EMPTY_TITLE_MAX } from "@/ui/empty-state";
+import { EMPTY_TEXT } from "./categories-model";
 import { CategoryList } from "./category-list";
 
 /**
@@ -48,6 +51,7 @@ const base: Props = {
 const render = (overrides: Partial<Props> = {}) =>
   renderToStaticMarkup(<CategoryList {...base} {...overrides} />);
 
+const ICON_SQUARE = /<div([^>]*data-slot="empty-icon"[^>]*)>(.*?)<\/div>/;
 const OFF = ' disabled=""';
 // the id is in an attribute, for the tests; the text of a row never shows it (it was the first eight characters)
 const ID_AS_TEXT = />s*0199c2d0/;
@@ -116,24 +120,73 @@ describe("the list of categories without a connection (P-2)", () => {
   });
 });
 
+const TITLE_H2 = /<h2[^>]*>Categorias cadastradas<\/h2>/;
+const LIST_NAMED_BY_TITLE = /<ul aria-labelledby="/;
+
 describe("the list of categories", () => {
-  it("says it is loading, and shows no row", () => {
+  it("says it is loading in the frame, with the skeleton and a status for the screen reader alone, and shows no row", () => {
     const html = render({ isLoading: true });
-    expect(html).toContain("Carregando categorias…");
+    expect(html).toContain('data-state="loading"');
+    expect(html).toContain(">Categorias cadastradas</h2>");
+    expect(html).toContain('<p class="sr-only" role="status">Carregando…</p>');
+    expect(html).toContain('data-slot="skeleton"');
+    expect(html).not.toContain("Carregando categorias…");
     expect(html).not.toContain("Camisetas");
   });
 
-  it("tells each tab what an empty list means", () => {
-    expect(render({ categories: [] })).toContain(
-      "Nenhuma categoria ativa. Adicione a primeira do catálogo."
-    );
-    expect(render({ categories: [], status: "archived" })).toContain(
-      "Não há categorias arquivadas."
-    );
-    expect(render({ categories: [], status: "deleted" })).toContain(
-      "Não há categorias removidas."
-    );
+  it("draws the rows in the frame, named by its title", () => {
+    const html = render();
+    expect(html).toMatch(TITLE_H2);
+    expect(html).toMatch(LIST_NAMED_BY_TITLE);
+    expect(html).not.toContain('aria-label="Categorias"');
   });
+
+  it("draws no count paragraph nor its reserved width in the frame of the rows", () => {
+    const html = render();
+    expect(html).toContain('data-list-block=""');
+    expect(html).not.toContain("data-list-count");
+    expect(html).not.toContain("min-w-28");
+  });
+
+  it("draws no frame for an empty list: the empty state stands alone", () => {
+    expect(render({ categories: [] })).not.toContain('data-list-block=""');
+  });
+
+  it("tells each tab what an empty list means, as an empty state read after the load", () => {
+    const active = render({ categories: [] });
+    expect(active).toContain('role="status"');
+    expect(active).toContain("Nenhuma categoria ativa.");
+    expect(active).toContain("Adicione a primeira do catálogo.");
+    expect(active).not.toContain("<button");
+    const archived = render({ categories: [], status: "archived" });
+    expect(archived).toContain('role="status"');
+    expect(archived).toContain("Não há categorias arquivadas.");
+    const deleted = render({ categories: [], status: "deleted" });
+    expect(deleted).toContain('role="status"');
+    expect(deleted).toContain("Não há categorias removidas.");
+  });
+
+  it.each(["active", "archived", "deleted"] as const)(
+    "draws the tag icon in the media square of the %s empty state, out of the accessible name",
+    (status) => {
+      const html = render({ categories: [], status });
+      const square = ICON_SQUARE.exec(html);
+      expect(square?.[1]).toContain('aria-hidden="true"');
+      expect(square?.[2]).toBe(
+        renderToStaticMarkup(<TagIcon aria-hidden="true" />)
+      );
+    }
+  );
+
+  it.each(Object.entries(EMPTY_TEXT))(
+    "keeps the %s empty state inside the limits of the component",
+    (_status, text) => {
+      expect(text.title.length).toBeLessThanOrEqual(EMPTY_TITLE_MAX);
+      expect((text.support ?? "").length).toBeLessThanOrEqual(
+        EMPTY_SUPPORT_MAX
+      );
+    }
+  );
 
   it("draws a row with the state in words, the date, and a menu named after the category, with no code", () => {
     const html = render();

@@ -34,7 +34,6 @@ import {
   voidExpense,
 } from "../src/expense-repository";
 import { createPaymentProfile } from "../src/payment-profile-repository";
-import { deleteProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
@@ -47,7 +46,9 @@ import {
 } from "../src/tenant-transaction";
 import { runClock, shiftDay, storeDay } from "./gate-clock";
 import { assertAllowedGateUrl } from "./gate-hosts";
+import { rollbackQuietly } from "./gate-roles";
 import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -125,7 +126,7 @@ const COMMAND_TRIGGERS: [string, string][] = [
 type AdminPool = ReturnType<typeof createDatabase>["pool"];
 type RuntimeDb = ReturnType<typeof createDatabase>["db"];
 type Adjustments = Parameters<typeof confirmSale>[2]["adjustments"];
-type Payment = Parameters<typeof confirmSale>[2]["payment"];
+type Payment = NonNullable<Parameters<typeof confirmSale>[2]["payment"]>;
 
 interface Product {
   productId: string;
@@ -419,6 +420,7 @@ async function assertSame(
       capability: "report:read",
       isolationLevel: "repeatable read",
       requestedOrganizationId: tenant.organizationId,
+      requireLegalAcceptance: false,
     },
     async (tx, identity) => [
       await readPeriodSummary(tx, identity, period, {
@@ -1035,7 +1037,7 @@ async function seedRankingStore(scenarios: Scenarios): Promise<Store> {
     []
   );
   await scenarios.as(store.tenant, "product:update", (tx, identity) =>
-    deleteProduct(tx, identity, {
+    archiveThenDeleteProduct(tx, identity, {
       expectedVersion: deletedProduct.version,
       id: deletedProduct.productId,
       requestId: randomUUID(),
@@ -1378,6 +1380,7 @@ async function assertVolume(
 ) {
   const store = await propertyStore(scenarios, "volume");
   const client = await admin.connect();
+  let rolledBack = true;
   try {
     await setCommandTriggers(admin, false);
     await client.query("BEGIN");
@@ -1399,10 +1402,10 @@ async function assertVolume(
     }
     await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    rolledBack = await rollbackQuietly(client);
     throw error;
   } finally {
-    client.release();
+    client.release(!rolledBack);
     await setCommandTriggers(admin, true);
   }
   await admin.query(
@@ -1415,6 +1418,19 @@ async function assertVolume(
   const plain = await explainVolume(scenarios, store.tenant, period, undefined);
   console.log(
     `gate-note: period-summary-sql EXPLAIN (ANALYZE, BUFFERS) under RLS of a month of ${VOLUME_SALES} sales: with the ranking ${ranked}; without ${plain}`
+  );
+  const lastDays = {
+    from: shiftDay(VOLUME_FROM, 25),
+    to: shiftDay(VOLUME_FROM, 30),
+  };
+  const withHistory = await explainVolume(
+    scenarios,
+    store.tenant,
+    lastDays,
+    undefined
+  );
+  console.log(
+    `gate-note: period-summary-sql EXPLAIN (ANALYZE, BUFFERS) under RLS of the last 6 days of that month, the 25 days before it being the store's earlier history: ${withHistory}`
   );
   return read.result.salesCount;
 }
@@ -1475,13 +1491,18 @@ interface DrawnSale {
   fate: "cancel" | "keep" | "returns";
   items: DrawnItem[];
   linked: { cents: number; day: number; voided: boolean }[];
-  payment:
-    | { kind: "missing" }
-    | { kind: "unknown" }
-    | { anticipation: number | null; kind: "card"; processing: number }
-    | { kind: "pix"; processing: number };
+  payment: DrawnPayment;
+  /** The second part of the payment, at position 1, when the sale has a payment and is paid in two parts. */
+  secondPart: DrawnPart | null;
   returns: { position: number; restockedPart: number; units: number }[];
 }
+
+type DrawnPart =
+  | { kind: "unknown" }
+  | { anticipation: number | null; kind: "card"; processing: number }
+  | { kind: "pix"; processing: number };
+
+type DrawnPayment = { kind: "missing" } | DrawnPart;
 
 interface DrawnCase {
   limit: number | null;
@@ -1494,6 +1515,25 @@ const PROPERTY_PRODUCTS = 6;
 /** A month of this many sales, a busy store, before slot 0 of the property. */
 const VOLUME_SALES = 9100;
 const VOLUME_FROM = "2000-02-01";
+
+const partArb: fc.Arbitrary<DrawnPart> = fc.oneof(
+  { arbitrary: fc.constant({ kind: "unknown" as const }), weight: 1 },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("pix" as const),
+      processing: fc.integer({ max: 2000, min: 0 }),
+    }),
+    weight: 1,
+  },
+  {
+    arbitrary: fc.record({
+      anticipation: fc.option(fc.integer({ max: 2000, min: 0 }), { freq: 3 }),
+      kind: fc.constant("card" as const),
+      processing: fc.integer({ max: 2000, min: 0 }),
+    }),
+    weight: 1,
+  }
+);
 
 const saleArb: fc.Arbitrary<DrawnSale> = fc.record({
   additions: fc.array(
@@ -1528,23 +1568,9 @@ const saleArb: fc.Arbitrary<DrawnSale> = fc.record({
   ),
   payment: fc.oneof(
     { arbitrary: fc.constant({ kind: "missing" as const }), weight: 1 },
-    { arbitrary: fc.constant({ kind: "unknown" as const }), weight: 3 },
-    {
-      arbitrary: fc.record({
-        kind: fc.constant("pix" as const),
-        processing: fc.integer({ max: 2000, min: 0 }),
-      }),
-      weight: 3,
-    },
-    {
-      arbitrary: fc.record({
-        anticipation: fc.option(fc.integer({ max: 2000, min: 0 }), { freq: 3 }),
-        kind: fc.constant("card" as const),
-        processing: fc.integer({ max: 2000, min: 0 }),
-      }),
-      weight: 3,
-    }
+    { arbitrary: partArb, weight: 9 }
   ),
+  secondPart: fc.option(partArb, { freq: 3 }),
   returns: fc.array(
     fc.record({
       position: fc.nat({ max: 4 }),
@@ -1634,6 +1660,7 @@ function saleRows(
     (total, item) => total + item.cents * item.quantity,
     0
   );
+  const payments = paymentRows(store, sale, saleId, subtotal);
   rows.sales.push({
     adjustment_count: sale.discounts.length + additions,
     command_id: randomUUID(),
@@ -1642,6 +1669,7 @@ function saleRows(
     occurred_at: `${occurredOn}T15:00:00.000Z`,
     occurred_on: occurredOn,
     organization_id: organization,
+    payment_count: Math.max(payments.length, 1),
   });
   for (const [position, item] of sale.items.entries()) {
     const product = store.catalog[
@@ -1677,10 +1705,7 @@ function saleRows(
       value_type: "fixed",
     });
   }
-  const payment = paymentRow(store, sale, saleId, subtotal);
-  if (payment) {
-    rows.payments.push(payment);
-  }
+  rows.payments.push(...payments);
   if (sale.fate === "cancel") {
     rows.cancellations.push({
       cancelled_by: store.tenant.userId,
@@ -1713,14 +1738,39 @@ function saleRows(
   }
 }
 
-function paymentRow(
+/**
+ * The payment rows of a drawn sale: none, one part of the whole subtotal, or two parts that split it with each part
+ * above zero (a sale of a subtotal under two cents stays in one part, as the database demands).
+ */
+function paymentRows(
   store: PropertyStore,
   sale: DrawnSale,
   saleId: string,
   subtotal: number
-): Row | null {
+): Row[] {
+  if (sale.payment.kind === "missing") {
+    return [];
+  }
+  const second = Math.floor(subtotal / 2);
+  if (sale.secondPart === null || second === 0) {
+    return [partOf(store, sale.payment, saleId, subtotal, 0)];
+  }
+  assert.ok(subtotal - second >= second, "the first part is the bigger one");
+  return [
+    partOf(store, sale.payment, saleId, subtotal - second, 0),
+    partOf(store, sale.secondPart, saleId, second, 1),
+  ];
+}
+
+function partOf(
+  store: PropertyStore,
+  payment: DrawnPart,
+  saleId: string,
+  amountCents: number,
+  position: number
+): Row {
   const base = {
-    amount: centsText(subtotal),
+    amount: centsText(amountCents),
     anticipation_fee_amount_snapshot: "0.00",
     anticipation_fee_fixed_amount_snapshot: null,
     anticipation_fee_mode_snapshot: "not_applicable",
@@ -1735,13 +1785,10 @@ function paymentRow(
     payment_profile_version_snapshot: null,
     processing_fee_amount_snapshot: null,
     processing_fee_fixed_amount_snapshot: null,
+    position,
     processing_fee_mode_snapshot: "unknown",
     sale_id: saleId,
   };
-  const { payment } = sale;
-  if (payment.kind === "missing") {
-    return null;
-  }
   if (payment.kind === "unknown") {
     return base;
   }
@@ -1793,10 +1840,11 @@ function expenseRow(
 const INSERTS: [Table, string][] = [
   [
     "sales",
-    `INSERT INTO public.sales (adjustment_count, command_id, id, item_count, occurred_at, occurred_on, organization_id)
-     SELECT adjustment_count, command_id, id, item_count, occurred_at, occurred_on, organization_id
+    `INSERT INTO public.sales (adjustment_count, command_id, id, item_count, occurred_at, occurred_on, organization_id,
+       payment_count)
+     SELECT adjustment_count, command_id, id, item_count, occurred_at, occurred_on, organization_id, payment_count
        FROM jsonb_to_recordset($1::jsonb) AS row (adjustment_count int, command_id uuid, id uuid, item_count int,
-         occurred_at timestamptz, occurred_on date, organization_id text)`,
+         occurred_at timestamptz, occurred_on date, organization_id text, payment_count smallint)`,
   ],
   [
     "items",
@@ -1819,16 +1867,16 @@ const INSERTS: [Table, string][] = [
     `INSERT INTO public.sale_payments (amount, anticipation_fee_amount_snapshot, anticipation_fee_fixed_amount_snapshot,
        anticipation_fee_mode_snapshot, anticipation_requested, installment_plan, installments, method, organization_id,
        payment_profile_id, payment_profile_name_snapshot, payment_profile_rule_id_snapshot, payment_profile_version_snapshot,
-       processing_fee_amount_snapshot, processing_fee_fixed_amount_snapshot, processing_fee_mode_snapshot, sale_id)
+       position, processing_fee_amount_snapshot, processing_fee_fixed_amount_snapshot, processing_fee_mode_snapshot, sale_id)
      SELECT amount, anticipation_fee_amount_snapshot, anticipation_fee_fixed_amount_snapshot, anticipation_fee_mode_snapshot,
        anticipation_requested, installment_plan, installments, method, organization_id, payment_profile_id,
-       payment_profile_name_snapshot, payment_profile_rule_id_snapshot, payment_profile_version_snapshot,
+       payment_profile_name_snapshot, payment_profile_rule_id_snapshot, payment_profile_version_snapshot, position,
        processing_fee_amount_snapshot, processing_fee_fixed_amount_snapshot, processing_fee_mode_snapshot, sale_id
        FROM jsonb_to_recordset($1::jsonb) AS row (amount numeric, anticipation_fee_amount_snapshot numeric,
          anticipation_fee_fixed_amount_snapshot numeric, anticipation_fee_mode_snapshot text, anticipation_requested boolean,
          installment_plan text, installments int, method text, organization_id text, payment_profile_id uuid,
          payment_profile_name_snapshot text, payment_profile_rule_id_snapshot uuid, payment_profile_version_snapshot int,
-         processing_fee_amount_snapshot numeric, processing_fee_fixed_amount_snapshot numeric,
+         position smallint, processing_fee_amount_snapshot numeric, processing_fee_fixed_amount_snapshot numeric,
          processing_fee_mode_snapshot text, sale_id uuid)`,
   ],
   [
@@ -1884,7 +1932,13 @@ async function writeCase(
   for (const expense of drawn.operating) {
     rows.expenses.push(expenseRow(store, slotStart, expense, null));
   }
+  await writeRows(admin, rows);
+}
+
+/** Writes the rows in one transaction of the owner, with the triggers of the sale commands switched off by the caller. */
+async function writeRows(admin: AdminPool, rows: Rows) {
   const client = await admin.connect();
+  let rolledBack = true;
   try {
     await client.query("BEGIN");
     for (const [table, statement] of INSERTS) {
@@ -1895,10 +1949,10 @@ async function writeCase(
     }
     await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    rolledBack = await rollbackQuietly(client);
     throw error;
   } finally {
-    client.release();
+    client.release(!rolledBack);
   }
 }
 
@@ -1932,7 +1986,7 @@ async function propertyStore(
     []
   );
   await scenarios.as(store.tenant, "product:update", (tx, identity) =>
-    deleteProduct(tx, identity, {
+    archiveThenDeleteProduct(tx, identity, {
       expectedVersion: doomed.version,
       id: doomed.productId,
       requestId: randomUUID(),
@@ -1980,6 +2034,7 @@ interface DrawnSeen {
   cancelledWithLinkedExpense: boolean;
   missingPayment: boolean;
   partialRestock: boolean;
+  paidInTwoParts: boolean;
   repeatedReturnOfAnItem: boolean;
   zeroPriceInDiscountedSale: boolean;
 }
@@ -1989,6 +2044,13 @@ function noteDrawn(drawn: DrawnCase, seen: DrawnSeen) {
     const lines = sale.fate === "returns" ? returnLines(sale) : [];
     const positions = lines.map((line) => line.position);
     seen.missingPayment ||= sale.payment.kind === "missing";
+    seen.paidInTwoParts ||=
+      sale.payment.kind !== "missing" &&
+      sale.secondPart !== null &&
+      sale.items.reduce(
+        (total, item) => total + item.cents * item.quantity,
+        0
+      ) >= 2;
     seen.cancelledWithLinkedExpense ||=
       sale.fate === "cancel" && sale.linked.some((expense) => !expense.voided);
     seen.partialRestock ||= lines.some(
@@ -2021,6 +2083,7 @@ async function assertProperty(
   const drawnSeen: DrawnSeen = {
     cancelledWithLinkedExpense: false,
     missingPayment: false,
+    paidInTwoParts: false,
     partialRestock: false,
     repeatedReturnOfAnItem: false,
     zeroPriceInDiscountedSale: false,
@@ -2055,10 +2118,323 @@ async function assertProperty(
     ...(options.path ? { path: options.path } : {}),
   });
   await assertCommandTriggersOn(admin);
+  const committed = await admin.query<{ parts: number; wrong: number }>(
+    `SELECT count(*)::int AS parts,
+            count(*) FILTER (WHERE positions <> ARRAY[0, 1]::smallint[])::int AS wrong
+       FROM (
+         SELECT array_agg(payment.position ORDER BY payment.position) AS positions
+           FROM public.sales AS sale
+           JOIN public.sale_payments AS payment ON payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
+          WHERE sale.organization_id = $1 AND sale.payment_count = 2
+          GROUP BY sale.id
+       ) AS two`,
+    [store.tenant.organizationId]
+  );
+  const [twoParts] = committed.rows;
+  assert.ok(
+    twoParts && twoParts.parts > 0,
+    "no sale of two parts was committed"
+  );
+  assert.equal(
+    twoParts.wrong,
+    0,
+    "a sale of two parts without positions 0 and 1"
+  );
+  const miscounted = await admin.query(
+    `SELECT sale.id
+       FROM public.sales AS sale
+       JOIN public.sale_payments AS payment ON payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
+      WHERE sale.organization_id = $1
+      GROUP BY sale.id, sale.payment_count
+     HAVING count(*) <> sale.payment_count`,
+    [store.tenant.organizationId]
+  );
+  assert.deepEqual(
+    miscounted.rows,
+    [],
+    "the header of a drawn sale counts the parts written with it, though the triggers were off"
+  );
   for (const [name, value] of Object.entries(drawnSeen)) {
     assert.ok(value, `no drawn case had ${name}`);
   }
   return slot;
+}
+
+/* ------------------------------------------------- sales paid in two or more parts */
+
+interface PartFees {
+  anticipation: number | null;
+  processing: number | null;
+}
+
+/** One part of a sale paid by card in two installments, with each fee known or not. */
+function partRow(
+  store: PropertyStore,
+  saleId: string,
+  amountCents: number,
+  fees: PartFees,
+  position: number
+): Row {
+  const fee = (cents: number | null) => ({
+    amount: cents === null ? null : centsText(cents),
+    mode: cents === null ? "unknown" : "fixed",
+  });
+  const processing = fee(fees.processing);
+  const anticipation = fee(fees.anticipation);
+  return {
+    amount: centsText(amountCents),
+    anticipation_fee_amount_snapshot: anticipation.amount,
+    anticipation_fee_fixed_amount_snapshot: anticipation.amount,
+    anticipation_fee_mode_snapshot: anticipation.mode,
+    anticipation_requested: true,
+    installment_plan: "merchant",
+    installments: 2,
+    method: "credit_card",
+    organization_id: store.tenant.organizationId,
+    payment_profile_id: store.profileId,
+    payment_profile_name_snapshot: "Maquininha sorteada",
+    payment_profile_rule_id_snapshot: store.ruleId,
+    payment_profile_version_snapshot: 1,
+    position,
+    processing_fee_amount_snapshot: processing.amount,
+    processing_fee_fixed_amount_snapshot: processing.amount,
+    processing_fee_mode_snapshot: processing.mode,
+    sale_id: saleId,
+  };
+}
+
+/** The same sale every time: a discount, a surcharge and a partial return, so every part of the chain is read. */
+function splitSale(day: number): DrawnSale {
+  return {
+    additions: [{ cents: 700, kind: "freight" }],
+    day,
+    discounts: [10],
+    fate: "returns",
+    items: [
+      { cents: 5000, cost: 1_500_000, product: 0, quantity: 2 },
+      { cents: 3000, cost: 2_250_000, product: 1, quantity: 1 },
+    ],
+    linked: [],
+    payment: { kind: "missing" },
+    returns: [{ position: 0, restockedPart: 3, units: 1 }],
+    secondPart: null,
+  };
+}
+
+const SPLIT_SALES: { day: number; parts: PartFees[] }[] = [
+  {
+    day: 1,
+    parts: [
+      { anticipation: 0, processing: 150 },
+      { anticipation: 80, processing: 250 },
+    ],
+  },
+  {
+    day: 2,
+    parts: [
+      { anticipation: 0, processing: 10 },
+      { anticipation: 0, processing: 20 },
+      { anticipation: 5, processing: 30 },
+    ],
+  },
+  {
+    day: 3,
+    parts: [
+      { anticipation: 10, processing: null },
+      { anticipation: 10, processing: 250 },
+    ],
+  },
+  {
+    day: 4,
+    parts: [
+      { anticipation: null, processing: 100 },
+      { anticipation: 80, processing: 200 },
+    ],
+  },
+];
+
+/** What a sale of one payment holds when it has the fees the parts of the sale add up to. */
+function wholeFees(parts: PartFees[]): PartFees {
+  const total = (pick: (part: PartFees) => number | null) =>
+    parts.reduce<number | null>((sum, part) => {
+      const value = pick(part);
+      return sum === null || value === null ? null : sum + value;
+    }, 0);
+  return {
+    anticipation: total((part) => part.anticipation),
+    processing: total((part) => part.processing),
+  };
+}
+
+function splitRows(
+  store: PropertyStore,
+  slotStart: string,
+  whole: boolean
+): Rows {
+  const rows: Rows = {
+    adjustments: [],
+    cancellations: [],
+    expenses: [],
+    items: [],
+    payments: [],
+    returnItems: [],
+    returns: [],
+    sales: [],
+  };
+  for (const { day, parts } of SPLIT_SALES) {
+    const sale = splitSale(day);
+    saleRows(store, sale, slotStart, rows);
+    const header = rows.sales.at(-1) as Row;
+    const saleId = header.id as string;
+    const subtotal = sale.items.reduce(
+      (total, item) => total + item.cents * item.quantity,
+      0
+    );
+    if (whole) {
+      rows.payments.push(partRow(store, saleId, subtotal, wholeFees(parts), 0));
+    } else {
+      header.payment_count = parts.length;
+      const first = Math.floor(subtotal / parts.length);
+      for (const [position, fees] of parts.entries()) {
+        rows.payments.push(
+          partRow(
+            store,
+            saleId,
+            position === 0 ? subtotal - first * (parts.length - 1) : first,
+            fees,
+            position
+          )
+        );
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * Sales paid in two and three parts count once and add up the fees of the parts. The case is committed as the rows a
+ * sale of parts holds (the header counting its parts, each part at its position), in a store of its own, and both
+ * readers (the SQL summary and the engine over the facts) read it as the runtime. The same sales paid whole, in one
+ * payment with the summed fees, are read apart and must give the same result, and the sums are also asserted as
+ * absolute numbers.
+ */
+async function assertSplitPayments(
+  admin: AdminPool,
+  scenarios: Scenarios,
+  db: RuntimeDb,
+  tally: Tally
+) {
+  const store = await propertyStore(scenarios, "split");
+  const splitStart = SLOT_ORIGIN;
+  const wholeStart = shiftDay(SLOT_ORIGIN, SLOT_DAYS);
+  const windowOf = (start: string) => ({ from: start, to: shiftDay(start, 9) });
+  const splitCase = splitRows(store, splitStart, false);
+  const wholeCase = splitRows(store, wholeStart, true);
+
+  const countsOf = async () => {
+    const counted = await admin.query<{ payments: number; sales: number }>(
+      `SELECT (SELECT count(*)::int FROM public.sales WHERE organization_id = $1) AS sales,
+              (SELECT count(*)::int FROM public.sale_payments WHERE organization_id = $1) AS payments`,
+      [store.tenant.organizationId]
+    );
+    return counted.rows[0] as { payments: number; sales: number };
+  };
+  const before = await countsOf();
+  try {
+    await setCommandTriggers(admin, false);
+    await writeRows(admin, splitCase);
+    await writeRows(admin, wholeCase);
+  } finally {
+    await setCommandTriggers(admin, true);
+  }
+  await assertCommandTriggersOn(admin);
+  const after = await countsOf();
+  assert.equal(after.sales, before.sales + 2 * SPLIT_SALES.length);
+  assert.equal(
+    after.payments,
+    before.payments + splitCase.payments.length + wholeCase.payments.length
+  );
+  const unpaid = await admin.query(
+    `SELECT sale.id
+       FROM public.sales AS sale
+       JOIN public.sale_items AS item ON item.organization_id = sale.organization_id AND item.sale_id = sale.id
+      WHERE sale.organization_id = $1 AND sale.occurred_on >= $2::date
+      GROUP BY sale.id
+     HAVING sum(item.charged_unit_price * item.quantity) <> (
+       SELECT sum(payment.amount) FROM public.sale_payments AS payment
+        WHERE payment.organization_id = sale.organization_id AND payment.sale_id = sale.id)`,
+    [store.tenant.organizationId, splitStart]
+  );
+  assert.deepEqual(
+    unpaid.rows,
+    [],
+    "the parts of each sale of the case add up to its subtotal"
+  );
+  const written = await admin.query<{ parts: number[] }>(
+    `SELECT array_agg(payment.position ORDER BY payment.position) AS parts
+       FROM public.sale_payments AS payment
+       JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id
+      WHERE payment.organization_id = $1 AND sale.occurred_on BETWEEN $2::date AND $3::date
+      GROUP BY sale.id, sale.payment_count
+     HAVING count(*) = sale.payment_count
+      ORDER BY count(*), min(sale.occurred_on)`,
+    [store.tenant.organizationId, splitStart, shiftDay(splitStart, 9)]
+  );
+  const wholeWritten = await admin.query<{ parts: number[] }>(
+    `SELECT array_agg(payment.position) AS parts
+       FROM public.sale_payments AS payment
+       JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id
+      WHERE payment.organization_id = $1 AND sale.occurred_on BETWEEN $2::date AND $3::date AND sale.payment_count = 1
+      GROUP BY sale.id`,
+    [store.tenant.organizationId, wholeStart, shiftDay(wholeStart, 9)]
+  );
+  assert.deepEqual(
+    wholeWritten.rows.map((row) => row.parts),
+    SPLIT_SALES.map(() => [0]),
+    "each sale paid whole holds one part at position 0"
+  );
+  assert.deepEqual(
+    written.rows.map((row) => row.parts),
+    [
+      [0, 1],
+      [0, 1],
+      [0, 1],
+      [0, 1, 2],
+    ],
+    "each sale of the case holds its parts at positions from 0, as many as its header counts"
+  );
+
+  const summaryStore = { tenant: store.tenant, today: store.today };
+  const split = await assertSame(
+    db,
+    summaryStore,
+    windowOf(splitStart),
+    undefined,
+    "split payments",
+    tally
+  );
+  const whole = await assertSame(
+    db,
+    summaryStore,
+    windowOf(wholeStart),
+    undefined,
+    "whole payments",
+    tally
+  );
+
+  const { result } = split;
+  assert.equal(result.salesCount, SPLIT_SALES.length, "a sale counts once");
+  assert.deepEqual(result, whole.result, "the same sales paid whole");
+  assert.equal(result.processingFees, "7.60");
+  assert.equal(result.anticipationFees, "1.05");
+  assert.equal(result.unknown.processingFees, 1);
+  assert.equal(result.unknown.anticipationFees, 1);
+  assert.equal(result.itemLines, 2 * SPLIT_SALES.length);
+  assert.notEqual(result.discounts, "0.00");
+  assert.notEqual(result.returns, "0.00");
+  assert.notEqual(result.cogs, "0.00");
+  assert.equal(split.daily.length, 10);
+  assert.equal(whole.daily.length, 10);
 }
 
 async function run() {
@@ -2143,6 +2519,10 @@ async function run() {
     tests.push(
       "a store without sales and one with only expenses equal the engine for 1, 31 and 366 days; the statement for one store run in another's context finds nothing (RLS), and the monthly one returns no row"
     );
+    await assertSplitPayments(admin.pool, scenarios, db, tally);
+    tests.push(
+      "sales paid in two and three parts count once and add up the fees of the parts, with a fee one part does not know making only that fee of the sale unknown: the SQL summary equals the engine in every field and equals the same sales paid whole, the parts committed at their positions with the header counting them"
+    );
     await assertRefusals(scenarios, zones[0] as Store);
     tests.push(
       "another capability, a period of 367 days, an inverted one, an impossible date and a ranking of 0, 11 or 2.5 products are refused"
@@ -2158,7 +2538,7 @@ async function run() {
     );
     assert.ok(cases >= runs, `only ${cases} drawn cases ran`);
     tests.push(
-      `property: ${cases} drawn cases (seed ${seed}) of up to 8 sales with zero and positive prices, costs of six places or unknown, up to two discounts and two additions, payments missing, unknown, known and with the anticipation fee unknown, partial and repeated returns, cancellations, linked and voided expenses and operating ones, a period of 1 to 31 days and a ranking or none, equal the engine in every field`
+      `property: ${cases} drawn cases (seed ${seed}) of up to 8 sales with zero and positive prices, costs of six places or unknown, up to two discounts and two additions, payments missing, unknown, known and with the anticipation fee unknown, in one part or in two parts of different kinds, partial and repeated returns, cancellations, linked and voided expenses and operating ones, a period of 1 to 31 days and a ranking or none, equal the engine in every field`
     );
 
     for (const [name, value] of Object.entries(tally.seen)) {
@@ -2204,7 +2584,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

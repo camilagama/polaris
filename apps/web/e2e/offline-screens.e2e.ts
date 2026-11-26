@@ -2,6 +2,7 @@
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { applyEditor, onPhone } from "./filter-bar-editor";
+import { chooseSelectOption } from "./select-option";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
@@ -493,14 +494,11 @@ async function payWith(page: Page, method: string) {
 
 /** The profile is a Base UI Select: open it, then pick the option. */
 async function chooseProfile(page: Page, option: string) {
-  await page
-    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
-    .click();
-  await page.getByRole("option", { exact: true, name: option }).click();
+  await chooseSelectOption(page.locator("body"), "Perfil de pagamento", option);
 }
 
 const summary = (page: Page) =>
-  page.getByRole("complementary", { name: "Resumo" });
+  page.getByRole("region", { exact: true, name: "Resumo" });
 
 const keepSale = (page: Page) =>
   page.getByRole("button", { name: "Guardar venda neste aparelho" });
@@ -558,13 +556,15 @@ test.describe("venda", () => {
       page.getByText("Vendas guardadas neste aparelho")
     ).toBeVisible();
     await expect(page.getByText("Aguardando envio")).toBeVisible();
-    // one card, one line: when, how many items, how much (P-3)
+    // one card, one line: when, lines and units, how much (P-3)
     const saved = page.getByRole("region", {
       name: "Vendas guardadas neste aparelho",
     });
     await expect(saved.getByRole("listitem")).toHaveCount(1);
     await expect(saved.getByRole("listitem")).toContainText(MONEY);
-    await expect(saved.getByRole("listitem")).toContainText("1 item");
+    await expect(saved.getByRole("listitem")).toContainText(
+      "1 linha · 2 unidades"
+    );
     await expect(
       page.getByText("Venda guardada neste aparelho.")
     ).toBeVisible();
@@ -597,17 +597,20 @@ test.describe("venda", () => {
   }) => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
+    const saved = page.getByRole("region", {
+      name: "Vendas guardadas neste aparelho",
+    });
     await fillShirtSale(page, 1);
     await keepSale(page).click();
     await expect(
       page.getByText("Venda guardada neste aparelho.")
     ).toBeVisible();
+    await expect(saved).toBeFocused();
     await fillShirtSale(page, 3);
+    await expect(saved).not.toBeFocused();
     await keepSale(page).click();
+    await expect(saved).toBeFocused();
 
-    const saved = page.getByRole("region", {
-      name: "Vendas guardadas neste aparelho",
-    });
     const lines = saved.getByRole("listitem");
     await expect(lines).toHaveCount(2);
     // the one kept just now is the first, and the only one that speaks as a status
@@ -1372,7 +1375,10 @@ for (const mode of ["offline", "mentindo"] as const) {
       await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
       await rede(page, mode);
       await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
-      await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(WITHOUT_FORM)).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByText(WITH_FORM)).toHaveCount(0);
       await expect(
         page.getByText(
           "Os perfis não carregaram. Eles aparecem quando a conexão voltar."
@@ -1410,6 +1416,7 @@ for (const mode of ["offline", "mentindo"] as const) {
       await expect(page.getByText(WITH_FORM)).toHaveCount(0, {
         timeout: 20_000,
       });
+      await expect(page.getByText(WITHOUT_FORM)).toHaveCount(0);
       await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
       expect(server.creates).toBe(0);
       await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
@@ -1608,12 +1615,17 @@ test.describe("P-2: Categorias e Despesas sem conexão", () => {
       .click();
     await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
 
-    const voidIt = page.getByRole("button", {
+    await page
+      .getByRole("button", { name: "Mais ações para Aluguel de outubro" })
+      .click();
+    const voidIt = page.getByRole("menuitem", {
       name: "Anular despesa Aluguel de outubro",
     });
     await expectOffWithReason(voidIt);
     await voidIt.focus();
     await page.keyboard.press("Enter");
+    await page.keyboard.press("Escape");
+    await expect(voidIt).toHaveCount(0);
     // "Nova despesa" and "Editar" only open the form: they stay on
     await expect(newExpense).not.toHaveAttribute("aria-disabled", "true");
     await expect(

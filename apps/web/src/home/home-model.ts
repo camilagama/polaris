@@ -1,7 +1,11 @@
 import type { GoalReadModel, PeriodSummaryReadModel } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { Money } from "@polaris/domain/money/money";
-import { formatGoalValue, groupGoals } from "../dashboard/goal-model";
+import {
+  formatGoalValue,
+  goalPercentTenths,
+  groupGoals,
+} from "../dashboard/goal-model";
 import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
@@ -111,8 +115,8 @@ export function msUntilNextMidnight(
   return DAY - elapsed + 1000;
 }
 
-/** Re-reading when the tab comes back is limited to once every 30 s (§ 5.1). */
-const FOCUS_REFRESH_MS = 30_000;
+/** Re-reading when the tab comes back is limited to once every 5 min (§ 5.1): the hour of the read is in the title and "Atualizar" is on the screen. */
+export const FOCUS_REFRESH_MS = 5 * 60_000;
 
 export function shouldRefreshOnReturn(
   lastReadAt: number,
@@ -139,21 +143,6 @@ export function chartValue(netSales: string): number {
 /** "18/10" for "2026-10-18". */
 export function shortDate(day: string): string {
   return `${day.slice(8, 10)}/${day.slice(5, 7)}`;
-}
-
-/** The best day of a series (the first one with the highest net sales), or null when no day sold anything. */
-export function bestDay(series: Daily): Daily[number] | null {
-  let best: Daily[number] | null = null;
-  for (const entry of series) {
-    const cents = Money.from(entry.netSales).minorUnits;
-    if (
-      cents > 0n &&
-      (best === null || cents > Money.from(best.netSales).minorUnits)
-    ) {
-      best = entry;
-    }
-  }
-  return best;
 }
 
 const MONTH_NAMES = [
@@ -220,12 +209,35 @@ export type GoalView =
   | { goal: GoalReadModel; kind: "settled" }
   | { kind: "none" };
 
+/**
+ * The active goals in the order the card walks them: the ones not reached first, by the percent of the target
+ * (highest first, so the nearest to being reached opens), the ones already reached last; a tie ends the sooner first.
+ * A goal the plan paused is not measured, so it comes after the measured ones that are not reached, and before the
+ * reached ones. The server does not say when an active goal was reached, so among the reached ones the same rule
+ * applies: the higher percent first, then the sooner end.
+ */
+export function orderGoalsByProximity(
+  goals: readonly GoalReadModel[]
+): GoalReadModel[] {
+  const reached = (goal: GoalReadModel) => goal.progress?.reached === true;
+  return [...goals].sort(
+    (a, b) =>
+      Number(reached(a)) - Number(reached(b)) ||
+      Number(a.paused) - Number(b.paused) ||
+      goalPercentTenths(b.progress?.percent ?? null) -
+        goalPercentTenths(a.progress?.percent ?? null) ||
+      a.endsOn.localeCompare(b.endsOn) ||
+      a.startsOn.localeCompare(b.startsOn) ||
+      a.id.localeCompare(b.id)
+  );
+}
+
 /** How many days back a goal that settled is still shown when no other is active (§ 5.3). */
 const SETTLED_SHOWN_DAYS = 7;
 
 /**
- * The goal of the card (AC-10, AC-11, § 5.3): the active one that ends first, with how many others there are; with
- * none active, the last one that settled (reached or missed, never a cancelled one) in the last 7 days of the store;
+ * The goal of the card (AC-10, AC-11, § 5.3): the active one nearest to being reached (`orderGoalsByProximity`), with
+ * how many others there are; with none active, the last one that settled (reached or missed, never a cancelled one) in the last 7 days of the store;
  * otherwise none ("Definir meta"). Reading the goals settles them, so the read is of every status.
  */
 export function pickGoal(
@@ -234,7 +246,7 @@ export function pickGoal(
   timezone: string | null
 ): GoalView {
   const { active, settled } = groupGoals(goals);
-  const [first] = active;
+  const [first] = orderGoalsByProximity(active);
   if (first) {
     return { goal: first, kind: "active", others: active.length - 1 };
   }

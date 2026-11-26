@@ -45,6 +45,8 @@ import {
 import { runClock, storeDay } from "./gate-clock";
 import {
   replaceFunctionAsOwner,
+  rollbackAndRelease,
+  rollbackQuietly,
   setLoginRole,
   withGateRole,
 } from "./gate-roles";
@@ -175,7 +177,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   // the organizations stay in the disposable database (their audit is immutable); only what another gate's run could
   // pick up is put back: the purge row and the organization it belongs to
   const created: string[] = [];
@@ -211,7 +213,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const tenantUrl = await login(runtimeRole, "polaris_cro_tenant");
@@ -566,6 +568,16 @@ async function run() {
         error.code === "tenant_access_denied",
       "someone who is not a member learns nothing"
     );
+    await assert.rejects(
+      () =>
+        withTenantAs(runtimeDb, asOwnerOf(orgA), "__proto__", () =>
+          Promise.resolve(1)
+        ),
+      (error: unknown) =>
+        error instanceof TenantAuthorizationError &&
+        error.code === "capability_denied",
+      "the capability is checked before the status of the organization, as before the entry in one statement"
+    );
     const orgSuspended = await fixture("suspended");
     await owner.pool.query(
       "UPDATE public.organizations SET status = 'suspended' WHERE id = $1",
@@ -582,7 +594,7 @@ async function run() {
       "a suspension is not a closure"
     );
     tests.push(
-      `every one of the ${CAPABILITIES.length} capabilities of the map is refused to the owner of a closed organization with organization_closed (none runs); someone who is not a member, and the owner of a suspended organization, still get tenant_access_denied`
+      `every one of the ${CAPABILITIES.length} capabilities of the map is refused to the owner of a closed organization with organization_closed (none runs); someone who is not a member, and the owner of a suspended organization, still get tenant_access_denied, and a capability outside the map is capability_denied before the closure is told`
     );
 
     // ------------------------------------------------- 4. asking for a copy
@@ -851,11 +863,7 @@ async function run() {
       } catch (error: unknown) {
         return error instanceof Error ? error.message : String(error);
       } finally {
-        try {
-          await client.query("ROLLBACK");
-        } finally {
-          client.release();
-        }
+        await rollbackAndRelease(client);
       }
     };
     for (const [label, timezone, purgeAfterD] of [
@@ -1019,7 +1027,7 @@ async function run() {
         }
         return await operation(client);
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
+        await rollbackQuietly(client);
         await client.end();
       }
     };
@@ -1180,7 +1188,7 @@ async function run() {
           await client.query(`${remove[1]} AND false`);
         });
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
+        await rollbackQuietly(client);
         await client.end();
       }
     };
@@ -1762,8 +1770,7 @@ async function run() {
         [created]
       )
       .catch(() => undefined);
-    for (const [role, group] of logins) {
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

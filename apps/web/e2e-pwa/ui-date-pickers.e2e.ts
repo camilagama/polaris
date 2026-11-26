@@ -2,8 +2,14 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import {
+  expectNoTypedDates,
+  footerRuleAlpha,
+  panelHeight,
+  touchDay,
+} from "../e2e/date-pickers";
 import { expectMotionLevel } from "./motion-expect";
-import { axeFaults } from "./ui-guardrails";
+import { axeFaults } from "./ui-guardrails/measures";
 
 /**
  * The date pickers of src/ui/ in the gallery: the calendar chunk loads on demand; one date is chosen with a
@@ -60,6 +66,43 @@ async function expectDisabledDay(off: Locator) {
   await expect(off).toHaveAttribute("aria-disabled", "true");
   await expect(off).not.toHaveAttribute("disabled");
   await expect(off).toHaveAccessibleDescription("Só até hoje");
+}
+
+/**
+ * Waits until the button has the same place for several frames in a row (the popover has finished its entrance and
+ * its placement). A mouse held at a point computed earlier lands outside a popover that moves or flips to the other
+ * side of the field, and that is an outside press that closes it.
+ */
+async function expectStill(button: Locator) {
+  const place = () =>
+    button.evaluate(
+      (element) =>
+        new Promise<string>((resolve) => {
+          const read = () => {
+            const box = element.getBoundingClientRect();
+            return `${box.x},${box.y},${scrollY}`;
+          };
+          const before = read();
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              resolve(before === read() ? before : "moving");
+            });
+          });
+        })
+    );
+  let previous = "";
+  let still = 0;
+  await expect
+    .poll(
+      async () => {
+        const now = await place();
+        still = now === previous && now !== "moving" ? still + 1 : 0;
+        previous = now;
+        return still >= 5;
+      },
+      { intervals: [50], timeout: 10_000 }
+    )
+    .toBe(true);
 }
 
 /** The reason of the turned-off days, as the text under the month (hidden, with its height kept, until one has the focus). */
@@ -238,6 +281,7 @@ test("Safari com rede: o botão é Recarregar a página, nada recarrega sozinho 
   page,
 }) => {
   const count = { asked: 0 };
+  await page.clock.install();
   await chunkFailsLikeSafari(page, count);
   await page.goto("/ui-galeria");
   await expect(inlineBox(page)).toHaveText(`${FAILED_TEXT}${RELOAD_TEXT}`);
@@ -247,8 +291,9 @@ test("Safari com rede: o botão é Recarregar a página, nada recarrega sozinho 
   await page.evaluate(() => {
     (window as unknown as { stillHere: boolean }).stillHere = true;
   });
-  // a while with the box open: the page is not reloaded by itself
-  await page.waitForTimeout(500);
+  // a while with the box open: the page's clock runs on and the page is not reloaded by itself
+  await page.clock.runFor(500);
+  await page.evaluate(() => 0);
   expect(
     await page.evaluate(
       () => (window as unknown as { stillHere?: boolean }).stillHere
@@ -543,47 +588,84 @@ for (const viewport of VIEWPORTS) {
       await expect(button).toHaveAccessibleName("Período, Escolher período");
     });
 
-    test("período: com só o 1º dia o botão de digitar escreve a data pela regra do ano e o painel não muda de largura", async ({
+    for (const [name, label, state] of [
+      ["Período das vendas,", "Período das vendas", "sem período"],
+      ["Período,", "Período", "com período"],
+    ] as const) {
+      test(`período ${state}: não há botão de digitar as datas nem campo de texto, e o painel mantém a altura e a largura ao marcar o 1º dia`, async ({
+        page,
+      }) => {
+        await openGallery(page);
+        const popup = await openPicker(page, name, label);
+        await expectNoTypedDates(popup);
+        await expectStill(popup.getByRole("grid").first());
+        const before = await popup.boundingBox();
+        const heightBefore = await panelHeight(popup);
+        const clear = popup.locator("button", { hasText: "Limpar" });
+        if (state === "sem período") {
+          await expect(clear).toBeHidden();
+          expect(await footerRuleAlpha(popup)).toBe(0);
+        } else {
+          expect(await footerRuleAlpha(popup)).toBeGreaterThan(0);
+        }
+
+        await day(popup, "2026-10-10").click();
+        await expect(
+          popup.getByText("Início 10/10. Escolha o último dia.")
+        ).toBeVisible();
+        await expectNoTypedDates(popup);
+        const after = await popup.boundingBox();
+        expect(after?.height).toBeCloseTo(before?.height ?? 0, 0);
+        expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
+        expect(await panelHeight(popup)).toBeCloseTo(heightBefore, 1);
+        await expect(clear).toBeVisible();
+        expect(await footerRuleAlpha(popup)).toBeGreaterThan(0);
+      });
+    }
+
+    test("período só pelo teclado: PageUp leva ao mês de dois meses atrás, Enter marca o início e o fim, e os atalhos seguem por Tab", async ({
       page,
     }) => {
       await openGallery(page);
-      const open = () =>
-        openPicker(page, "Período das vendas,", "Período das vendas");
-      let popup = await open();
-      let toggle = popup.getByRole("button", { name: "Digitar as datas" });
-      await expect(toggle).toHaveText("Digitar as datas");
-      const before = await popup.boundingBox();
-      const toggleBefore = await toggle.boundingBox();
+      await trigger(page, "Período das vendas,").focus();
+      await page.keyboard.press("Enter");
+      const popup = page.getByRole("dialog", { name: "Período das vendas" });
+      await expect(day(popup, "2026-10-24")).toBeFocused();
 
-      await day(popup, "2026-10-10").click();
-      await expect(toggle).toHaveText("10/10 a …");
-      await expect(toggle).toHaveAccessibleName("Digitar as datas: 10/10 a …");
-      const after = await popup.boundingBox();
-      expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
-      expect((await toggle.boundingBox())?.height).toBeCloseTo(
-        toggleBefore?.height ?? 0,
-        0
-      );
-
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("PageUp");
+      await expect(day(popup, "2026-09-24")).toBeFocused();
+      await page.keyboard.press("PageUp");
+      await expect(day(popup, "2026-08-24")).toBeFocused();
+      await expect(popup.getByText("Agosto de 2026").first()).toBeVisible();
+      await page.keyboard.press("Enter");
+      await expect(
+        popup.getByText("Início 24/08. Escolha o último dia.")
+      ).toBeVisible();
+      await expect(popup).toBeVisible();
+      await page.keyboard.press("ArrowDown");
+      await expect(day(popup, "2026-08-31")).toBeFocused();
+      await page.keyboard.press("Enter");
       await expect(popup).toBeHidden();
-      popup = await open();
-      toggle = popup.getByRole("button", { name: "Digitar as datas" });
-      await expect(toggle).toHaveText("Digitar as datas");
-      const next = popup.getByRole("button", { name: "Próximo mês" });
-      await next.click();
-      await next.click();
-      await next.click();
-      await expect(popup.getByText("Janeiro de 2027").first()).toBeVisible();
-      await day(popup, "2027-01-05").click();
-      await expect(toggle).toHaveText("05/01/2027 a …");
-      await expect(toggle).toHaveAccessibleName(
-        "Digitar as datas: 05/01/2027 a …"
-      );
-      expect((await popup.boundingBox())?.width).toBeCloseTo(
-        before?.width ?? 0,
-        0
-      );
+      const button = trigger(page, "Período das vendas,");
+      await expect(button).toHaveText("24/08 a 31/08");
+      await expect(button).toBeFocused();
+
+      await page.keyboard.press("Enter");
+      const again = page.getByRole("dialog", { name: "Período das vendas" });
+      await expect(day(again, "2026-08-24")).toBeFocused();
+      await expect
+        .poll(
+          async () => {
+            await page.keyboard.press("Shift+Tab");
+            return await page.evaluate(
+              () => (document.activeElement as HTMLElement).dataset.preset ?? ""
+            );
+          },
+          { intervals: [50], timeout: 5000 }
+        )
+        .not.toBe("");
+      await page.keyboard.press("Enter");
+      await expect(again).toBeHidden();
     });
 
     test("período: um mês em qualquer largura, o dia com 36 px no mouse e 44 no toque, nada fora da janela", async ({
@@ -709,6 +791,10 @@ test.describe("dia desligado, com o mouse a 1280 px", () => {
     page,
   }) => {
     await openGallery(page);
+    await trigger(page, "Data do pagamento,").evaluate((element) => {
+      element.scrollIntoView({ block: "start" });
+      window.scrollBy(0, -100);
+    });
     const popup = await openPicker(
       page,
       "Data do pagamento,",
@@ -717,6 +803,7 @@ test.describe("dia desligado, com o mouse a 1280 px", () => {
     const off = day(popup, "2026-10-25");
     const reason = reasonLine(popup);
     await expect(reason).toBeHidden();
+    await expectStill(off);
     await off.hover();
     expect(await paint(off)).toEqual({
       background: "rgba(0, 0, 0, 0)",
@@ -911,6 +998,19 @@ const FUTURE_REASON = "Só depois de hoje";
 const footerReason = (popup: Locator) =>
   popup.locator("[data-date-footer]").getByText(FUTURE_REASON, { exact: true });
 
+async function expectAnimationsDone(popup: Locator) {
+  await expect
+    .poll(() =>
+      popup.evaluate(
+        (element) => element.getAnimations({ subtree: true }).length
+      )
+    )
+    .toBe(0);
+}
+
+const settledHeight = async (popup: Locator) =>
+  Math.round((await popup.boundingBox())?.height ?? Number.NaN);
+
 async function openFuturePicker(page: Page) {
   await openGallery(page);
   return openPicker(page, "Data de entrega,", "Data de entrega");
@@ -968,7 +1068,9 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
   }) => {
     const popup = await openFuturePicker(page);
     const off = day(popup, "2026-10-24");
-    const before = (await popup.boundingBox())?.height;
+    await expectAnimationsDone(popup);
+    const before = await settledHeight(popup);
+    expect(before).toBeGreaterThan(0);
     await off.focus();
     await expect(off).toBeFocused();
     await expect(popup.getByText(FUTURE_REASON, { exact: true })).toHaveCount(
@@ -979,7 +1081,8 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
     ).toHaveCount(1);
     await expect(footerReason(popup)).toBeVisible();
     await expect(off).toHaveAccessibleDescription(FUTURE_REASON);
-    expect((await popup.boundingBox())?.height).toBe(before);
+    await expectAnimationsDone(popup);
+    expect(await settledHeight(popup)).toBe(before);
   });
 
   test("com Hoje permitido o rodapé não escreve motivo nenhum", async ({
@@ -996,6 +1099,37 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
     ).not.toHaveAttribute("aria-disabled");
     await expect(popup.locator("[data-date-footer] p")).toHaveCount(0);
   });
+});
+
+test.describe("o painel do período com a frase do 1º dia quebrando", () => {
+  for (const size of [
+    { fontPixels: 20, height: 740, width: 320 },
+    { fontPixels: 16, height: 740, width: 360 },
+  ]) {
+    test(`período a ${size.width} px com a letra em ${size.fontPixels} px: a frase do 1º dia, com o ano de outro ano, quebra sem mudar a altura do painel`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page);
+      await page.evaluate((pixels) => {
+        document.documentElement.style.fontSize = `${pixels}px`;
+      }, size.fontPixels);
+      const popup = await openPicker(
+        page,
+        "Período das vendas,",
+        "Período das vendas"
+      );
+      await expectStill(popup.getByRole("grid").first());
+      const before = await panelHeight(popup);
+
+      await touchDay(popup, "2025-10-10");
+      await expect(
+        popup.getByText("Início 10/10/2025. Escolha o último dia.")
+      ).toBeVisible();
+      await expectStill(popup.getByRole("grid").first());
+      expect(await panelHeight(popup)).toBeCloseTo(before, 1);
+    });
+  }
 });
 
 test.describe("Hoje desligado, a 360 x 600 e a 320 px com fonte de 20 px", () => {

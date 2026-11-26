@@ -1,0 +1,13 @@
+# Public age key of the production backup (ADR 0099, docs/runbooks/backup.md, "Produção").
+# One recipient per line (age1...), from `age-keygen -y` of the identity its holder generated. It is NOT the staging
+# key: a staging identity must never open a production backup.
+# The private key never enters the repository, GitHub or R2: it stays in the OpenBot server vault (mode 0400,
+# outside the repository), like the staging one.
+#
+# Empty on purpose: the production backup is off. Until a key line is here, the job cannot run: it refuses a file
+# without a key before it reads the database. To turn it on:
+#   1. the holder of the production key generates it and hands over only `age-keygen -y` of the identity;
+#   2. a reviewed pull request adds that line below (and nothing else);
+#   3. the responsible sets the Environment variable BACKUP_RECIPIENTS_SHA256 of production-backup to
+#      `sha256sum ops/backup/recipients-production.txt` of main, and only then the repository variable
+#      PRODUCTION_BACKUP_ENABLED to "true" (the job compares the file with that hash and refuses a mismatch).

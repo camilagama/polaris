@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { OFFLINE_PLAN_REASON } from "../attention-panel";
 import {
   confirmLabel,
+  deviceKind,
   deviceRows,
   devicesLoadError,
   END_OTHER_SESSIONS_HELP,
@@ -58,6 +59,31 @@ describe("the devices screen rows", () => {
     expect(rows.map((row) => row.id)).toEqual([uuid(1), uuid(4), uuid(2)]);
     expect(rows[0]?.isCurrent).toBe(true);
     expect(rows[1]?.isCurrent).toBe(false);
+  });
+
+  it("reads the kind of a device from the system the server named it by, and nothing from any other name", () => {
+    expect(deviceKind("Chrome no Android")).toBe("phone");
+    expect(deviceKind("Safari no iPhone")).toBe("phone");
+    expect(deviceKind("Safari no iPad")).toBe("tablet");
+    for (const label of [
+      "Edge no Windows",
+      "Safari no Mac",
+      "Firefox no Linux",
+      "Chrome no ChromeOS",
+    ]) {
+      expect(deviceKind(label)).toBe("computer");
+    }
+    for (const label of [
+      null,
+      "",
+      "Navegador",
+      "Celular da Ana",
+      "Loja no Pix",
+    ]) {
+      expect(deviceKind(label)).toBe("unknown");
+    }
+    const [row] = deviceRows([device(1, { label: "Chrome no Android" })], null);
+    expect(row?.kind).toBe("phone");
   });
 
   it("names a device without a label, and trims a label", () => {
@@ -223,6 +249,7 @@ describe("what the screen says while it does not know this device", () => {
     "purge_failed",
     "session_changed",
     "session_refused",
+    "device_check_unavailable",
     PLAN_REFUSED_REASON,
   ])(
     "does not blame the browser when the reason is about the account or the plan (%s)",

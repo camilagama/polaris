@@ -1,3 +1,4 @@
+import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ import {
 import { LowerBlocks } from "./home-lower-blocks";
 import {
   copyLine,
+  type GoalProjection,
   type GoalView,
   goalProjection,
   homeUpdatedLine,
@@ -41,15 +43,20 @@ import {
   noSaleCounted,
   pickGoal,
 } from "./home-model";
-import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
+import {
+  BlockError,
+  BlockSkeleton,
+  HomeBlock,
+  HomeRoleProvider,
+  KeptHeight,
+} from "./home-parts";
 import {
   type HomeSelection,
   THIS_MONTH,
   topProductsTitle,
 } from "./home-period";
-import { HomePeriodRow } from "./home-period-row";
+import { HomePeriodNotes, HomePeriodPicker } from "./home-period-row";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
-import { PeriodControlProvider } from "./period-control";
 import {
   type FirstStepsMemory,
   useFirstStepsMemory,
@@ -59,7 +66,7 @@ import { useHomePeriod } from "./use-home-period";
 
 /**
  * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
- * something to do), Hoje, Mês, Meta, the chart, the map and Mais vendidos, in this order at 360 px, and in two columns
+ * something to do), Hoje, Mês, the chart, Mais vendidos, Meta and the map, in this order at 360 px, and in two columns
  * from 1024 px with Nova venda, Hoje and Mês above the fold (AC-4 emendado: with three lines of action the number of Hoje
  * and the title of Mês stay inside a 360 × 740 window). A store that never sold sees the checklist in place of the
  * figures (AC-22). Each block fails on its own (§ 5.2); the blocks under the cards wait together, as one skeleton, for
@@ -109,7 +116,10 @@ function NewSale({ describedBy }: { describedBy: string | undefined }) {
   return (
     <a
       aria-describedby={describedBy}
-      className={cn(buttonVariants({ size: "xl" }), "w-full sm:w-auto")}
+      className={cn(
+        buttonVariants({ size: "xl" }),
+        "grow min-[47.5rem]:w-auto min-[47.5rem]:grow-0"
+      )}
       href="/sales"
     >
       <PlusIcon aria-hidden="true" data-icon="inline-start" />
@@ -235,10 +245,10 @@ function chosenView(
 }
 
 /**
- * Whether the period chosen has figures to apply to: "yes" where the cards of the month are drawn (from the server or
- * from the copy), "loading" while they are read, "no" for the error, the checklist of a store that never sold and a
- * device with no copy (the picker stays in its place, off, so the page does not move when that changes), and "hidden"
- * for whoever cannot read the results.
+ * Whether the period chosen has figures to apply to: "yes" where the cards are drawn (from the server or from the
+ * copy), "loading" while they are read, "no" for a device with no copy (the picker stays in its place, off, so the page
+ * does not move when that changes), and "hidden" where there are no cards to apply it to: the error of the numbers, the
+ * checklist of a store that never sold, and whoever cannot read the results.
  */
 type Applies = "hidden" | "loading" | "no" | "yes";
 
@@ -267,7 +277,7 @@ function periodApplies({
     return "loading";
   }
   const stores = checklist.status === "ready" && checklist.data;
-  return figures.status === "ready" && !stores ? "yes" : "no";
+  return figures.status === "ready" && !stores ? "yes" : "hidden";
 }
 
 /** The selection of the period, its read, and what the blocks draw from it. */
@@ -312,20 +322,30 @@ function useChosenPeriod({
       refresh();
     }
   }, [reading, refresh, reload]);
-  const periodRow =
-    applies === "hidden" ? null : (
-      <HomePeriodRow
-        disabled={applies !== "yes"}
-        note={chosen?.note ?? null}
-        offline={!online}
-        onCustom={handleCustom}
-        onPreset={handlePreset}
-        period={picked.period}
-        selection={selection}
-        today={today}
-      />
-    );
-  return { chosen, periodRow, reloadAll };
+  const period =
+    applies === "hidden"
+      ? null
+      : {
+          notes: (
+            <HomePeriodNotes
+              disabled={applies !== "yes"}
+              note={chosen?.note ?? null}
+              offline={!online}
+            />
+          ),
+          picker: (
+            <HomePeriodPicker
+              disabled={applies !== "yes"}
+              offline={!online}
+              onCustom={handleCustom}
+              onPreset={handlePreset}
+              period={picked.period}
+              selection={selection}
+              today={today}
+            />
+          ),
+        };
+  return { chosen, period, reloadAll };
 }
 
 /** Mais vendidos of the period shown: a skeleton while the period is read, and the same box with a sentence when no product is left (none sold, or all returned). */
@@ -335,7 +355,9 @@ function rankingBlock(
   salesCount: number
 ): React.ReactNode {
   if (chosen?.month.kind === "loading") {
-    return <BlockSkeleton label="Carregando os mais vendidos…" lines={5} />;
+    return (
+      <BlockSkeleton foot label="Carregando os mais vendidos…" lines={5} />
+    );
   }
   // a copy kept before the ranking was read has none to say: the block is left out, never drawn as an empty period
   if (top === undefined) {
@@ -367,7 +389,7 @@ function readBlocks(
   const chartToday = chosen ? chosen.today : figures.today;
   let chart: React.ReactNode = null;
   if (chosen?.month.kind === "loading") {
-    chart = <BlockSkeleton label="Carregando o gráfico…" lines={5} />;
+    chart = <BlockSkeleton foot label="Carregando o gráfico…" lines={5} />;
   } else if (shown?.daily !== undefined && (chosen !== null || series)) {
     chart = <ChartBlock summary={shown} today={chartToday} />;
   }
@@ -392,6 +414,9 @@ function readBlocks(
       ),
   };
 }
+
+const STEPS_SKELETON_HEIGHT =
+  "min-h-59 max-sm:min-h-73 md:min-h-62 lg:min-h-98 lg:touch:min-h-99";
 
 /**
  * The cards are still to come: the figures, or what hangs on them. The checklist is read only when the figures counted
@@ -446,7 +471,7 @@ function figureBlocks(
       ...NO_BLOCKS,
       main: steps ? (
         <BlockSkeleton
-          className="lg:col-span-2"
+          className={cn(STEPS_SKELETON_HEIGHT, "lg:col-span-2")}
           label="Carregando os primeiros passos…"
           lines={3}
         />
@@ -572,7 +597,16 @@ function pageBlocks({
         ...NO_BLOCKS,
         // the chart's place stays, with its name: the goal beside it does not change columns
         chart: (
-          <HomeBlock id="home-chart" title="Vendas por dia">
+          <HomeBlock
+            footer={{
+              capability: "report:read",
+              href: "/dashboard",
+              label: "Ver o resultado",
+              link: false,
+            }}
+            id="home-chart"
+            title="Vendas por dia"
+          >
             <p className="text-muted-foreground">{NO_CONNECTION_NOTE}</p>
           </HomeBlock>
         ),
@@ -613,19 +647,22 @@ function figuresLine(
 }
 
 /**
- * The title, "Atualizar" and "Nova venda" with the line that says what the sale can do without a connection: the part
- * of the page that depends on no read (and on no connection). On a phone "Atualizar" is an icon in the corner of the
- * title and "Nova venda" takes the whole width (v7 § 3).
+ * The title with the period, "Atualizar" and "Nova venda" (in that order, which is also the order of the focus) and the
+ * line that says what the sale can do without a connection: the part of the page that depends on no read (and on no
+ * connection). From 760 px the actions are at the end of the line of the title; below it they are one row under it, as
+ * wide as the page, and "Atualizar" is an icon in the corner of the title (v7 § 3).
  */
 function HomeHeader({
   explained,
   offlineText,
+  period,
   refresh,
   updated,
 }: {
   /** The line under the title says why there are no figures (and no sales, when the device cannot keep one): "Nova venda" points to it. */
   explained: boolean;
   offlineText: string | null;
+  period: { notes: React.ReactNode; picker: React.ReactNode } | null;
   /** The gesture "Atualizar", or null when the session is refused; `offline` keeps it in place, switched off. */
   refresh: { busy: boolean; offline: boolean; onClick: () => void } | null;
   updated: React.ReactNode;
@@ -637,20 +674,22 @@ function HomeHeader({
     offlineReasonId = "home-new-sale-offline";
   }
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-      <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
-        <div className="grid min-w-0 gap-1">
-          <h1 className="text-title">Início</h1>
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 min-[47.5rem]:grid min-[47.5rem]:grid-cols-[minmax(0,1fr)_auto] min-[47.5rem]:items-center min-[47.5rem]:gap-x-3 min-[47.5rem]:gap-y-1">
+      <div className="flex min-w-0 flex-1 items-start justify-between gap-3 min-[47.5rem]:contents">
+        <div className="grid min-w-0 gap-1 min-[47.5rem]:contents">
+          <h1 className="text-title min-[47.5rem]:col-start-1 min-[47.5rem]:row-start-1">
+            Início
+          </h1>
           {/* two lines kept on a phone: the long day and hour, or "Carregando…", take the same box */}
           <p
-            className="min-h-10 text-muted-foreground text-support md:min-h-5"
+            className="min-h-10 text-muted-foreground text-support md:min-h-5 min-[47.5rem]:col-span-2 min-[47.5rem]:row-start-2"
             id="home-updated"
             role="status"
           >
             {updated}
           </p>
         </div>
-        <div className="flex items-start gap-2 md:hidden">
+        <div className="flex items-start gap-2 min-[47.5rem]:hidden">
           {refresh ? (
             <HomeRefresh
               busy={refresh.busy}
@@ -661,11 +700,12 @@ function HomeHeader({
           ) : null}
         </div>
       </div>
-      <div className="flex w-full items-start gap-2 sm:w-auto">
+      <div className="flex w-full flex-wrap items-start gap-2 min-[47.5rem]:col-start-2 min-[47.5rem]:row-start-1 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
+        {period?.picker}
         {refresh ? (
           <HomeRefresh
             busy={refresh.busy}
-            className="max-md:hidden"
+            className="hidden min-[47.5rem]:inline-flex"
             offline={refresh.offline}
             offlineReasonId={offlineReasonId}
             onClick={refresh.onClick}
@@ -685,12 +725,13 @@ function HomeHeader({
       {offlineText ? (
         <p
           // sibling of the row of actions in a flex-wrap header with `gap-y-4`: the negative margin leaves 6 px between them
-          className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right"
+          className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right min-[47.5rem]:col-span-2 min-[47.5rem]:mt-0.5"
           id="home-new-sale-offline"
         >
           {offlineText}
         </p>
       ) : null}
+      {period?.notes}
     </header>
   );
 }
@@ -868,14 +909,21 @@ function pickGoalBlock({
   }
   // the estimate only from the server's series of this read, measured on its today (never from the copy)
   const figures = state.figures.status === "ready" ? state.figures.data : null;
-  const projection =
-    goal?.kind === "active" && figures
+  const projectionOf = (target: GoalReadModel) =>
+    figures
       ? goalProjection(
-          goal.goal,
+          target,
           { before: figures.before.daily, month: figures.month.daily },
           figures.today
         )
       : null;
+  const projection = goal?.kind === "active" ? projectionOf(goal.goal) : null;
+  const projections: Record<string, GoalProjection | null> = {};
+  if (state.goals.status === "ready") {
+    for (const target of state.goals.data) {
+      projections[target.id] = projectionOf(target);
+    }
+  }
   return {
     loading: state.goals.status === "loading",
     node: (
@@ -883,6 +931,7 @@ function pickGoalBlock({
         block={state.goals}
         onRetry={retryGoals}
         projection={projection}
+        projections={projections}
         today={figures?.today ?? null}
         view={goal}
       />
@@ -907,7 +956,7 @@ function FigureArea({
   attentionNotes: React.ReactNode;
   blocks: Blocks;
   goal: React.ReactNode;
-  /** The goal has not been read yet: its card is a thin strip or a tall one, and the chart's row depends on which. */
+  /** The goal has not been read yet: its card is a thin strip or a tall one, and the blocks under it move with which. */
   goalPending: boolean;
   /** The cards keep the height they had with figures (no connection and no copy). */
   keep: boolean;
@@ -951,8 +1000,8 @@ function FigureArea({
 }
 
 /**
- * The blocks under the cards wait for the first answer of the goals of the store: the shape of the row of the chart is
- * that answer's (a card beside it, or a thin strip over it). A read again of the same store keeps what is on the screen.
+ * The blocks under the cards wait for the first answer of the goals of the store: the height of the goal's card, and
+ * so where the blocks under it sit, is that answer's (a tall card, or a thin strip under 960 px of content). A read again of the same store keeps what is on the screen.
  */
 function useFirstGoalRead(
   organizationId: string,
@@ -1012,7 +1061,7 @@ export function HomePage() {
     [goals, today, timezone]
   );
   const firstSteps = useFirstStepsMemory(organizationId);
-  const { chosen, periodRow, reloadAll } = useChosenPeriod({
+  const { chosen, period, reloadAll } = useChosenPeriod({
     applies: periodApplies({
       failed,
       readsReport: reads.report,
@@ -1088,22 +1137,23 @@ export function HomePage() {
   );
 
   return (
-    <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <HomeHeader
-        explained={explained}
-        offlineText={offlineText}
-        refresh={refresh}
-        updated={refreshing ? REFRESHING_TEXT : updated}
-      />
-      <ReopenedNotice />
-      <ClosedStoreLine activeIds={activeIds} />
-      <div
-        aria-busy={
-          refreshing || (view === null && state.figures.status === "loading")
-        }
-        className="grid gap-4"
-      >
-        <PeriodControlProvider value={periodRow}>
+    <HomeRoleProvider value={organization.role}>
+      <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
+        <HomeHeader
+          explained={explained}
+          offlineText={offlineText}
+          period={period}
+          refresh={refresh}
+          updated={refreshing ? REFRESHING_TEXT : updated}
+        />
+        <ReopenedNotice />
+        <ClosedStoreLine activeIds={activeIds} />
+        <div
+          aria-busy={
+            refreshing || (view === null && state.figures.status === "loading")
+          }
+          className="grid gap-4"
+        >
           <FigureArea
             attention={attention}
             attentionNotes={attentionNotes}
@@ -1113,8 +1163,8 @@ export function HomePage() {
             keep={explained}
             measure={offline === null && figures !== null && !blocks.pending}
           />
-        </PeriodControlProvider>
+        </div>
       </div>
-    </div>
+    </HomeRoleProvider>
   );
 }

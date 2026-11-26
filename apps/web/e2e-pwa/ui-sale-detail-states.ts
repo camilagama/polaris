@@ -1,7 +1,13 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
-import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
+import {
+  DETAIL_SALE_ID,
+  fixSaleDetailClock,
+  openSaleAction,
+  saleDetailAnswers,
+} from "./sale-detail-fixture";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -49,6 +55,7 @@ async function openSaleLab(
   hold = false,
   withFee = false
 ) {
+  await fixSaleDetailClock(page);
   await serveSale(page, withReturn, hold, withFee);
   await serveLabWorker(page);
   await page.goto(
@@ -64,22 +71,9 @@ async function openSaleLab(
     .getByRole("heading", { exact: true, level: 1, name: heading })
     .waitFor();
   if (!hold) {
-    // the customer panel is read: its current customer is on screen
+    // the customer is read: its name is on the line of the receipt
     await page.getByText("Ângela Souza").first().waitFor();
   }
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
 }
 
 const openDetail = (page: Page, withReturn = true, withFee = false) =>
@@ -96,7 +90,7 @@ export const saleDetailStates = {
   /** The cancellation reviewed: the reason, the effect in a neutral notice and the one destructive button. */
   async cancelReview(page: Page) {
     await openDetail(page, false);
-    await page.getByRole("button", { name: "Cancelar venda" }).click();
+    await openSaleAction(page, "Cancelar venda");
     await page.getByRole("button", { name: "Revisar cancelamento" }).click();
     await page
       .getByRole("button", { name: "Confirmar cancelamento" })
@@ -104,36 +98,32 @@ export const saleDetailStates = {
     await showScreenAlone(page);
   },
 
-  /** The customer of the sale, in the detail (its page of its own is gone): the current customer, "Trocar cliente", "Remover cliente" and the history. */
+  /** The customer of the sale, in the detail: the line of the receipt with the name and the summary, and the history. */
   async customer(page: Page) {
     await openDetail(page);
-    await page.getByRole("button", { name: "Remover cliente" }).waitFor();
+    await page.locator("[data-sale-customer]").waitFor();
     await showScreenAlone(page);
-    await page
-      .getByRole("heading", { exact: true, name: "Cliente da venda" })
-      .scrollIntoViewIfNeeded();
+    await page.locator("[data-sale-customer]").scrollIntoViewIfNeeded();
   },
 
   /** The form dialog of "Trocar cliente", open: the list of customers and the button that sends the choice, off. */
   async customerChoose(page: Page) {
     await openDetail(page);
-    await page
-      .getByRole("button", { exact: true, name: "Trocar cliente" })
-      .click();
+    await openSaleAction(page, "Trocar cliente");
     await page.getByRole("dialog", { name: "Trocar cliente" }).waitFor();
     await showScreenAlone(page);
   },
   /** The detail with a processing fee recorded on the payment, to read the amount of the fee on screen. */
   async detailWithFee(page: Page) {
     await openDetail(page, true, true);
-    await page.getByRole("button", { name: "Registrar devolução" }).waitFor();
+    await page.getByRole("button", { exact: true, name: "Ações" }).waitFor();
     await showScreenAlone(page);
   },
 
-  /** The detail as it opens: the receipt, the return made, the return and customer cards closed and the note on why the sale cannot be cancelled. */
+  /** The detail as it opens: the receipt with the customer line, the return made, the menu of the title closed and the note on why the sale cannot be cancelled. */
   async detail(page: Page) {
     await openDetail(page);
-    await page.getByRole("button", { name: "Registrar devolução" }).waitFor();
+    await page.getByRole("button", { exact: true, name: "Ações" }).waitFor();
     await showScreenAlone(page);
   },
 
@@ -150,7 +140,7 @@ export const saleDetailStates = {
   /** The return open, with a quantity over what is left: the table (cards in a card narrower than 48rem) and the field errors. */
   async returnError(page: Page) {
     await openDetail(page);
-    await page.getByRole("button", { name: "Registrar devolução" }).click();
+    await openSaleAction(page, "Registrar devolução");
     await page.getByLabel("Devolvido: Calça jeans — 42 (até 1)").fill("5");
     await page.getByRole("button", { name: "Revisar devolução" }).click();
     await page.getByText("Só resta 1 para devolver.").waitFor();

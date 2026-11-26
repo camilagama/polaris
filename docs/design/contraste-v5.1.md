@@ -11,11 +11,13 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | Par (texto sobre fundo) | Onde é usado | Componente | Razão | Meta | |
 |---|---|---|---|---|---|
 | `foreground` / `background` | texto, preço, total | body | **17.34** | 7 | ✓ |
+| `foreground` / `background` | traço de 2 px sob a aba de tela aberta (elemento gráfico, 3:1; a forma distingue a aba, não só a cor) | Tabs `line` | **17.34** | 3 | ✓ |
 | `card-foreground` / `card` | texto em cartão, diálogo, tabela | Card | **18.09** | 7 | ✓ |
 | `popover-foreground` / `popover` | texto em menu, select, tooltip invertido | Popover, Select | **18.09** | 7 | ✓ |
 | `primary-foreground` / `primary` | rótulo do botão principal | Button default | **18.09** | 7 | ✓ |
 | `secondary-foreground` / `secondary` | rótulo do botão secundário | Button secondary | **16.19** | 7 | ✓ |
 | `muted-foreground` / `background` | texto de apoio sobre o fundo | descrições, placeholder | **7.72** | 7 | ✓ |
+| `muted-foreground` / `background` | texto da aba de tela fechada (14 px, peso 500) | Tabs `line` | **7.72** | 4.5 | ✓ |
 | `muted-foreground` / `card` | texto de apoio em cartão (CardDescription, FieldDescription) | Card, Field | **8.06** | 7 | ✓ |
 | `muted-foreground` / `muted` | texto de apoio sobre faixa neutra (Kbd, Avatar, cabeçalho) | Kbd, Avatar | **7.22** | 4.5 | ✓ |
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.85** | 4.5 | ✓ |
@@ -23,6 +25,11 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **16.19** | 7 | ✓ |
 | `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **16.19** | 7 | ✓ |
 | `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.22** | 4.5 | ✓ |
+| `foreground` / `muted` | título e link do pé do bloco com moldura (Início, `Card` `framed`) | CardFrame | **16.19** | 4.5 | ✓ |
+| `muted-foreground` / `muted` | ação de cabeçalho e contagem na moldura ("Últimas 12 semanas", "1 de 5") | CardFrame | **7.22** | 4.5 | ✓ |
+| `foreground` / `muted` | frase sob o desenho da metade direita da entrada (15 px, peso 600, a partir de 1024 px) | EntryArt | **16.19** | 4.5 | ✓ |
+| `card` / `muted` | painel sobre a moldura: não chega a 3:1, então o painel leva o fio de `--border` | CardFramePanel | **1.12** | 1.0 | ✓ |
+| `border` / `muted` | fio do painel sobre a moldura (decorativo; o título e o conteúdo identificam o bloco) | CardFramePanel | **1.15** | 1.0 | ✓ |
 | `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **6.78** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.81** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.78** | 7 | ✓ |
@@ -33,34 +40,40 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `warning` / `card` | texto e ícone de aviso, offline, valor desconhecido | extensão | **7.6** | 7 | ✓ |
 | `warning` / `warning/10 sobre card` | aviso sobre fundo de aviso (bg-warning/10) | extensão | **6.51** | 4.5 | ✓ |
 | `warning-foreground` / `warning` | texto sobre aviso sólido | extensão | **7.6** | 4.5 | ✓ |
-| `mark` / `card` | marcador de menu, aba e barra em destaque, sobre cartão | composição | **3.71** | 3 | ✓ |
-| `mark` / `background` | marcador sobre o fundo | composição | **3.56** | 3 | ✓ |
-| `mark` / `accent` | marcador sobre item atual | composição | **3.15** | 3 | ✓ |
-| `mark-foreground` / `card` | texto de destaque esmeralda | composição | **8.05** | 7 | ✓ |
-| `mark-foreground` / `mark/10 sobre card` | texto esmeralda sobre bg-mark/10 | composição | **7.16** | 4.5 | ✓ |
+| `mark` / `card` | marcador de menu, aba e barra em destaque, sobre cartão | composição | **4.76** | 3 | ✓ |
+| `mark` / `background` | marcador sobre o fundo | composição | **4.56** | 3 | ✓ |
+| `mark` / `accent` | marcador sobre item atual | composição | **4.06** | 3 | ✓ |
+| `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **16.36** | 3 | ✓ |
+| `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **18.1** | 3 | ✓ |
+| `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **14.73** | 3 | ✓ |
+| `muted-foreground` / `muted/50 sobre card` | texto do passo feito, na linha de fundo suave | Primeiros passos | **7.68** | 4.5 | ✓ |
 | `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.36** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **3.22** | 3 | ✓ |
 | `input` / `muted` | borda de campo sobre faixa neutra | border-input | **3.01** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.36** | 3 | ✓ |
-| `ring` / `card` | anel de foco (borda) sobre cartão | focus-visible:border-ring | **3.95** | 3 | ✓ |
-| `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **3.79** | 3 | ✓ |
-| `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.36** | 3 | ✓ |
-| `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **3.57** | 3 | ✓ |
+| `ring` / `card` | anel de foco (borda) sobre cartão | focus-visible:border-ring | **18.10** | 3 | ✓ |
+| `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **17.34** | 3 | ✓ |
+| `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **15.41** | 3 | ✓ |
+| `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **16.36** | 3 | ✓ |
 | `border` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão) | border-border | **1.28** | 1.0 | ✓ |
 | `border` / `background` | divisória sobre o fundo | border-border | **1.23** | 1.0 | ✓ |
-| `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **3.71** | 3 | ✓ |
+| `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **4.76** | 3 | ✓ |
 | `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **3.70** | 3 | ✓ |
 | `chart-result` / `card` | série do resultado (v7) | Chart | **5.87** | 3 | ✓ |
 | `chart-ticket` / `card` | série do ticket (v7) | Chart | **4.37** | 3 | ✓ |
 | `chart-context` / `card` | série de comparação, tracejada (v7) | Chart | **3.36** | 3 | ✓ |
 | `chart-unknown` / `card` | hachura do dia sem custo informado (Resultado v7, AC-9) | Chart | **3.40** | 3 | ✓ |
 | `chart-unknown` / `chart-unknown/8 sobre card` | linha da hachura sobre o próprio fundo tingido | Chart | **3.13** | 3 | ✓ |
-| `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **7.06** | 4.5 | ✓ |
+| `chart-sales-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **7.00** | 4.5 | ✓ |
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.26** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **3.64** | 3 | ✓ |
+| `chart-2` / `muted` | barra de "Por categoria" (Despesas) sobre a trilha | Chart | **3.26** | 3 | ✓ |
+| `destructive/60 sobre muted` / `muted` | anel de 1 px da confirmação do que não se desfaz, na própria linha (elemento gráfico, 3:1; o texto da confirmação identifica o bloco) | InsetBlock `destructive` | **3.10** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.79** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **12.27** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **18.09** | 3 | ✓ |
+| `foreground` / `chart-heat-1` | traço do ritmo da meta sobre o trilho verde do anel (sobre o arco, o traço se lê pela folga de `card` de 2 px: `chart-sales` / `card` acima e `foreground` / `card`) | Meta (anel) | **12.99** | 3 | ✓ |
+| `foreground` / `chart-result/18 sobre card` | traço do ritmo da meta sobre o trilho índigo do anel (sobre o arco, `chart-result` / `card` acima) | Meta (anel) | **13.97** | 3 | ✓ |
 | `primary-foreground` / `primary/88 sobre background` | rótulo do botão principal em hover (hover:bg-primary/88) | Button default, Badge default | **13.01** | 7 | ✓ |
 | `destructive` / `destructive/15 sobre card` | botão destrutivo em hover (hover:bg-destructive/15) | Button destructive | **5.74** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre card` | texto de aviso sobre o próprio tom (Alert/Badge warning) | Alert, Badge warning | **6.51** | 4.5 | ✓ |
@@ -69,17 +82,17 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `accent` | texto de apoio em item de lista em hover/foco | Item, Select, menu | **6.85** | 4.5 | ✓ |
 | `foreground/70 sobre card` / `card` | borda do cartão de escolha marcado (border-foreground/70) | FieldLabel + RadioGroup | **6.68** | 3 | ✓ |
 | `foreground` / `card` | rótulo do cartão de escolha marcado | FieldLabel + RadioGroup | **18.09** | 7 | ✓ |
-| `ring` / `muted/60 sobre card` | foco do teclado sobre linha de tabela em hover | focus-ring | **3.69** | 3 | ✓ |
+| `ring` / `muted/60 sobre card` | foco do teclado sobre linha de tabela em hover | focus-ring | **16.95** | 3 | ✓ |
 | `foreground` / `muted/60 sobre card` | texto do aviso neutro "sem link" (EntryNotice, bg-muted/60) | EntryNotice | **16.9** | 7 | ✓ |
 | `muted-foreground` / `muted/60 sobre card` | ícone i do aviso neutro | EntryNotice | **7.53** | 3 | ✓ |
-| `ring` / `destructive/10 sobre card` | foco do teclado sobre o alerta de erro (claro, destructive/10) | EntryAlert focus-ring | **3.34** | 3 | ✓ |
+| `ring` / `destructive/10 sobre card` | foco do teclado sobre o alerta de erro (claro, destructive/10) | EntryAlert focus-ring | **15.26** | 3 | ✓ |
 | `foreground` / `card` | texto do aviso de sucesso (EntrySuccess, fundo card) | EntrySuccess | **18.09** | 7 | ✓ |
 | `foreground/15 sobre card` / `card` | borda do aviso de sucesso (border-foreground/15, decorativa) | EntrySuccess | **1.37** | 1 | ✓ |
 | `popover-foreground` / `popover` | título do toast | Toast | **18.09** | 7 | ✓ |
 | `muted-foreground` / `popover` | descrição do toast e X de fechar | Toast | **8.06** | 4.5 | ✓ |
 | `destructive` / `popover` | ícone de erro do toast | Toast | **7.46** | 3 | ✓ |
 | `warning` / `popover` | ícone de aviso do toast | Toast | **7.6** | 3 | ✓ |
-| `ring` / `popover` | foco do teclado no toast | Toast | **3.95** | 3 | ✓ |
+| `ring` / `popover` | foco do teclado no toast | Toast | **18.10** | 3 | ✓ |
 | `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.36** | 3 | ✓ |
 | `foreground` / `sidebar` | marca do cabeçalho do celular e item atual da barra de destinos (moldura) | ShellHeader, BottomBar | **16.36** | 7 | ✓ |
 | `sidebar-foreground` / `sidebar` | "?" e seta do menu da loja, no cabeçalho | ShellHeader, StoreMenu | **9.81** | 7 | ✓ |
@@ -88,7 +101,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `sidebar` | rótulos da barra de destinos; Termos e Política no pé de Mais (12 px) | BottomBar, AppSidebar | **7.33** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre sidebar` | chip sem conexão e de envio pausado, no cabeçalho | SyncStatus | **5.89** | 4.5 | ✓ |
 | `destructive` / `destructive/10 sobre sidebar` | chip "Atenção", no cabeçalho | SyncStatus | **5.70** | 4.5 | ✓ |
-| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **3.58** | 3 | ✓ |
+| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **16.36** | 3 | ✓ |
 | `background` / `foreground` | iniciais da loja no círculo do cabeçalho | StoreMenu | **17.34** | 7 | ✓ |
 
 ## Tema escuro
@@ -96,11 +109,13 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | Par (texto sobre fundo) | Onde é usado | Componente | Razão | Meta | |
 |---|---|---|---|---|---|
 | `foreground` / `background` | texto, preço, total | body | **15.44** | 7 | ✓ |
+| `foreground` / `background` | traço de 2 px sob a aba de tela aberta (elemento gráfico, 3:1; a forma distingue a aba, não só a cor) | Tabs `line` | **15.44** | 3 | ✓ |
 | `card-foreground` / `card` | texto em cartão, diálogo, tabela | Card | **14.22** | 7 | ✓ |
 | `popover-foreground` / `popover` | texto em menu, select, tooltip invertido | Popover, Select | **13.24** | 7 | ✓ |
 | `primary-foreground` / `primary` | rótulo do botão principal | Button default | **14.75** | 7 | ✓ |
 | `secondary-foreground` / `secondary` | rótulo do botão secundário | Button secondary | **11.58** | 7 | ✓ |
 | `muted-foreground` / `background` | texto de apoio sobre o fundo | descrições, placeholder | **9.35** | 7 | ✓ |
+| `muted-foreground` / `background` | texto da aba de tela fechada (14 px, peso 500) | Tabs `line` | **9.35** | 4.5 | ✓ |
 | `muted-foreground` / `card` | texto de apoio em cartão (CardDescription, FieldDescription) | Card, Field | **8.61** | 7 | ✓ |
 | `muted-foreground` / `muted` | texto de apoio sobre faixa neutra (Kbd, Avatar, cabeçalho) | Kbd, Avatar | **7.01** | 4.5 | ✓ |
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.33** | 4.5 | ✓ |
@@ -108,6 +123,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **11.58** | 7 | ✓ |
 | `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **11.58** | 7 | ✓ |
 | `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.01** | 4.5 | ✓ |
+| `foreground` / `muted` | título e link do pé do bloco com moldura (Início, `Card` `framed`) | CardFrame | **11.61** | 4.5 | ✓ |
+| `muted-foreground` / `muted` | ação de cabeçalho e contagem na moldura ("Últimas 12 semanas", "1 de 5") | CardFrame | **7.01** | 4.5 | ✓ |
+| `card` / `muted` | painel sobre a moldura: não chega a 3:1, então o painel leva o fio de `--border` | CardFramePanel | **1.22** | 1.0 | ✓ |
+| `border sobre muted` / `muted` | fio do painel sobre a moldura (decorativo; o título e o conteúdo identificam o bloco); `border` é `branco a 6%` | CardFramePanel | **1.2** | 1.0 | ✓ |
 | `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **7.48** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.48** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.19** | 7 | ✓ |
@@ -118,39 +137,45 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `warning` / `card` | texto e ícone de aviso, offline, valor desconhecido | extensão | **9.13** | 7 | ✓ |
 | `warning` / `warning/10 sobre card` | aviso sobre fundo de aviso (bg-warning/10) | extensão | **7.4** | 4.5 | ✓ |
 | `warning-foreground` / `warning` | texto sobre aviso sólido | extensão | **9.92** | 4.5 | ✓ |
-| `mark` / `card` | marcador de menu, aba e barra em destaque, sobre cartão | composição | **7.67** | 3 | ✓ |
-| `mark` / `background` | marcador sobre o fundo | composição | **8.33** | 3 | ✓ |
-| `mark` / `accent` | marcador sobre item atual | composição | **5.64** | 3 | ✓ |
-| `mark-foreground` / `card` | texto de destaque esmeralda | composição | **10.07** | 7 | ✓ |
-| `mark-foreground` / `mark/15 sobre card` | texto esmeralda sobre bg-mark/15 (escuro) | composição | **7.66** | 4.5 | ✓ |
+| `mark` / `card` | marcador de menu, aba e barra em destaque, sobre cartão | composição | **4.36** | 3 | ✓ |
+| `mark` / `background` | marcador sobre o fundo | composição | **4.74** | 3 | ✓ |
+| `mark` / `accent` | marcador sobre item atual | composição | **3.20** | 3 | ✓ |
+| `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **15.43** | 3 | ✓ |
+| `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **13.57** | 3 | ✓ |
+| `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **10.41** | 3 | ✓ |
+| `muted-foreground` / `muted/50 sobre card` | texto do passo feito, na linha de fundo suave | Primeiros passos | **7.84** | 4.5 | ✓ |
 | `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.89** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **4.23** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.63** | 3 | ✓ |
 | `input` / `muted` | borda de campo e seletor sobre faixa neutra (bloco rebaixado) | border-input | **3.18** | 3 | ✓ |
-| `ring` / `card` | anel de foco (borda) sobre cartão | focus-visible:border-ring | **5.28** | 3 | ✓ |
-| `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **5.73** | 3 | ✓ |
-| `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.88** | 3 | ✓ |
-| `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **6.03** | 3 | ✓ |
+| `ring` / `card` | anel de foco (borda) sobre cartão | focus-visible:border-ring | **14.19** | 3 | ✓ |
+| `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **15.41** | 3 | ✓ |
+| `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **10.40** | 3 | ✓ |
+| `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **16.15** | 3 | ✓ |
 | `border sobre card` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão); `border` é `branco a 6%` | border-border | **1.19** | 1.0 | ✓ |
 | `border sobre popover` / `popover` | borda de diálogo, menu e painel aberto dentro do cartão (decorativa) | border-border | **1.20** | 1.0 | ✓ |
 | `card-ring sobre card` / `card` | anel de 1 px do cartão do catálogo público (decorativo) | card-ring | **1.19** | 1.0 | ✓ |
 | `border sobre background` / `background` | divisória sobre o fundo | border-border | **1.17** | 1.0 | ✓ |
 | `sidebar-border sobre sidebar` / `sidebar` | traço do trilho da lateral em hover (decorativo) | border-sidebar-border | **1.15** | 1.0 | ✓ |
-| `sidebar-accent` / `sidebar` | fundo do item atual contra a lateral (decorativo: o ponto esmeralda, o peso 500 e o aria-current dizem onde se está) | SidebarMenuButton | **1.14** | 1.0 | ✓ |
+| `sidebar-accent` / `sidebar` | fundo do item atual contra a lateral (decorativo: o ponto da marca, o peso 500 e o aria-current dizem onde se está) | SidebarMenuButton | **1.14** | 1.0 | ✓ |
 | `sidebar-hover` / `sidebar` | fundo do item em hover contra a lateral (decorativo) | SidebarMenuButton | **1.07** | 1.0 | ✓ |
-| `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **7.67** | 3 | ✓ |
+| `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **4.36** | 3 | ✓ |
 | `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **5.72** | 3 | ✓ |
 | `chart-result` / `card` | série do resultado (v7) | Chart | **4.38** | 3 | ✓ |
 | `chart-ticket` / `card` | série do ticket (v7) | Chart | **4.89** | 3 | ✓ |
 | `chart-context` / `card` | série de comparação, tracejada (v7) | Chart | **3.44** | 3 | ✓ |
 | `chart-unknown` / `card` | hachura do dia sem custo informado (Resultado v7, AC-9) | Chart | **3.41** | 3 | ✓ |
 | `chart-unknown` / `chart-unknown/8 sobre card` | linha da hachura sobre o próprio fundo tingido | Chart | **3.15** | 3 | ✓ |
-| `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **8.62** | 4.5 | ✓ |
+| `chart-sales-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **8.55** | 4.5 | ✓ |
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.05** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **4.22** | 3 | ✓ |
+| `chart-2` / `muted` | barra de "Por categoria" (Despesas) sobre a trilha | Chart | **3.45** | 3 | ✓ |
+| `destructive/60 sobre muted` / `muted` | anel de 1 px da confirmação do que não se desfaz, na própria linha (elemento gráfico, 3:1; o texto da confirmação identifica o bloco) | InsetBlock `destructive` | **3.21** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.69** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **9.85** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **14.22** | 3 | ✓ |
+| `foreground` / `chart-heat-1` | traço do ritmo da meta sobre o trilho verde do anel (sobre o arco, o traço se lê pela folga de `card` de 2 px: `chart-sales` / `card` acima e `foreground` / `card`) | Meta (anel) | **8.58** | 3 | ✓ |
+| `foreground` / `chart-result/18 sobre card` | traço do ritmo da meta sobre o trilho índigo do anel (sobre o arco, `chart-result` / `card` acima) | Meta (anel) | **11.31** | 3 | ✓ |
 | `primary-foreground` / `primary/88 sobre background` | rótulo do botão principal em hover (hover:bg-primary/88) | Button default, Badge default | **11.6** | 7 | ✓ |
 | `destructive` / `destructive/20 sobre card` | botão destrutivo e selo de erro no escuro (dark:bg-destructive/15, hover /20) | Button destructive, Badge destructive | **5.19** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre card` | texto de aviso sobre o próprio tom (Alert/Badge warning) | Alert, Badge warning | **7.4** | 4.5 | ✓ |
@@ -163,17 +188,17 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `input/30 sobre card` | texto de apoio (placeholder) no campo (dark:bg-input/30) | Input, Select | **5.92** | 4.5 | ✓ |
 | `foreground/70 sobre card` / `card` | borda do cartão de escolha marcado (border-foreground/70) | FieldLabel + RadioGroup | **7.59** | 3 | ✓ |
 | `foreground` / `card` | rótulo do cartão de escolha marcado | FieldLabel + RadioGroup | **14.22** | 7 | ✓ |
-| `ring` / `muted/60 sobre card` | foco do teclado sobre linha de tabela em hover | focus-ring | **4.67** | 3 | ✓ |
+| `ring` / `muted/60 sobre card` | foco do teclado sobre linha de tabela em hover | focus-ring | **12.65** | 3 | ✓ |
 | `foreground` / `muted/60 sobre card` | texto do aviso neutro "sem link" (EntryNotice, bg-muted/60) | EntryNotice | **12.57** | 7 | ✓ |
 | `muted-foreground` / `muted/60 sobre card` | ícone i do aviso neutro | EntryNotice | **7.61** | 3 | ✓ |
-| `ring` / `destructive/15 sobre card` | foco do teclado sobre o alerta de erro (escuro, destructive/15) | EntryAlert focus-ring | **4.01** | 3 | ✓ |
+| `ring` / `destructive/15 sobre card` | foco do teclado sobre o alerta de erro (escuro, destructive/15) | EntryAlert focus-ring | **10.73** | 3 | ✓ |
 | `foreground` / `card` | texto do aviso de sucesso (EntrySuccess, fundo card) | EntrySuccess | **14.22** | 7 | ✓ |
 | `foreground/15 sobre card` / `card` | borda do aviso de sucesso (border-foreground/15, decorativa) | EntrySuccess | **1.54** | 1 | ✓ |
 | `popover-foreground` / `popover` | título do toast | Toast | **13.24** | 7 | ✓ |
 | `muted-foreground` / `popover` | descrição do toast e X de fechar | Toast | **8.02** | 4.5 | ✓ |
 | `destructive` / `popover` | ícone de erro do toast | Toast | **7.1** | 3 | ✓ |
 | `warning` / `popover` | ícone de aviso do toast | Toast | **8.5** | 3 | ✓ |
-| `ring` / `popover` | foco do teclado no toast | Toast | **4.92** | 3 | ✓ |
+| `ring` / `popover` | foco do teclado no toast | Toast | **13.23** | 3 | ✓ |
 | `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.89** | 3 | ✓ |
 | `foreground` / `sidebar` | marca do cabeçalho do celular e item atual da barra de destinos (moldura) | ShellHeader, BottomBar | **16.15** | 7 | ✓ |
 | `sidebar-foreground` / `sidebar` | "?" e seta do menu da loja, no cabeçalho | ShellHeader, StoreMenu | **9.48** | 7 | ✓ |
@@ -182,13 +207,14 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `sidebar` | rótulos da barra de destinos; Termos e Política no pé de Mais (12 px) | BottomBar, AppSidebar | **9.81** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre sidebar` | chip sem conexão e de envio pausado, no cabeçalho | SyncStatus | **8.75** | 4.5 | ✓ |
 | `destructive` / `destructive/15 sobre sidebar` | chip "Atenção", no cabeçalho | SyncStatus | **6.77** | 4.5 | ✓ |
-| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **6.01** | 3 | ✓ |
+| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **16.15** | 3 | ✓ |
 | `background` / `foreground` | iniciais da loja no círculo do cabeçalho | StoreMenu | **15.41** | 7 | ✓ |
 
 Notas:
 
 - `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
-- O foco do teclado é `--ring` cheio (3,36 a 5,73:1 contra fundo, cartão, menu e hover): é o que conta, o halo dos campos é só reforço.
+- O foco do teclado é `--ring` cheio, na cor do texto (tinta; 10,4 a 18,1:1 contra fundo, cartão, menu e hover nos dois temas): é o que conta, o halo dos campos é só reforço. Tinta e não vermelho, para um campo só focado não se parecer com um campo com erro (`--destructive`, mesmo matiz da marca).
+- A marca é o vermelho do dgimports (matiz 27): `--mark` é `#e7000b` no claro (4,06 a 4,76:1) e `#fb2c36` no escuro (3,20 a 4,74:1), acima dos 3:1 de elemento gráfico, e o texto da marca, `--mark-foreground` (6,42:1 no claro, 4,5 de meta; 7,87:1 no escuro; token removido em 23/11/2026, t1747, por não ter uso: as duas linhas dele saíram das tabelas, que o teste lê). O vermelho fica só em marca e posição (ponto do logo, indicador do menu, ícone do app), nunca em botão nem em frase; o erro leva ícone e texto. O verde das vendas (`--chart-sales`, `--chart-heat-*`, `--chart-sales-foreground`) não é a marca.
 - Estados com transparência estão na lista; nenhum cai abaixo da meta.
 - A moldura (lateral e cabeçalho em `--sidebar`) e o painel do conteúdo (`--background`) são superfícies decorativas: a diferença de cor entre as duas não é a marca do limite, que é o anel de 1 px (`--card-ring`) nas bordas esquerda e superior do painel. O chip do cabeçalho sincronizado ou enviando tem fundo próprio (`--card`), medido em `foreground` / `card`.
 - Rampa do mapa de calor (`--chart-heat-1` a `-4`, v7, ainda sem tela): monótona, um matiz, passos de 1,42 / 1,55 / 1,86 (claro) e 1,69 / 1,74 / 1,76 (escuro) entre níveis vizinhos. O nível 1 tem 1,39:1 sobre o cartão no claro: a escala é sequencial e o tom mais claro recua para o fundo de propósito; o dia sem venda não depende dele, porque é outra forma (quadrado vazio com contorno). Fica fora da tabela testada por isso.

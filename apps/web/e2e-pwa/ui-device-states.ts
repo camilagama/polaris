@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -29,10 +30,15 @@ const failure = (status: number, code: string, reason?: string) =>
     status
   );
 
+const NOW = new Date("2026-10-14T12:00:00.000Z");
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 const device = (n: number, label: string | null, lastSeenAt: string) => ({
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: ago(13 * DAY),
   id: uuid(n),
   label,
   lastSeenAt,
@@ -41,14 +47,14 @@ const device = (n: number, label: string | null, lastSeenAt: string) => ({
 
 /** The first is this browser's device in the lab (`registerDevice` answers `uuid(7001)`). */
 const DEVICES = [
-  device(7001, "Chrome no Android", "2026-10-14T10:00:00.000Z"),
-  device(2, "Celular da Ana", "2026-10-13T10:00:00.000Z"),
+  device(7001, "Chrome no Android", ago(2 * HOUR)),
+  device(2, "Celular da Ana", ago(DAY + 2 * HOUR)),
   device(
     3,
     "Tablet do estoque da loja do centro com um nome bem comprido",
-    "2026-10-12T10:00:00.000Z"
+    ago(2 * DAY + 2 * HOUR)
   ),
-  device(4, null, "2026-10-11T10:00:00.000Z"),
+  device(4, null, ago(3 * DAY + 2 * HOUR)),
 ];
 
 const REVOKE_OTHER = /^Revogar o aparelho Celular da Ana/;
@@ -87,6 +93,7 @@ async function serveDevices(page: Page, served: Served) {
 
 /** Starts the lab's runtime on a screen of it; the network is the lab's checkbox. */
 async function startLab(page: Page, query: string) {
+  await page.clock.setFixedTime(NOW);
   await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?${query}`);
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
@@ -103,19 +110,6 @@ async function openDevicesLab(page: Page, served: Served) {
   await page
     .getByRole("heading", { exact: true, level: 1, name: "Aparelhos" })
     .waitFor();
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(200);
 }
 
 /** Opens the list and waits for the rows, the connection and the security section to be drawn. */
@@ -239,7 +233,7 @@ export const attentionStates = {
     await openNoticeLab(
       page,
       "screen=attention&state=unavailable&motivo=plano",
-      () => page.getByRole("link", { name: "Voltar ao Início" }).waitFor()
+      () => page.getByRole("link", { name: "Voltar para o Início" }).waitFor()
     );
   },
 

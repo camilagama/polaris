@@ -1,9 +1,28 @@
+import type { Page } from "@playwright/test";
+
 /**
  * A confirmed sale as `sale/get` answers it, with its customer link and the customers of the organization, for the
  * screen checks of the sale detail and of the customer page (synthetic data only). Two lines: the first has a
  * return made, the second a long name, so the return table shows a partial line and a name that wraps.
  */
 const SALE_DETAIL_ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
+
+const NOW = new Date("2026-10-14T12:00:00.000Z");
+const MINUTE = 60_000;
+const DAY = 86_400_000;
+const at = (offsetMs: number) =>
+  new Date(NOW.getTime() + offsetMs).toISOString();
+
+/** Opens the "Ações" menu of the title of the sale detail and chooses one of its items. */
+export async function openSaleAction(page: Page, action: string) {
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
+  await page.getByRole("menuitem", { exact: true, name: action }).click();
+}
+
+/** Fixes the page clock on the day of the sale: everything the screens read from the fixture is dated from `NOW`. */
+export async function fixSaleDetailClock(page: Page) {
+  await page.clock.setFixedTime(NOW);
+}
 
 const id = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
@@ -61,7 +80,7 @@ const SALE_DETAIL = {
       items: [{ position: 0, restockedQuantity: 0, returnedQuantity: 1 }],
       reasonCode: "defective",
       reasonNote: "Rasgada",
-      returnedAt: "2026-10-15T12:00:00.000Z",
+      returnedAt: at(DAY),
       returnedBy: "user_1",
       saleId: DETAIL_SALE_ID,
     },
@@ -93,11 +112,11 @@ const SALE_DETAIL = {
     },
     sale: {
       commandId: id(0x7_42),
-      confirmedAt: "2026-10-14T12:00:01.000Z",
+      confirmedAt: at(1000),
       currency: "BRL",
       id: DETAIL_SALE_ID,
-      occurredAt: "2026-10-14T12:00:00.000Z",
-      occurredOn: "2026-10-14",
+      occurredAt: at(0),
+      occurredOn: at(0).slice(0, 10),
       recordedAt: null,
     },
     totals: {
@@ -116,7 +135,7 @@ const SALE_CUSTOMER_LINK = {
   history: [
     {
       action: "assign",
-      createdAt: "2026-10-14T12:05:00.000Z",
+      createdAt: at(5 * MINUTE),
       customerId: CUSTOMER_ANGELA,
       version: 1,
     },
@@ -127,7 +146,7 @@ const SALE_CUSTOMER_LINK = {
 const customer = (customerId: string, name: string) => ({
   anonymizedAt: null,
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: at(-13 * DAY),
   email: null,
   id: customerId,
   name,
@@ -135,7 +154,7 @@ const customer = (customerId: string, name: string) => ({
   organizationId: SALE_DETAIL_ORGANIZATION_ID,
   phone: null,
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: at(-13 * DAY),
   version: 1,
 });
 
@@ -174,7 +193,72 @@ const SALE_DETAIL_WITH_FEE = {
   },
 };
 
-function saleDetailRead(withReturn: boolean, withFee: boolean) {
+/** The same sale cancelled: no return and no cancellation is offered, only the customer. */
+const SALE_DETAIL_CANCELLED = {
+  ...SALE_DETAIL_WITHOUT_RETURNS,
+  cancellation: {
+    cancelledAt: at(2 * DAY),
+    cancelledBy: "user_1",
+    commandId: id(0x7_50),
+    id: id(0x7_51),
+    reasonCode: null,
+    reasonNote: null,
+    saleId: DETAIL_SALE_ID,
+  },
+};
+
+/** The same sale with every unit returned: nothing is left to return and it cannot be cancelled as a whole. */
+const SALE_DETAIL_ALL_RETURNED = {
+  ...SALE_DETAIL,
+  returnSummary: SALE_DETAIL.returnSummary.map((line) => ({
+    ...line,
+    availableToReturn: 0,
+    returnedQuantity: line.sold,
+  })),
+};
+
+/** The same sale paid in two parts, Pix and a credit card in 3 installments, whose amounts add up to the total. */
+const SALE_DETAIL_TWO_PARTS = {
+  ...SALE_DETAIL_WITHOUT_RETURNS,
+  sale: {
+    ...SALE_DETAIL_WITHOUT_RETURNS.sale,
+    payments: [
+      {
+        ...SALE_DETAIL_WITHOUT_RETURNS.sale.payment,
+        amount: "109.60",
+        position: 0,
+      },
+      {
+        ...SALE_DETAIL_WITHOUT_RETURNS.sale.payment,
+        amount: "300.00",
+        anticipationFee: zeroFee("not_applicable"),
+        expectedSettlementDays: 30,
+        installmentPlan: "merchant",
+        installments: 3,
+        method: "credit_card",
+        position: 1,
+      },
+    ],
+  },
+};
+
+export type SaleDetailSituation = "allReturned" | "cancelled";
+
+function saleDetailRead(
+  withReturn: boolean,
+  withFee: boolean,
+  situation: SaleDetailSituation | undefined,
+  withParts: boolean
+) {
+  if (withParts) {
+    return SALE_DETAIL_TWO_PARTS;
+  }
+  if (situation === "cancelled") {
+    return SALE_DETAIL_CANCELLED;
+  }
+  if (situation === "allReturned") {
+    return SALE_DETAIL_ALL_RETURNED;
+  }
   if (withFee) {
     return SALE_DETAIL_WITH_FEE;
   }
@@ -183,13 +267,18 @@ function saleDetailRead(withReturn: boolean, withFee: boolean) {
 
 /** The answers of the detail and of the customer page, by procedure (`/rpc/<procedure>`). */
 export const saleDetailAnswers = ({
+  situation,
   withFee = false,
+  withParts = false,
   withReturn,
 }: {
+  situation?: SaleDetailSituation | undefined;
   withFee?: boolean;
+  withParts?: boolean;
   withReturn: boolean;
 }): Readonly<Record<string, unknown>> => ({
+  "customer/get": customer(CUSTOMER_ANGELA, "Ângela Souza"),
   "customer/list": SALE_CUSTOMERS,
-  "sale/get": saleDetailRead(withReturn, withFee),
+  "sale/get": saleDetailRead(withReturn, withFee, situation, withParts),
   "sale/getCustomerLink": SALE_CUSTOMER_LINK,
 });

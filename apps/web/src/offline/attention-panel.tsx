@@ -1,3 +1,4 @@
+import CheckIcon from "lucide-react/dist/esm/icons/check";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
@@ -10,11 +11,14 @@ import {
 import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card } from "@/ui/card";
+import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
-import { ActionStrip } from "../app-shell/action-strip";
+import { InsetBlock } from "@/ui/inset-block";
+import { ActionStrip } from "@/ui/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
+import { type TitleBack, TitleLine } from "../app-shell/screen-title";
 import {
   type AttentionAction,
   type AttentionItem,
@@ -119,18 +123,23 @@ const ATTENTION_SUBTITLE = "O que o servidor recusou e precisa da sua decisão."
 
 /** The frame of the page of attention: the title, then what the page has to say. */
 export function AttentionFrame({
+  back,
   children,
   withSubtitle = true,
 }: {
+  back?: TitleBack;
   children: ReactNode;
   withSubtitle?: boolean;
 }) {
+  const title = (
+    <h1 className="text-title" id="attention-title">
+      Pendências
+    </h1>
+  );
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
-        <h1 className="text-title" id="attention-title">
-          Pendências
-        </h1>
+        {back ? <TitleLine back={back}>{title}</TitleLine> : title}
         {withSubtitle ? (
           <p className="text-muted-foreground" id="attention-subtitle">
             {ATTENTION_SUBTITLE}
@@ -142,7 +151,7 @@ export function AttentionFrame({
   );
 }
 
-/** A state of the page that is one line in a card: empty, the offline mode off or still getting ready. */
+/** A state of the page that is one line in a card: the offline mode off or still getting ready. */
 export function AttentionStateCard({
   children,
   role,
@@ -151,9 +160,9 @@ export function AttentionStateCard({
   role?: "status" | undefined;
 }) {
   return (
-    <Card className="items-center px-(--card-spacing) text-center" role={role}>
-      <p className="text-muted-foreground">{children}</p>
-    </Card>
+    <Block role={role} variant="plain">
+      <p className="text-center text-muted-foreground">{children}</p>
+    </Block>
   );
 }
 
@@ -176,22 +185,20 @@ function unavailableSentence(reason: string | null): string {
 }
 
 /**
- * Pendências on a device where the offline mode is not available: the title, why, and the way back to the app. The
+ * Pendências on a device where the offline mode is not available: the title with the arrow back to the app, and why. The
  * subtitle promises a list of refused records, which this device cannot read, so it is left out.
  */
 export function AttentionUnavailable({ reason }: { reason: string | null }) {
   return (
-    <AttentionFrame withSubtitle={false}>
+    <AttentionFrame
+      back={{ href: HOME_HREF, label: "Voltar para o Início" }}
+      withSubtitle={false}
+    >
       <Alert variant="warning">
         <TriangleAlertIcon aria-hidden="true" />
         <AlertTitle>{OFFLINE_UNAVAILABLE_TITLE}</AlertTitle>
         <AlertDescription>{unavailableSentence(reason)}</AlertDescription>
       </Alert>
-      <div>
-        <a className={buttonVariants()} href={HOME_HREF}>
-          Voltar ao Início
-        </a>
-      </div>
     </AttentionFrame>
   );
 }
@@ -296,7 +303,7 @@ function ItemCard({
   }, [item, onDiscard]);
   return (
     <li data-cause={item.cause}>
-      <Card className="gap-3 px-(--card-spacing)">
+      <Block className="gap-3" variant="plain">
         <div className="flex items-start gap-2">
           <Icon
             aria-hidden="true"
@@ -319,12 +326,13 @@ function ItemCard({
           Código: {item.code}
         </p>
         {confirming ? (
-          <div
+          <InsetBlock
             aria-label={`Descartar ${hidden ? maskMoney(item.title, MASKED_SPOKEN) : item.title}`}
-            className="grid gap-3 rounded-lg bg-muted/50 p-3 outline-none ring-1 ring-destructive/30 focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-2"
+            className="grid gap-3 p-3 outline-none focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-2"
             ref={confirmRef}
             role="alertdialog"
             tabIndex={-1}
+            tone="destructive"
           >
             <p>{discardWarning(item)}</p>
             <div className="flex flex-wrap gap-3">
@@ -340,7 +348,7 @@ function ItemCard({
                 Manter
               </Button>
             </div>
-          </div>
+          </InsetBlock>
         ) : (
           <div className="flex flex-wrap gap-3">
             {item.actions.map((action) => (
@@ -380,7 +388,7 @@ function ItemCard({
             </AlertDescription>
           </Alert>
         ) : null}
-      </Card>
+      </Block>
     </li>
   );
 }
@@ -411,10 +419,12 @@ export function AttentionPanel({
   if (summary.items.length === 0) {
     return (
       <AttentionFrame>
-        <AttentionStateCard>
-          Nenhuma pendência de envio. Tudo o que foi feito sem internet foi
-          aceito.
-        </AttentionStateCard>
+        <EmptyState
+          afterRead
+          icon={CheckIcon}
+          support="Tudo o que foi feito sem internet foi aceito."
+          title="Nenhuma pendência de envio."
+        />
         {notices}
       </AttentionFrame>
     );

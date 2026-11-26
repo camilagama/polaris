@@ -159,6 +159,11 @@ jobs:
           # the release (GITHUB_SHA of a workflow_run is the default branch's, not the built one)
           VITE_CLIENT_ERRORS_ENABLED: "true"
           VITE_RELEASE: ${{ github.event.workflow_run.head_sha }}
+          # the browser Sentry (ADR 0098): errors only, sanitized. The DSN is public by design (it ships in the bundle)
+          # and is the staging-web key of the polaris project, which is revoked without touching another key
+          VITE_SENTRY_DSN: https://9fc7105ea4fd0cbe7e0012b84b9ba5a3@o4510972850208768.ingest.us.sentry.io/4512272164126720
+          VITE_SENTRY_ENVIRONMENT: staging
+          VITE_SENTRY_RELEASE: ${{ github.event.workflow_run.head_sha }}
           # "1" only when a commit since the last deploy carries the marker (job decide, ADR 0041)
           POLARIS_SWAP_URGENT: ${{ needs.decide.outputs.urgent }}
         run: |
@@ -173,6 +178,9 @@ jobs:
       # what is published must not carry the offline labs or the UI gallery (same build mode as production)
       - name: No offline lab in the build
         run: node scripts/verify-no-lab-in-build.mjs
+      # the build writes hidden source maps for Sentry; none may reach the Static Assets upload (no token sends them yet)
+      - name: No source map published
+        run: node scripts/verify-no-map-published.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staging-build
@@ -199,7 +207,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 27
     environment: staging
     permissions:
       contents: read
@@ -319,16 +327,19 @@ jobs:
           # --no-install: only the wrangler of the lockfile, never a download
           (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")
           (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
-          node scripts/verify-deployed-sha.mjs
           # the Admin last, from its source block (the isolation check proved env.staging: one Custom Domain behind
-          # Access, workers.dev and previews off, its own Hyperdrive); a failure here leaves the web and the catalog
-          # already published and confirmed
+          # Access, workers.dev and previews off, its own Hyperdrive); the version check comes after it and reads
+          # the three Workers, so a failure of the Admin deploy leaves the web and the catalog already published
           (cd apps/admin && bunx --no-install wrangler deploy --env staging --message "$HEAD_SHA")
+          node scripts/verify-deployed-sha.mjs
       # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
-        # 17 checks; worst case 15 x (3 tries of 10 s + 2 pauses of 5 s) + 2 x 10 s, about 11 min
-        timeout-minutes: 13
+        # 20 checks (18 common + 2 platform); worst case 20 x (3 tries of 10 s + 2 pauses of 5 s) = 800 s, about 13.3 min,
+        # when every request times out (a platform check stops at its first platform failure, so 740 s if those answer),
+        # plus the wait for the release to reach the edge: 120 s of ceiling and the 10 s of its last read = 930 s;
+        # scripts/smoke-staging.test.mjs fails when this worst case plus 15 s no longer fits in timeout-minutes
+        timeout-minutes: 16
         env:
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
           STAGING_CATALOG_URL: ${{ vars.STAGING_CATALOG_URL }}

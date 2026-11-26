@@ -35,7 +35,7 @@ export interface SaleNotice {
 }
 
 export const CANCELLATION_EXPLANATION =
-  "Cancelar registra um cancelamento: a venda confirmada e os dados dela são preservados, sem edição. O estoque volta item a item, pelo custo registrado em cada item. O cancelamento não pode ser desfeito.";
+  "Cancelar registra um cancelamento: a venda confirmada e os dados dela são preservados, sem edição. O estoque volta item a item, pelo custo registrado em cada item, exceto item de produto removido. O cancelamento não pode ser desfeito.";
 
 /** Label of a stored reason code; a missing code means none was informed. */
 export function cancellationReasonLabel(code: string | null): string {
@@ -316,11 +316,6 @@ export function isCancelDraftChanged(state: CancelState): boolean {
   );
 }
 
-/** Closing abandons the draft; it is not possible while locked. */
-export function closeCancel(state: CancelState): CancelState {
-  return isCancelLocked(state) ? state : initialCancelState();
-}
-
 /** Clearing the reason also clears the note, which is not allowed without it. */
 export function editCancelReason(
   state: CancelState,
@@ -465,18 +460,36 @@ export function prepareCancelSubmission(input: {
   };
 }
 
-export function cancelSuccessMessage(result: CancelSaleResult): string {
+/**
+ * Items of a removed product have frozen stock and take no units back, and
+ * that is the only reason a cancelled item has no movement, so the message
+ * names it when fewer items than the sale holds went back.
+ */
+export function cancelSuccessMessage(
+  result: CancelSaleResult,
+  saleItemCount: number
+): string {
+  if (result.replayed) {
+    return "Esta venda já havia sido cancelada com este mesmo pedido. Nada foi duplicado.";
+  }
   const count = result.restocked.length;
-  return result.replayed
-    ? "Esta venda já havia sido cancelada com este mesmo pedido. Nada foi duplicado."
-    : `Venda cancelada. O estoque foi devolvido item a item (${count} ${count === 1 ? "item" : "itens"}).`;
+  if (count === 0) {
+    return "Venda cancelada. Nenhum item voltou ao estoque, porque os produtos desta venda foram removidos.";
+  }
+  if (count < saleItemCount) {
+    return `Venda cancelada. O estoque foi devolvido em ${count} de ${saleItemCount} itens. Item de produto removido não volta ao estoque.`;
+  }
+  return `Venda cancelada. O estoque foi devolvido item a item (${count} ${count === 1 ? "item" : "itens"}).`;
 }
 
-export function cancelSucceeded(result: CancelSaleResult): CancelState {
+export function cancelSucceeded(
+  result: CancelSaleResult,
+  saleItemCount: number
+): CancelState {
   return {
     ...initialCancelState(),
     submission: {
-      message: cancelSuccessMessage(result),
+      message: cancelSuccessMessage(result, saleItemCount),
       phase: "success",
       replayed: result.replayed,
     },

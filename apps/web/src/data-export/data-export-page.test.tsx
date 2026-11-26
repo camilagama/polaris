@@ -70,6 +70,7 @@ describe("Seus dados without organization:export (AC-1)", () => {
     expect(html).not.toMatch(CONTROL);
     expect(html).not.toContain("Pedir cópia dos dados");
     expect(html).not.toContain("Encerrar a loja");
+    expect(html).not.toContain("E-mails que você recebe");
   });
 });
 
@@ -93,6 +94,15 @@ describe("Seus dados for the owner", () => {
     expect(html).toContain("Pedir cópia dos dados");
     expect(html).toContain("Suas cópias");
     expect(html).toContain("Atualizar");
+  });
+
+  it("draws the card of the e-mails the person receives before Pedir cópia (AC-8b.4)", () => {
+    const html = pageOf("owner");
+    expect(html).toContain("E-mails que você recebe");
+    expect(html).toContain("Avisos da conta e da cobrança");
+    expect(html.indexOf("E-mails que você recebe")).toBeLessThan(
+      html.indexOf("Pedir cópia")
+    );
   });
 
   it("ends with Encerrar a loja, the closure's only way in (ADR 0081)", () => {

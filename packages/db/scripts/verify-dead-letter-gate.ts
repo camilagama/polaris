@@ -9,6 +9,7 @@ import {
 } from "../src/admin-incident-repository";
 import { createDatabase } from "../src/client";
 import { createOutboxClient, type ProcessingKey } from "../src/outbox-dispatch";
+import { inRolledBackTransaction, rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -186,7 +187,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const suffix = randomUUID().slice(0, 8);
@@ -235,7 +236,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const outboxUrl = await login("polaris_outbox_runtime", "polaris_dlq_obx");
@@ -1892,27 +1893,26 @@ async function run() {
     // ------------------------------------------------- 6. the audit CHECK
     const auditClient = await owner.pool.connect();
     try {
-      await auditClient.query("BEGIN");
-      await auditClient.query(
-        "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.retry')",
-        [operator]
+      await inRolledBackTransaction(auditClient, () =>
+        auditClient.query(
+          "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.retry')",
+          [operator]
+        )
       );
-      await auditClient.query("ROLLBACK");
-      await auditClient.query("BEGIN");
-      await expectSqlState(
-        () =>
-          auditClient.query(
-            "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.anything')",
-            [operator]
-          ),
-        "23514",
-        "a made-up audit event type is refused",
-        "platform_audit_events_type_allowed"
+      await inRolledBackTransaction(auditClient, () =>
+        expectSqlState(
+          () =>
+            auditClient.query(
+              "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.anything')",
+              [operator]
+            ),
+          "23514",
+          "a made-up audit event type is refused",
+          "platform_audit_events_type_allowed"
+        )
       );
-      await auditClient.query("ROLLBACK");
     } finally {
-      await auditClient.query("ROLLBACK").catch(() => undefined);
-      auditClient.release();
+      await rollbackAndRelease(auditClient);
     }
     const auditDefinition = await owner.pool.query<{ definition: string }>(
       "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'platform_audit_events_type_allowed' AND conrelid = 'public.platform_audit_events'::regclass"
@@ -2525,8 +2525,7 @@ async function run() {
       "DELETE FROM public.operational_incidents WHERE subject LIKE $1 OR (subject = 'unknown' AND id <> ALL($2::uuid[]))",
       [`gate\\_dlq.%${suffix}`, unknownBefore]
     );
-    for (const [role, group] of logins) {
-      await cleanup("revoke", `REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await cleanup("role", `DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

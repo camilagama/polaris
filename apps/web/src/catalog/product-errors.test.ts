@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { isLimitReached } from "../subscription/limit-help-model";
-import { isProductAlreadyCreated, productErrorMessage } from "./product-errors";
+import {
+  isProductAlreadyCreated,
+  productDeleteRefusal,
+  productErrorMessage,
+} from "./product-errors";
 
 /** The limit text has no unit but the variant, no Assinatura, no archiving or deleting, and no number. */
 const NOT_IN_LIMIT_TEXT = /produtos|assinatura|arquiv|exclu|\d/i;
@@ -166,5 +170,112 @@ describe("mensagem de erro de produto", () => {
     expect(productErrorMessage("texto solto")).toBe(
       "Não foi possível concluir a operação. Tente novamente."
     );
+  });
+});
+
+describe("recusa de Excluir produto", () => {
+  const now = new Date("2026-11-12T15:00:00-03:00");
+  const failure = (code: string, data?: Record<string, unknown>) =>
+    Object.assign(new Error(code), { code, ...(data ? { data } : {}) });
+
+  it("saldo diferente de zero diz quanto há, o que fazer e leva ao Estoque", () => {
+    const refused = productDeleteRefusal(
+      failure("CONFLICT", { reason: "product_stock_not_empty" }),
+      "Jaqueta",
+      3,
+      now
+    );
+    expect(refused).toEqual({
+      reread: false,
+      text: "Não dá para excluir “Jaqueta” porque ele ainda tem 3 em estoque. Zere o estoque na baixa ou na contagem e tente de novo.",
+      toStock: true,
+    });
+  });
+
+  it("saldo que não deu para ler não inventa número", () => {
+    const refused = productDeleteRefusal(
+      failure("CONFLICT", { reason: "product_stock_not_empty" }),
+      "Jaqueta",
+      null,
+      now
+    );
+    expect(refused.text).toContain("porque ele ainda tem estoque.");
+    expect(refused.toStock).toBe(true);
+  });
+
+  it("o teto por hora diz a hora da liberação, arredondada para cima ao minuto", () => {
+    const refused = productDeleteRefusal(
+      failure("TOO_MANY_REQUESTS", {
+        reason: "product_delete_rate_limited",
+        retryAfterSeconds: 1501,
+      }),
+      "Jaqueta",
+      null,
+      now
+    );
+    expect(refused.toStock).toBe(false);
+    expect(refused.reread).toBe(false);
+    const expected = new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date("2026-11-12T15:26:00-03:00"));
+    expect(refused.text).toBe(
+      `Você excluiu muitos produtos agora. Tente de novo às ${expected}.`
+    );
+  });
+
+  it("o teto sem a espera do servidor diz daqui a pouco", () => {
+    const refused = productDeleteRefusal(
+      failure("TOO_MANY_REQUESTS", { reason: "product_delete_rate_limited" }),
+      "Jaqueta",
+      null,
+      now
+    );
+    expect(refused.text).toBe(
+      "Você excluiu muitos produtos agora. Tente de novo daqui a pouco."
+    );
+  });
+
+  it("um 429 de outro motivo não é o do teto", () => {
+    const refused = productDeleteRefusal(
+      failure("TOO_MANY_REQUESTS", { reason: "rate_limited" }),
+      "Jaqueta",
+      null,
+      now
+    );
+    expect(refused.text).not.toContain("excluiu muitos");
+  });
+
+  it("produto mudado (versão ou estado) diz que mudou em outro aparelho e pede a releitura", () => {
+    for (const reason of [
+      "product_version_conflict",
+      "product_lifecycle_conflict",
+    ]) {
+      expect(
+        productDeleteRefusal(
+          failure("CONFLICT", { reason }),
+          "Jaqueta",
+          null,
+          now
+        )
+      ).toEqual({
+        reread: true,
+        text: "“Jaqueta” mudou em outro aparelho. Atualize a lista e tente de novo.",
+        toStock: false,
+      });
+    }
+  });
+
+  it("sem resposta do servidor não diz que excluiu: diz que não confirmou e pode ter sido salvo", () => {
+    const refused = productDeleteRefusal(
+      new TypeError("Failed to fetch"),
+      "Jaqueta",
+      null,
+      now
+    );
+    expect(refused.text).toBe(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+    );
+    expect(refused.reread).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
-import { axeViolations } from "./ui-guardrails";
+import { axeViolations } from "./ui-guardrails/measures";
 
 /**
  * The components the sale uses (ADR 0103, section 8, item 3), in the gallery: each one is found by its role and
@@ -19,6 +19,7 @@ const THEMES = [
 // the browser resolves `oklch(… / 50%)` to a color with an alpha of 0.5
 const HALF_STRENGTH = /\/ 0\.5\)$/;
 const ANTICIPATION_HELP = /^É uma intenção registrada na venda/;
+const TIPS_HELP = /^Até 3 e-mails nos primeiros 14 dias de uma loja nova\./;
 
 async function openGallery(page: Page, stored: string | null) {
   if (stored) {
@@ -175,8 +176,17 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
   await anticipation.press("Space");
   await expect(anticipation).not.toBeChecked();
 
+  // Switch: named by its label, described by its help, starts on, toggled by Space
+  const tips = sale.getByRole("switch", { name: "Dicas para começar" });
+  await expect(tips).toHaveAccessibleDescription(TIPS_HELP);
+  await expect(tips).toBeChecked();
+  await tips.press("Space");
+  await expect(tips).not.toBeChecked();
+  await tips.press("Space");
+  await expect(tips).toBeChecked();
+
   // Separator
-  await expect(sale.getByRole("separator")).toHaveCount(3);
+  await expect(sale.getByRole("separator")).toHaveCount(4);
 });
 
 for (const theme of THEMES) {
@@ -369,13 +379,688 @@ test("o grupo de rádios marcado como inválido mostra o anel no grupo e a borda
   expect(invalid.cardBorder).toBe(valid.cardBorder);
 });
 
+/** The boxes of a frame of the gallery: the frame, its title row and its panel, in pixels. */
+async function blockBoxes(page: Page, which: "block" | "reference") {
+  return await page
+    .locator(`[data-gallery-block="${which}"]`)
+    .evaluate((frame) => {
+      const box = (element: Element | null) => {
+        const { height, width, x, y } = (
+          element as Element
+        ).getBoundingClientRect();
+        return { height, width, x, y };
+      };
+      const origin = frame.getBoundingClientRect();
+      const relative = (element: Element | null) => {
+        const found = box(element);
+        if (found.width === 0 && found.height === 0) {
+          // the foot is `display: none` below 760 px: no box, and the same for both
+          return found;
+        }
+        return {
+          height: found.height,
+          width: found.width,
+          x: found.x - origin.x,
+          y: found.y - origin.y,
+        };
+      };
+      return {
+        footer: relative(
+          frame.querySelector('[data-slot="card-frame-footer"]')
+        ),
+        frame: { height: origin.height, width: origin.width },
+        header: relative(
+          frame.querySelector('[data-slot="card-frame-header"]')
+        ),
+        panel: relative(frame.querySelector('[data-slot="card-frame-panel"]')),
+      };
+    });
+}
+
+for (const size of [
+  { height: 800, width: 1280 },
+  { height: 740, width: 360 },
+]) {
+  test(`o Block desenha como o bloco do Início a ${size.width} px: a moldura, o cabeçalho e o painel medem o mesmo`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const reference = await blockBoxes(page, "reference");
+    const block = await blockBoxes(page, "block");
+    expect(block).toEqual(reference);
+    expect(block.panel.height).toBeGreaterThan(0);
+    // both are the same frame, so they would also agree on a wrong one: the gap of the panel is pinned too (4 px of
+    // frame from 760 px, `md:p-(--frame-gap)`; the 12 px of the plain card below it)
+    expect(block.panel.x).toBe(size.width >= 760 ? 4 : 12);
+    expect(block.header.x).toBe(size.width >= 760 ? 4 : 12);
+  });
+}
+
+/** The boxes that tell where a `ListBlock` of the gallery put its parts, in pixels. */
+async function listBoxes(page: Page, name: string) {
+  return await page
+    .getByRole("region", { exact: true, name })
+    .evaluate((region) => {
+      const rect = (element: Element | null) => {
+        const { bottom, height, left, right, top, width } = (
+          element as Element
+        ).getBoundingClientRect();
+        return { bottom, height, left, right, top, width };
+      };
+      const all = (selector: string) =>
+        [...region.querySelectorAll(selector)].map(rect);
+      const one = (selector: string) => {
+        const found = region.querySelector(selector);
+        return found ? rect(found) : null;
+      };
+      const scroll = region.querySelector("[data-list-block-scroll]");
+      return {
+        columnHeader: one("[data-list-block-header]"),
+        count: one("[data-list-count]"),
+        frame: rect(region),
+        header: one('[data-slot="card-frame-header"]'),
+        headingTag: region.querySelector("h2")?.tagName ?? null,
+        panel: rect(scroll),
+        rows: all("[data-list-block-row]"),
+        scrollable:
+          scroll !== null && scroll.scrollWidth > scroll.clientWidth + 1,
+        skeletons: region.querySelectorAll(
+          "[aria-hidden='true'] .animate-pulse"
+        ).length,
+        total: one("[data-list-total]"),
+      };
+    });
+}
+
+const LIST_EXAMPLES = [
+  { name: "Produtos com total", state: "rows", total: true },
+  { name: "Produtos sem total", state: "rows", total: false },
+  { name: "Carregando com total", state: "loading", total: true },
+  { name: "Carregando sem total", state: "loading", total: false },
+  { name: "Busca com total", state: "filtered-empty", total: true },
+  { name: "Busca sem total", state: "filtered-empty", total: false },
+] as const;
+
+const ANY_VALUE = /.*/;
+
+const LIST_SIZES = [
+  { height: 800, width: 1280 },
+  { height: 740, width: 360 },
+] as const;
+
+for (const size of LIST_SIZES) {
+  for (const example of LIST_EXAMPLES) {
+    test(`o ListBlock "${example.name}" a ${size.width} px: cabeçalho de coluna primeiro, linhas de borda a borda, total por último`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page, null);
+      const boxes = await listBoxes(page, example.name);
+      const label = `${example.name} a ${size.width} px`;
+      expect(boxes.headingTag, label).toBe("H2");
+      expect(boxes.columnHeader, label).not.toBeNull();
+      // the column header is the first line of the panel
+      expect(boxes.columnHeader?.top, label).toBeCloseTo(boxes.panel.top, 0);
+      expect(boxes.columnHeader?.left, label).toBeCloseTo(boxes.panel.left, 0);
+      expect(boxes.columnHeader?.width, label).toBeCloseTo(
+        boxes.panel.width,
+        0
+      );
+      if (example.state === "rows") {
+        expect(boxes.rows, label).toHaveLength(3);
+        for (const row of boxes.rows) {
+          expect(row.left, label).toBeCloseTo(boxes.panel.left, 0);
+          expect(row.width, label).toBeCloseTo(boxes.panel.width, 0);
+          expect(row.top, label).toBeGreaterThanOrEqual(
+            (boxes.columnHeader?.bottom ?? 0) - 0.5
+          );
+        }
+      } else {
+        expect(boxes.rows, label).toHaveLength(0);
+      }
+      if (example.state === "loading") {
+        expect(boxes.skeletons, label).toBeGreaterThan(0);
+      }
+      if (!example.total) {
+        expect(boxes.total, label).toBeNull();
+        return;
+      }
+      // the total is the last line: it ends where the panel ends and nothing of the list is below it
+      expect(boxes.total, label).not.toBeNull();
+      expect(boxes.total?.bottom, label).toBeCloseTo(boxes.panel.bottom, 0);
+      expect(boxes.total?.width, label).toBeCloseTo(boxes.panel.width, 0);
+      for (const row of boxes.rows) {
+        expect(row.bottom, label).toBeLessThanOrEqual(
+          (boxes.total?.top ?? 0) + 0.5
+        );
+      }
+      const lastLine = await page
+        .getByRole("region", { exact: true, name: example.name })
+        .evaluate(
+          (region) =>
+            region.querySelector("[data-list-total]")?.parentElement
+              ?.nextElementSibling === null
+        );
+      expect(lastLine, label).toBe(true);
+    });
+  }
+}
+
+for (const size of LIST_SIZES) {
+  test(`o ListBlock a ${size.width} px: carregando mantém a altura do cabeçalho e a busca sem resultado diz a frase`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const rows = await listBoxes(page, "Produtos com total");
+    const loading = await listBoxes(page, "Carregando com total");
+    const search = await listBoxes(page, "Busca com total");
+    expect(loading.header?.height).toBeCloseTo(rows.header?.height ?? 0, 0);
+    expect(loading.count?.height).toBeCloseTo(rows.count?.height ?? 0, 0);
+    expect(search.header?.height).toBeCloseTo(rows.header?.height ?? 0, 0);
+    const region = page.getByRole("region", {
+      exact: true,
+      name: "Busca com total",
+    });
+    await expect(
+      region.getByText("Nenhum produto com essa busca.")
+    ).toBeVisible();
+    await expect(region.locator("[data-list-count]")).toHaveText("0 produtos");
+    await expect(
+      page
+        .getByRole("region", { exact: true, name: "Carregando com total" })
+        .getByRole("status")
+    ).toHaveText("Carregando…");
+    await expect(
+      page
+        .getByRole("region", { exact: true, name: "Produtos com total" })
+        .locator("[data-list-count]")
+    ).toHaveAttribute("aria-live", "polite");
+  });
+
+  test(`o ListBlock a ${size.width} px: a tabela larga rola por dentro e a moldura e o título ficam parados`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const name = "Tabela larga";
+    const before = await listBoxes(page, name);
+    expect(before.frame.right).toBeLessThanOrEqual(size.width + 0.5);
+    const wide = before.scrollable;
+    if (size.width >= 760) {
+      // the 40 rem table fits the 1280 px column: nothing to scroll, and nothing cut
+      expect(wide).toBe(false);
+      await expect(
+        page
+          .getByRole("region", { exact: true, name })
+          .locator("[data-list-block-scroll]")
+      ).not.toHaveAttribute("tabindex", ANY_VALUE);
+      return;
+    }
+    expect(wide).toBe(true);
+    // wider than the screen, the box is a stop of the keyboard, named by the title, so it scrolls without a pointer
+    await expect(
+      page
+        .getByRole("region", { exact: true, name })
+        .getByRole("group", { name })
+    ).toHaveAttribute("tabindex", "0");
+    await page
+      .getByRole("region", { exact: true, name })
+      .locator("[data-list-block-scroll]")
+      .evaluate((scroll) => {
+        scroll.scrollLeft = 120;
+      });
+    const after = await listBoxes(page, name);
+    expect(after.frame.left).toBeCloseTo(before.frame.left, 0);
+    expect(after.frame.width).toBeCloseTo(before.frame.width, 0);
+    expect(after.header?.left).toBeCloseTo(before.header?.left ?? 0, 0);
+    expect(after.columnHeader?.left).toBeCloseTo(
+      (before.columnHeader?.left ?? 0) - 120,
+      0
+    );
+  });
+}
+
+const HEADER_ACTION_EXAMPLES = [
+  ...LIST_EXAMPLES,
+  { name: "Tabela larga", state: "rows", total: true },
+] as const;
+
+/** Sub-pixel rounding of the layout: the count may touch the action, never overlap it. */
+const SIDE_BY_SIDE_TOLERANCE = 0.5;
+/** How far the action may stand from the right edge of the header's content box on a phone. */
+const RIGHT_EDGE_TOLERANCE = 1;
+/** Count and action share a line: their centers differ by rounding only. */
+const SAME_LINE_TOLERANCE = 2;
+
+/** A title as wide as the header: the count and the action no longer fit on its line, so their group wraps to a line of its own. That only forces the wrap; each phone rule of the group is proven by its own test below. */
+async function widenTitle(page: Page, name: string) {
+  await page
+    .getByRole("region", { exact: true, name })
+    .getByRole("heading", { level: 2 })
+    .evaluate((heading) => {
+      heading.style.width = "100%";
+      heading.parentElement?.style.setProperty("width", "100%");
+    });
+}
+
+/** Where the title, the count, the action and the content box of a `ListBlock` header are, in pixels: the padding of a phone (`px-3`) is the block header's, not the frame's. */
+async function headerActionBoxes(page: Page, name: string) {
+  return await page
+    .getByRole("region", { exact: true, name })
+    .evaluate((region) => {
+      const header = region.querySelector('[data-slot="block-header"]');
+      const count = region.querySelector("[data-list-count]");
+      const action = [...(header?.querySelectorAll("button") ?? [])].find(
+        (button) => button.textContent?.trim() === "Exportar"
+      );
+      if (!(header && count && action)) {
+        return null;
+      }
+      const title = header.querySelector("h2");
+      if (!title) {
+        return null;
+      }
+      const box = (element: Element) => {
+        const { bottom, left, right, top } = element.getBoundingClientRect();
+        return { bottom, centerY: (top + bottom) / 2, left, right, top };
+      };
+      const headerBox = header.getBoundingClientRect();
+      return {
+        action: box(action),
+        contentLeft:
+          headerBox.left +
+          Number.parseFloat(getComputedStyle(header).paddingLeft),
+        contentRight:
+          headerBox.right -
+          Number.parseFloat(getComputedStyle(header).paddingRight),
+        count: box(count),
+        title: box(title),
+      };
+    });
+}
+
+for (const size of LIST_SIZES) {
+  for (const example of HEADER_ACTION_EXAMPLES) {
+    test(`o ListBlock "${example.name}" a ${size.width} px: a contagem fica à esquerda da ação do cabeçalho e, no celular, a ação encosta à direita`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page, null);
+      const label = `${example.name} a ${size.width} px`;
+      const forcesWrap = example.name === "Tabela larga" && size.width < 760;
+      if (forcesWrap) {
+        await widenTitle(page, example.name);
+      }
+      const boxes = await headerActionBoxes(page, example.name);
+      expect(boxes, label).not.toBeNull();
+      if (!boxes) {
+        return;
+      }
+      if (forcesWrap) {
+        expect(boxes.title.bottom, label).toBeLessThanOrEqual(
+          boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+        );
+      }
+      expect(boxes.count.right, label).toBeLessThanOrEqual(
+        boxes.action.left + SIDE_BY_SIDE_TOLERANCE
+      );
+      if (size.width >= 760) {
+        expect(boxes.action.right, label).toBeLessThanOrEqual(
+          boxes.contentRight + RIGHT_EDGE_TOLERANCE
+        );
+        return;
+      }
+      expect(
+        Math.abs(boxes.action.right - boxes.contentRight),
+        label
+      ).toBeLessThanOrEqual(RIGHT_EDGE_TOLERANCE);
+      if (example.state === "rows") {
+        expect(
+          Math.abs(boxes.count.centerY - boxes.action.centerY),
+          label
+        ).toBeLessThanOrEqual(SAME_LINE_TOLERANCE);
+      }
+    });
+  }
+}
+
+const WRAPPED_HEADER_SIZE = { height: 740, width: 360 } as const;
+
+/** Wraps the group of count and action below a full-width title, then optionally stops the count from growing, so only the group's own alignment can place the action. */
+async function wrapGroup(page: Page, name: string, countGrows: boolean) {
+  await page.setViewportSize(WRAPPED_HEADER_SIZE);
+  await openGallery(page, null);
+  await widenTitle(page, name);
+  if (!countGrows) {
+    await page
+      .getByRole("region", { exact: true, name })
+      .locator("[data-list-count]")
+      .evaluate((count) => {
+        count.style.flexGrow = "0";
+      });
+  }
+  const boxes = await headerActionBoxes(page, name);
+  expect(boxes).not.toBeNull();
+  return boxes;
+}
+
+test('o ListBlock "Tabela larga" a 360 px: a contagem cresce e fica na borda esquerda da linha, a ação na direita', async ({
+  page,
+}) => {
+  const boxes = await wrapGroup(page, "Tabela larga", true);
+  if (!boxes) {
+    return;
+  }
+  expect(boxes.title.bottom).toBeLessThanOrEqual(
+    boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+  );
+  expect(Math.abs(boxes.count.left - boxes.contentLeft)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+  expect(Math.abs(boxes.action.right - boxes.contentRight)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+});
+
+test('o ListBlock "Tabela larga" a 360 px: sem a contagem crescer, só o alinhamento do grupo põe a ação na borda direita', async ({
+  page,
+}) => {
+  const boxes = await wrapGroup(page, "Tabela larga", false);
+  if (!boxes) {
+    return;
+  }
+  expect(boxes.title.bottom).toBeLessThanOrEqual(
+    boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+  );
+  expect(Math.abs(boxes.action.right - boxes.contentRight)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+  expect(boxes.count.left).toBeGreaterThan(
+    boxes.contentLeft + RIGHT_EDGE_TOLERANCE
+  );
+});
+
+test("o ListBlock: o título é o único h2 da lista, a contagem não é título e axe não acusa a página", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const region = page.getByRole("region", {
+    exact: true,
+    name: "Produtos com total",
+  });
+  await expect(region.getByRole("heading")).toHaveCount(1);
+  await expect(
+    region.getByRole("heading", { level: 2, name: "Produtos com total" })
+  ).toBeVisible();
+  await expect(
+    region.getByRole("list", { name: "Produtos com total" })
+  ).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+});
+
+/** The frame and the first line of a `Block variant="plain"` of the gallery. */
+test("o Block plain: sem a moldura de fora, com o mesmo cabeçalho do Block", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const plain = page.getByRole("region", { exact: true, name: "Comprovante" });
+  await expect(
+    plain.getByRole("heading", { level: 2, name: "Comprovante" })
+  ).toBeVisible();
+  await expect(plain.locator('[data-slot="card-frame"]')).toHaveCount(0);
+  await expect(plain.locator('[data-slot="block-header"]')).toBeVisible();
+  const header = await plain
+    .locator('[data-slot="block-header"]')
+    .evaluate((row) => row.getBoundingClientRect().height);
+  expect(header).toBeGreaterThanOrEqual(32);
+  await expect(page.getByText("O mesmo bloco sem título.")).toBeVisible();
+});
+
+/** The two inner panels, the checkable option and the step tile of the gallery, measured in the browser. */
+test("os painéis internos, a opção marcável e a caixa do passo: medidas e clique", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const inset = page.locator('[data-gallery-panel="inset"]');
+  const insetStyle = await inset.evaluate((box) => {
+    const style = getComputedStyle(box);
+    return {
+      border: style.borderTopWidth,
+      fill: style.backgroundColor,
+      radius: style.borderTopLeftRadius,
+    };
+  });
+  expect(insetStyle.border).toBe("0px");
+  expect(insetStyle.fill).not.toBe("rgba(0, 0, 0, 0)");
+  expect(Number.parseFloat(insetStyle.radius)).toBeGreaterThan(0);
+
+  const group = page.getByRole("group", { name: "Contato" });
+  await expect(group).toHaveAttribute("data-gallery-panel", "group");
+  const groupStyle = await group.evaluate((box) => {
+    const style = getComputedStyle(box);
+    return { border: style.borderTopWidth, fill: style.backgroundColor };
+  });
+  expect(groupStyle.border).toBe("1px");
+  expect(groupStyle.fill).toBe("rgba(0, 0, 0, 0)");
+
+  const steps = page.locator("[data-step-box]");
+  await expect(steps).toHaveCount(3);
+  const sizes = await steps.evaluateAll((boxes) =>
+    boxes.map((box) => {
+      const { height, width } = box.getBoundingClientRect();
+      return [width, height];
+    })
+  );
+  expect(sizes).toEqual([
+    [28, 28],
+    [28, 28],
+    [28, 28],
+  ]);
+
+  const option = page.getByRole("checkbox", { name: "Azul / P" });
+  await expect(option).not.toBeChecked();
+  await page.getByText("Azul / P", { exact: true }).click();
+  await expect(option).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Desligada, sem imagem para enviar" })
+  ).toBeDisabled();
+  const long = page.locator('[data-slot="checkable-option"]', {
+    hasText: "bem comprido",
+  });
+  await page.setViewportSize({ height: 740, width: 320 });
+  expect(await long.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(
+    true
+  );
+});
+
+const OPTION_STATES = [
+  { disabled: false, name: "Azul / M" },
+  { disabled: false, name: "Azul / P" },
+  { disabled: true, name: "Desligada, sem imagem para enviar" },
+  { disabled: true, name: "Desligada e marcada, durante o envio" },
+] as const;
+
+for (const theme of THEMES.slice(0, 2)) {
+  test(`tema ${theme.name}: a opção marcável desligada apaga o texto e a caixa a 50 %, sem mudar a borda e com cursor de bloqueio`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    await openGallery(page, theme.stored);
+    const measures = await Promise.all(
+      OPTION_STATES.map(async (state) => ({
+        disabled: state.disabled,
+        ...(await page
+          .locator('[data-slot="checkable-option"]', { hasText: state.name })
+          .evaluate((label) => {
+            const box = label.querySelector('[role="checkbox"]');
+            const text = label.querySelector(":scope > span:not([role])");
+            if (!(box && text)) {
+              throw new Error("option without box or text");
+            }
+            const fadedAncestors: string[] = [];
+            for (
+              let node: Element | null = box.parentElement;
+              node;
+              node = node.parentElement
+            ) {
+              if (Number(getComputedStyle(node).opacity) < 1) {
+                fadedAncestors.push(node.tagName);
+              }
+            }
+            return {
+              border: getComputedStyle(label).borderTopColor,
+              boxCursor: getComputedStyle(box).cursor,
+              boxOpacity: getComputedStyle(box).opacity,
+              fadedAncestors,
+              rowOpacity: getComputedStyle(label).opacity,
+              textCursor: getComputedStyle(text).cursor,
+              textOpacity: getComputedStyle(text).opacity,
+            };
+          })),
+      }))
+    );
+    const [on, ...off] = measures;
+    for (const measure of measures.filter((item) => !item.disabled)) {
+      expect(measure.textOpacity).toBe("1");
+      expect(measure.boxOpacity).toBe("1");
+      expect(measure.textCursor).not.toBe("not-allowed");
+      expect(measure.boxCursor).not.toBe("not-allowed");
+    }
+    for (const measure of measures) {
+      expect(measure.rowOpacity).toBe("1");
+      expect(measure.fadedAncestors).toEqual([]);
+      expect(measure.border).toBe(on?.border);
+    }
+    for (const measure of off.filter((item) => item.disabled)) {
+      expect(measure.textOpacity).toBe("0.5");
+      expect(measure.boxOpacity).toBe("0.5");
+      expect(measure.textCursor).toBe("not-allowed");
+      expect(measure.boxCursor).toBe("not-allowed");
+    }
+    await context.close();
+  });
+}
+
+const measureOffControl = (control: Element) => {
+  const fadedAncestors: string[] = [];
+  for (
+    let node: Element | null = control.parentElement;
+    node;
+    node = node.parentElement
+  ) {
+    if (Number(getComputedStyle(node).opacity) < 1) {
+      fadedAncestors.push(node.tagName);
+    }
+  }
+  const style = getComputedStyle(control);
+  return { cursor: style.cursor, fadedAncestors, opacity: style.opacity };
+};
+
+const OFF_BOXES = [
+  { disabled: false, name: "Solta, ligada, desmarcada" },
+  { disabled: false, name: "Solta, ligada, marcada" },
+  { disabled: true, name: "Solta, desligada, desmarcada" },
+  { disabled: true, name: "Solta, desligada, marcada" },
+  { disabled: true, name: "Dentro de um campo desligado" },
+] as const;
+
+for (const theme of THEMES.slice(0, 2)) {
+  test(`tema ${theme.name}: a caixa desligada apaga a 50 % uma vez só e mostra cursor de bloqueio, solta ou dentro de campo desligado`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    await openGallery(page, theme.stored);
+    const measures = await Promise.all(
+      OFF_BOXES.map(async (state) => {
+        const box = page.getByRole("checkbox", { name: state.name });
+        return {
+          ...(await box.evaluate(measureOffControl)),
+          disabled: await box.evaluate(
+            (node) =>
+              node.hasAttribute("data-disabled") &&
+              node.getAttribute("aria-disabled") === "true"
+          ),
+          name: state.name,
+        };
+      })
+    );
+    measures.forEach((measure, index) => {
+      const off = OFF_BOXES[index]?.disabled ?? false;
+      expect(measure.disabled, measure.name).toBe(off);
+      expect(measure.fadedAncestors, measure.name).toEqual([]);
+      expect(measure.opacity, measure.name).toBe(off ? "0.5" : "1");
+      expect(measure.cursor === "not-allowed", measure.name).toBe(off);
+    });
+    await context.close();
+  });
+
+  test(`tema ${theme.name}: o rádio de um cartão desligado, a chave desligada e a caixa e a chave dentro de um rótulo apagam a 50 %, sem somar`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    await openGallery(page, theme.stored);
+    const radio = await page
+      .getByRole("radio", { name: "Cartão desligado" })
+      .evaluate(measureOffControl);
+    const card = await page
+      .getByRole("radio", { name: "Cartão desligado" })
+      .locator("xpath=ancestor::label")
+      .evaluate((label) => getComputedStyle(label).opacity);
+    expect(card).toBe("0.5");
+    expect(radio.opacity).toBe("1");
+    expect(radio.fadedAncestors).toEqual(["LABEL"]);
+    expect(radio.cursor).toBe("not-allowed");
+    const toggle = await page
+      .getByRole("switch", { name: "Chave desligada" })
+      .evaluate(measureOffControl);
+    expect(toggle.opacity).toBe("0.5");
+    expect(toggle.fadedAncestors).toEqual([]);
+    expect(toggle.cursor).toBe("not-allowed");
+    const held = await Promise.all(
+      [
+        { name: "Caixa dentro do rótulo", role: "checkbox" },
+        { name: "Chave dentro do rótulo", role: "switch" },
+      ].map(async ({ name, role }) => {
+        const control = page.getByRole(role as "checkbox" | "switch", {
+          name,
+        });
+        return {
+          control: await control.evaluate(measureOffControl),
+          label: await control
+            .locator("xpath=ancestor::label")
+            .evaluate((node) => getComputedStyle(node).opacity),
+          name,
+        };
+      })
+    );
+    for (const { control, label, name } of held) {
+      expect(label, name).toBe("0.5");
+      expect(control.opacity, name).toBe("1");
+      expect(control.fadedAncestors, name).toEqual(["LABEL"]);
+      expect(control.cursor, name).toBe("not-allowed");
+    }
+    await context.close();
+  });
+}
+
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({
   page,
 }) => {
   await openGallery(page, null);
   await page.evaluate(() => {
     const image = document.createElement("img");
-    image.src = "/icons/icon-192.png";
+    image.src = "/icons/icon-v2-192.png";
     document.querySelector("main")?.append(image);
   });
   const violations = await axeViolations(page);

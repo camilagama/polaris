@@ -107,6 +107,7 @@ interface ScreenOptions {
 interface Calls {
   checkouts: Record<string, unknown>[];
   reads: number;
+  sessions: number;
 }
 
 async function openScreen(
@@ -119,14 +120,15 @@ async function openScreen(
     role = "owner",
   }: ScreenOptions = {}
 ): Promise<Calls> {
-  const calls: Calls = { checkouts: [], reads: 0 };
-  await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({
+  const calls: Calls = { checkouts: [], reads: 0, sessions: 0 };
+  await page.route("**/api/auth/get-session", (route) => {
+    calls.sessions += 1;
+    return route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: SESSION_USER }),
       contentType: "application/json",
       headers: { ...WORKER_MARK },
-    })
-  );
+    });
+  });
   await serveHealth(page);
   await page.route("https://sandbox.asaas.com/**", (route) =>
     route.fulfill({
@@ -277,6 +279,18 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
     0
   );
+});
+
+test("abrir a Assinatura e voltar a ela depois de olhar outra aba não lê além dos 2 da abertura: rodapé pela memória, runtime fresco (AC-2.1)", async ({
+  page,
+}) => {
+  const calls = await openScreen(page);
+  await expect(planTitle(page)).toHaveText("Plano Free");
+  await expect.poll(() => calls.sessions).toBe(2);
+  await openSettingsTab(page, "Formas de receber");
+  await openSettingsTab(page, "Assinatura");
+  await expect(planTitle(page)).toHaveText("Plano Free");
+  expect(calls.sessions).toBe(2);
 });
 
 test("o CPF digitado para o Pix continua lá depois de olhar outra aba de Configurações", async ({
@@ -1151,7 +1165,7 @@ test("menu: 'Assinatura' é aba de Configurações, no desktop e no celular; som
     nav.getByRole("link", { exact: true, name: "Configurações" })
   ).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("link", { name: "Assinatura" })).toHaveCount(0);
-  const tabs = page.getByRole("tablist", { name: "Configurações" });
+  const tabs = page.getByRole("tablist", { name: "Configurações da loja" });
   await expect(
     tabs.getByRole("tab", { exact: true, name: "Assinatura" })
   ).toHaveAttribute("aria-selected", "true");

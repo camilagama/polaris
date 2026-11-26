@@ -23,7 +23,6 @@ import {
   archiveProduct,
   configureProductVariants,
   createProduct,
-  deleteProduct,
 } from "../src/product-repository";
 import { publicCatalogReaderOver } from "../src/public-catalog-reader";
 import {
@@ -34,6 +33,7 @@ import {
   unpublishProducts,
 } from "../src/public-catalog-repository";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -611,7 +611,7 @@ async function run() {
       })
     );
     await as(orgA, "product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: p4.version,
         id: p4.id,
         requestId: randomUUID(),
@@ -1031,7 +1031,9 @@ async function run() {
       ["free_over_limit", null],
       ["trial_setup", null],
       ["trialing", "+10 days"],
-      ["trialing", "-1 day"],
+      // a trial lapsed two days ago: one day ago would still be in the slack the engine gives a trial
+      // until 06:00 in São Paulo of the next day (AC-47), which this SQL check does not read
+      ["trialing", "-2 days"],
       ["active", "+30 days"],
       ["active", "-1 day"],
       ["grace", "+3 days"],
@@ -1141,13 +1143,9 @@ async function run() {
     if (runtime) {
       await runtime.pool.end();
     }
-    for (const [role, group] of [
-      [loginRole, runtimeRole],
-      [catalogLoginRole, "polaris_catalog_runtime"],
-    ] as const) {
+    for (const role of [loginRole, catalogLoginRole] as const) {
       if (role) {
         // biome-ignore lint/performance/noAwaitInLoops: Two cleanups, in order.
-        await admin.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await admin.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       }
     }

@@ -1,0 +1,25 @@
+amends "package://github.com/jdx/hk/releases/download/v2.13.0/hk@2.13.0#/Config.pkl"
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stage = true
+    stash = "git"
+    steps {
+      ["biome"] {
+        glob = List("*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.mts", "*.cts", "*.json", "*.jsonc", "*.css")
+        check = "bunx --no-install biome check --skip=source --no-errors-on-unmatched --files-ignore-unknown=true {{files}}"
+        fix = "bunx --no-install biome check --write --skip=source --no-errors-on-unmatched --files-ignore-unknown=true {{files}}"
+        diagnostic_format = "biome"
+      }
+    }
+  }
+  ["pre-push"] {
+    steps {
+      ["check-fast"] {
+        check = "bun run check:fast"
+        exclusive = true
+      }
+    }
+  }
+}

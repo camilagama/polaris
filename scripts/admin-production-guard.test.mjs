@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parseJsonc } from "./verify-staging-isolation.mjs";
+import { parseJsonc } from "./lib/wrangler-config.mjs";
 
 /**
  * The production guard (T-127a, D2 of the Admin plan): the Admin Worker in production answers only to a request

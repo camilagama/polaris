@@ -7,6 +7,7 @@ import { queueForEventType } from "@polaris/domain/events/queue-envelope";
 import { SCHEDULER_LANES } from "@polaris/domain/scheduling/scheduled-jobs";
 import { logger } from "@polaris/observability/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseWranglerConfig } from "../src/server/wrangler-config.testing";
 
 const mocks = vi.hoisted(() => ({
   activationRecipientsClose: vi.fn(),
@@ -1260,7 +1261,12 @@ describe("the queue consumer", () => {
   });
 
   it("runs the data export job for a data_export.requested message and acks it", async () => {
-    const sent = message(exportEvent);
+    const exportId = "0199a1b2-c3d4-7e5f-8a6b-ffffffffffff";
+    const sent = message({
+      ...exportEvent,
+      event: { exportId },
+      idempotencyKey: `data_export.requested:${exportId}`,
+    });
     await runQueue({ ...configured, ...privacy }, sent);
 
     expect(mocks.runDataExports).toHaveBeenCalledTimes(1);
@@ -1269,7 +1275,7 @@ describe("the queue consumer", () => {
       expect.objectContaining({
         sweep: false,
         target: {
-          exportId: "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+          exportId,
           organizationId: "org_1",
         },
       })
@@ -1417,7 +1423,7 @@ describe("the queue consumer", () => {
         type: "activation.notice",
         version: 1,
       });
-    /** Everything the tips need but the stop on a complaint, which the code does not have yet. */
+    /** Everything the tips need, the webhook's secret included. */
     const tipsConfigured = {
       ACTIVATION_EMAIL_FROM: "Polaris <dicas@example.invalid>",
       ACTIVATION_EMAILS_ENABLED: "true",
@@ -1427,6 +1433,7 @@ describe("the queue consumer", () => {
       BETTER_AUTH_SECRET: "b".repeat(40),
       BILLING_SUPPORT_EMAIL: "suporte@example.invalid",
       RESEND_API_KEY: "re_not_a_key",
+      RESEND_WEBHOOK_SECRET: `whsec_${btoa("w".repeat(33))}`,
       UNSUBSCRIBE_TOKEN_SECRET: "u".repeat(40),
     };
 
@@ -1464,7 +1471,7 @@ describe("the queue consumer", () => {
       expect(mocks.activationStoreClose).toHaveBeenCalledTimes(1);
     });
 
-    it("with the switch on and everything set, still gives the consumer no e-mail while the stop on a complaint is not in force", async () => {
+    it("with the switch on and everything set, gives the consumer the e-mail configuration and opens the recipient connection", async () => {
       mocks.handleActivationNotice.mockResolvedValue("skipped");
       await worker.queue(
         {
@@ -1472,6 +1479,28 @@ describe("the queue consumer", () => {
           queue: "polaris-default",
         } as never,
         { ...configured, ...tipsConfigured } as never
+      );
+
+      const [dependencies] = mocks.handleActivationNotice.mock.calls[0] ?? [];
+      expect(dependencies.switchedOn).toBe(true);
+      expect(dependencies.email).not.toBeNull();
+      expect(mocks.createActivationNoticeRecipientClient).toHaveBeenCalledTimes(
+        1
+      );
+    });
+
+    it("with the switch on and everything set but the webhook's secret, gives the consumer no e-mail and opens no recipient connection", async () => {
+      mocks.handleActivationNotice.mockResolvedValue("skipped");
+      await worker.queue(
+        {
+          messages: [activationNotice("0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a54")],
+          queue: "polaris-default",
+        } as never,
+        {
+          ...configured,
+          ...tipsConfigured,
+          RESEND_WEBHOOK_SECRET: undefined,
+        } as never
       );
 
       const [dependencies] = mocks.handleActivationNotice.mock.calls[0] ?? [];
@@ -2009,28 +2038,55 @@ describe("the static assets", () => {
   });
 
   it("is declared in wrangler.jsonc: the binding, and the Worker first for /assets/*", () => {
-    const config = readFileSync(
-      new URL("../wrangler.jsonc", import.meta.url),
-      "utf8"
-    );
-    expect(config).toContain('"binding": "ASSETS"');
-    expect(config).toMatch(RUN_WORKER_FIRST_ASSETS);
+    for (const [name, block] of wranglerBlocks(
+      readWranglerConfig(webWrangler)
+    )) {
+      if (block.assets === undefined && name !== "top level") {
+        continue;
+      }
+      expect(block.assets?.binding).toBe("ASSETS");
+      expect(block.assets?.run_worker_first).toContain("/assets/*");
+    }
   });
 });
 
-const RUN_WORKER_FIRST_ASSETS = /"run_worker_first": \[[^\]]*"\/assets\/\*"/;
-const CRONS_LIST = /"crons":\s*\[([^\]]*)\]/;
-const QUOTED = /"([^"]+)"/g;
+interface WranglerBlock {
+  assets?: { binding?: string; run_worker_first?: string[] | boolean };
+  triggers?: { crons?: string[] };
+  workflows?: unknown[];
+}
+
+interface WranglerConfig extends WranglerBlock {
+  env?: Record<string, WranglerBlock>;
+}
+
+const webWrangler = new URL("../wrangler.jsonc", import.meta.url);
+const appsDirectory = new URL("../../", import.meta.url);
+
+const readWranglerConfig = (url: URL) =>
+  parseWranglerConfig(readFileSync(url, "utf8")) as WranglerConfig;
+
+const wranglerBlocks = (config: WranglerConfig): [string, WranglerBlock][] => [
+  ["top level", config],
+  ...Object.entries(config.env ?? {}),
+];
+
+const otherWranglerWorkers = (excluded: string[]) =>
+  readdirSync(appsDirectory)
+    .filter((name) => !excluded.includes(name))
+    .filter((name) =>
+      existsSync(new URL(`${name}/wrangler.jsonc`, appsDirectory))
+    )
+    .map((name) => ({
+      blocks: wranglerBlocks(
+        readWranglerConfig(new URL(`${name}/wrangler.jsonc`, appsDirectory))
+      ),
+      name,
+    }));
 
 describe("the cron triggers", () => {
-  const declaredCrons = () => {
-    const config = readFileSync(
-      new URL("../wrangler.jsonc", import.meta.url),
-      "utf8"
-    );
-    const [, list] = CRONS_LIST.exec(config) ?? [];
-    return [...(list ?? "").matchAll(QUOTED)].map((match) => match[1]);
-  };
+  const declaredCrons = () =>
+    readWranglerConfig(webWrangler).triggers?.crons ?? [];
 
   it("declare exactly the crons of the scheduler's lanes: one tick per lane, not one trigger per job", () => {
     expect(declaredCrons().sort()).toEqual(
@@ -2039,15 +2095,11 @@ describe("the cron triggers", () => {
   });
 
   it("stay within the five Cron Triggers of the Workers Free plan, across every Worker of the account", () => {
-    const apps = new URL("../../", import.meta.url);
-    const others = readdirSync(apps)
-      .filter((name) => name !== "web")
-      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
-      .filter((name) =>
-        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
-          '"crons"'
-        )
-      );
+    const others = otherWranglerWorkers(["web"])
+      .filter(({ blocks }) =>
+        blocks.some(([, block]) => block.triggers?.crons !== undefined)
+      )
+      .map(({ name }) => name);
     expect(others).toEqual([]);
     expect(declaredCrons().length).toBeLessThanOrEqual(5);
   });
@@ -2055,14 +2107,11 @@ describe("the cron triggers", () => {
 
 describe("Cloudflare Workflows", () => {
   it("are not bound by any Worker: on the Free plan a step gets 10 ms of CPU, less than the queue consumer (ADR 0088)", () => {
-    const apps = new URL("../../", import.meta.url);
-    const withWorkflows = readdirSync(apps)
-      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
-      .filter((name) =>
-        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
-          '"workflows"'
-        )
-      );
+    const withWorkflows = otherWranglerWorkers([])
+      .filter(({ blocks }) =>
+        blocks.some(([, block]) => block.workflows !== undefined)
+      )
+      .map(({ name }) => name);
     expect(withWorkflows).toEqual([]);
   });
 });

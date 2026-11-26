@@ -4,6 +4,7 @@ import {
   RLS_EXEMPT_SCHEMAS,
   RLS_EXEMPT_TABLES,
 } from "../src/rls-exempt-tables";
+import { inRolledBackTransaction } from "./gate-roles";
 import { catalogViolations, readCatalog } from "./rls-forced-catalog-checks";
 import {
   disposableHostPattern,
@@ -45,8 +46,7 @@ const PROBE_PREFIX = "zz_gate_probe_";
  */
 async function proveDetection(client: Client, existingTable: string) {
   const planted = `${PROBE_PREFIX}table`;
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(`CREATE TABLE public.${planted} (id integer)`);
     await client.query(
       `ALTER TABLE public.${client.escapeIdentifier(existingTable)} NO FORCE ROW LEVEL SECURITY`
@@ -88,9 +88,7 @@ async function proveDetection(client: Client, existingTable: string) {
       !found.some((line) => line.includes(`${PROBE_PREFIX}safe_view`)),
       "the view with security_invoker was reported"
     );
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function run() {

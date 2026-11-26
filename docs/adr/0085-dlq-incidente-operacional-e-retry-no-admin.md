@@ -4,7 +4,7 @@ status: accepted
 
 # DLQ, incidente operacional e retry no Admin
 
-> O número deste ADR (0085) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR do purge usa 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes. A migration deste PR (0072, `0072_dead_letter_queue.sql`) colide com a `0072_organization_purge.sql` do PR do purge: quem entrar depois renumera a sua migration e regenera o snapshot.
+> A migration é a `0072_dead_letter_queue.sql`.
 
 ## Contexto
 

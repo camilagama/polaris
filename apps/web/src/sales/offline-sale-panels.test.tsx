@@ -1,8 +1,19 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PendingSale } from "../offline/sale-confirm";
-import { SavedSalesCard, savedSaleLines } from "./offline-sale-panels";
+import {
+  SavedSaleRow,
+  SavedSalesCard,
+  savedSaleLines,
+} from "./offline-sale-panels";
 import type { QueuedSaleView } from "./sale-form-model";
+
+const queue = vi.hoisted(() => ({ sales: [] as PendingSale[] }));
+
+vi.mock("./pending-sales", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./pending-sales")>()),
+  usePendingSales: () => queue.sales,
+}));
 
 const pending = (
   commandId: string,
@@ -10,10 +21,11 @@ const pending = (
 ): PendingSale => ({
   code: null,
   commandId,
-  itemCount: 2,
+  lineCount: 2,
   occurredAt: "2026-10-23T15:30:00.000Z",
   state: "pending",
   totalDue: "130.00",
+  unitCount: 5,
   ...overrides,
 });
 
@@ -39,12 +51,15 @@ describe("savedSaleLines (P-3)", () => {
 
   it("a venda recém-guardada vem primeiro, destacada, e não aparece duas vezes", () => {
     const lines = savedSaleLines(
-      [pending("a"), pending("b", { itemCount: 1, totalDue: "45.00" })],
+      [
+        pending("a"),
+        pending("b", { lineCount: 1, totalDue: "45.00", unitCount: 1 }),
+      ],
       { ...justSaved, stockWarnings: ["Camiseta: o aparelho mostra 1."] }
     );
     expect(lines.map((line) => line.commandId)).toEqual(["b", "a"]);
     expect(lines[0]).toMatchObject({
-      itemCount: 1,
+      count: { lines: 1, units: 1 },
       justSaved: true,
       stockWarnings: ["Camiseta: o aparelho mostra 1."],
       totalText: "R$ 45,00",
@@ -56,7 +71,7 @@ describe("savedSaleLines (P-3)", () => {
     const lines = savedSaleLines([pending("a")], justSaved);
     expect(lines[0]).toMatchObject({
       commandId: "b",
-      itemCount: null,
+      count: null,
       justSaved: true,
       occurredAt: null,
       state: "pending",
@@ -87,6 +102,58 @@ describe("SavedSalesCard", () => {
     expect(html.match(/Só viram vendas confirmadas/g)).toHaveLength(1);
   });
 
+  it("a linha da fila diz as linhas e as unidades, e o leitor ouve o mesmo", () => {
+    const [line] = savedSaleLines(
+      [pending("a", { lineCount: 3, unitCount: 8 })],
+      null
+    );
+    expect(line?.count).toEqual({ lines: 3, units: 8 });
+    const html = renderToStaticMarkup(
+      <ul>{line ? <SavedSaleRow line={line} /> : null}</ul>
+    );
+    expect(html).toContain(
+      '<span aria-hidden="true">3 linhas · 8 unidades</span>'
+    );
+    expect(html).toContain('<span class="sr-only">3 linhas, 8 unidades</span>');
+    expect(html).not.toContain(" itens<");
+    expect(html).not.toContain(" item<");
+  });
+
+  it("o mesmo cartão conta linhas e unidades na Venda e itens no Histórico", () => {
+    queue.sales = [
+      pending("a", { lineCount: 3, unitCount: 8 }),
+      pending("b", { lineCount: 1, unitCount: 4 }),
+    ];
+    try {
+      const sale = renderToStaticMarkup(<SavedSalesCard workspace={null} />);
+      expect(sale).toContain("3 linhas · 8 unidades");
+      expect(sale).toContain("1 linha · 4 unidades");
+      expect(sale).toContain("3 linhas, 8 unidades");
+
+      const history = renderToStaticMarkup(
+        <SavedSalesCard countStyle="items" workspace={null} />
+      );
+      expect(history).toContain(" · 3 itens</span>");
+      expect(history).toContain(" · 1 item</span>");
+      expect(history).not.toContain("linha");
+      expect(history).not.toContain("unidade");
+      expect(history).not.toContain('sr-only">, ');
+    } finally {
+      queue.sales = [];
+    }
+  });
+
+  it("a venda de 1 linha e 1 unidade fica no singular", () => {
+    const [line] = savedSaleLines(
+      [pending("a", { lineCount: 1, unitCount: 1 })],
+      null
+    );
+    const html = renderToStaticMarkup(
+      <ul>{line ? <SavedSaleRow line={line} /> : null}</ul>
+    );
+    expect(html).toContain("1 linha · 1 unidade");
+  });
+
   it("sem nenhuma venda guardada não desenha nada", () => {
     expect(renderToStaticMarkup(<SavedSalesCard workspace={null} />)).toBe("");
   });
@@ -105,5 +172,50 @@ describe("SavedSalesCard", () => {
     );
     expect(html).toContain("o aparelho mostra 5 em estoque e a venda tem 9");
     expect(html).toContain("parece não cobrir este item");
+  });
+});
+
+describe("a venda dividida guardada no aparelho", () => {
+  it("diz as partes na ordem, na Venda e no Histórico; a venda de um pagamento não ganha linha", () => {
+    queue.sales = [
+      pending("a", { partMethods: ["pix", "credit_card"] }),
+      pending("b", { partMethods: null }),
+    ];
+    try {
+      for (const html of [
+        renderToStaticMarkup(<SavedSalesCard workspace={null} />),
+        renderToStaticMarkup(
+          <SavedSalesCard countStyle="items" workspace={null} />
+        ),
+      ]) {
+        expect(html.match(/Pix \+ Crédito/g)).toHaveLength(1);
+        expect(html).not.toContain("Dinheiro");
+      }
+      const lines = savedSaleLines(queue.sales, null);
+      expect(lines.map((line) => line.partsText)).toEqual([
+        "Pix + Crédito",
+        null,
+      ]);
+    } finally {
+      queue.sales = [];
+    }
+  });
+
+  it("a recusada também diz as partes, ao lado do estado", () => {
+    const [line] = savedSaleLines(
+      [
+        pending("a", {
+          code: "payment_profile_changed",
+          partMethods: ["cash", "debit_card"],
+          state: "rejected",
+        }),
+      ],
+      null
+    );
+    const html = renderToStaticMarkup(
+      <ul>{line ? <SavedSaleRow line={line} /> : null}</ul>
+    );
+    expect(html).toContain("Dinheiro + Débito");
+    expect(html).toContain("Recusada pelo servidor");
   });
 });

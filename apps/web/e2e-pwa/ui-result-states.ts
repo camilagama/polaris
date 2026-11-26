@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -8,11 +9,11 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * (`/offline-screens-lab?screen=dashboard`), with the summary of the month and the goals answered by the test
  * (`page.route`), synthetic data only. Few states: each one starts the runtime of the lab in every context of the
  * map, and the CI job has a limit of 30 minutes. The complete month, the loading, the saves and the cancellation
- * are proved in `e2e/dashboard.e2e.ts` and `e2e/goals.e2e.ts` and in the captures of the pull request. The lab's own
+ * are proved in the files of `e2e/dashboard/` and in `e2e/goals.e2e.ts` and in the captures of the pull request. The lab's own
  * controls are hidden at the end of each state, so what is measured is the screen alone.
  */
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
-const NOW = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00.000Z");
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -84,7 +85,7 @@ const PARTIAL_SUMMARY = (from: string, to: string) => ({
     returns: "5.00",
   },
   daily: dailyOf(from, to, true),
-  generatedAt: NOW,
+  generatedAt: NOW.toISOString(),
   period: { from, to },
   quality: {
     anticipationFeesUnknown: 0,
@@ -169,7 +170,7 @@ const EMPTY_SUMMARY = (from: string, to: string) => ({
     processingFees: "0.00",
     returns: "0.00",
   },
-  generatedAt: NOW,
+  generatedAt: NOW.toISOString(),
   period: { from, to },
   quality: {
     anticipationFeesUnknown: 0,
@@ -328,22 +329,9 @@ async function signIn(page: Page, user: string, extra = "") {
 /** Starts the lab's runtime and waits for the screen with the month read. */
 async function openResultLab(page: Page, served: Served = {}, extra = "") {
   // the month the screen opens on is the organization's today: keep it October 2026
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(NOW);
   await serveResult(page, served);
   await signIn(page, `guardrails-${crypto.randomUUID()}`, extra);
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
 }
 
 export const resultStates = {
@@ -412,7 +400,7 @@ export const resultStates = {
   /** The server out of reach after a read: the copy the device kept, the notice, and the goals that could not load. */
   async offline(page: Page) {
     const served: Served = {};
-    await page.clock.setFixedTime(new Date(NOW));
+    await page.clock.setFixedTime(NOW);
     await serveResult(page, served);
     const user = `guardrails-${crypto.randomUUID()}`;
     await signIn(page, user);

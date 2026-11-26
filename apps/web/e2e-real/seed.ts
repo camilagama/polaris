@@ -89,14 +89,20 @@ export async function seedStock(
   });
 }
 
+/** The discounts, surcharges and freight of a sale, as the `sale.confirm` command takes them. */
+export type SaleAdjustments = Parameters<
+  PolarisRpcClient["sale"]["confirm"]
+>[0]["adjustments"];
+
 export async function seedCashSale(
   rpc: PolarisRpcClient,
   organizationId: string,
   items: { variantId: string; quantity: number; price: string }[],
-  occurredAt: string
+  occurredAt: string,
+  adjustments: SaleAdjustments = []
 ): Promise<string> {
   const result = await rpc.sale.confirm({
-    adjustments: [],
+    adjustments,
     commandId: nextCommandId(),
     commandVersion: 1,
     items: items.map((item) => ({

@@ -1,10 +1,23 @@
-import { type ReactNode, useId } from "react";
+import { type ComponentType, type ReactNode, useId } from "react";
+import { cn } from "@/lib/utils";
 import { Card, CardContent } from "./card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "./empty";
+import { SkeletonArt, type SkeletonArtKind } from "./skeleton-art";
+
+type EmptyIcon = ComponentType<{ "aria-hidden"?: "true" }>;
 
 export const EMPTY_TITLE_MAX = 60;
 export const EMPTY_SUPPORT_MAX = 100;
 
 interface EmptyStateProps {
+  art?: SkeletonArtKind | undefined;
   /**
    * The empty list appears after a read (the list was loading or the period changed): it is a `role="status"`, so the
    * screen reader says it without the focus moving. Without it, the card is a region named by its sentence.
@@ -14,6 +27,8 @@ interface EmptyStateProps {
   bare?: boolean;
   /** The action, a button or a link drawn as one; more than one sit side by side and wrap. */
   children?: ReactNode;
+  /** Decoration, out of the accessible name; optional, and `bare` does not decide it (the empty of a chart's plot passes none, so its box keeps its height). */
+  icon?: EmptyIcon | readonly EmptyIcon[];
   /** One line for when the sentence alone does not say what to do (the period, the next step): at most `EMPTY_SUPPORT_MAX` characters. */
   support?: string;
   /** The sentence of the empty list: at most `EMPTY_TITLE_MAX` characters, what it says and nothing about how to act. */
@@ -29,8 +44,10 @@ interface EmptyStateProps {
  */
 export function EmptyState({
   afterRead = false,
+  art,
   bare = false,
   children,
+  icon,
   support,
   title,
 }: EmptyStateProps) {
@@ -38,29 +55,38 @@ export function EmptyState({
   const region = afterRead
     ? { role: "status" }
     : { "aria-labelledby": titleId, role: "region" };
+  const icons = icon === undefined ? [] : [icon].flat();
   const content = (
     <>
-      <div className="grid gap-1">
-        <p className="font-medium" data-empty-title="" id={titleId}>
-          {title}
-        </p>
-        {support ? (
-          <p className="text-muted-foreground text-support">{support}</p>
-        ) : null}
-      </div>
-      {children ? (
-        <div className="flex flex-wrap justify-center gap-2">{children}</div>
+      {art ? <SkeletonArt className="hidden w-44 md:block" kind={art} /> : null}
+      {icons.length > 0 ? (
+        <div className={cn("flex gap-2", art && "md:hidden")}>
+          {icons.map((Icon, position) => (
+            // the same icon may repeat, and the list is fixed per render: the position is the stable key
+            <EmptyMedia key={position} variant="icon">
+              <Icon aria-hidden="true" />
+            </EmptyMedia>
+          ))}
+        </div>
       ) : null}
+      <EmptyHeader>
+        <EmptyTitle data-empty-title="" id={titleId}>
+          {title}
+        </EmptyTitle>
+        {support ? <EmptyDescription>{support}</EmptyDescription> : null}
+      </EmptyHeader>
+      {children ? <EmptyContent>{children}</EmptyContent> : null}
     </>
   );
-  const layout = "grid justify-items-center gap-3 text-center";
   return bare ? (
-    <div {...region} className={layout} data-empty-state="">
+    <Empty {...region} data-empty-state="">
       {content}
-    </div>
+    </Empty>
   ) : (
     <Card {...region} data-empty-state="">
-      <CardContent className={layout}>{content}</CardContent>
+      <CardContent>
+        <Empty>{content}</Empty>
+      </CardContent>
     </Card>
   );
 }

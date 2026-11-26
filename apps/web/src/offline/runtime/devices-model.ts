@@ -22,11 +22,55 @@ import {
  */
 export interface DeviceRow {
   id: string;
+  /** What the name says the device is, for the icon of the row. */
+  kind: DeviceKind;
   /** This is the device the screen is open on: it can only leave through "Sair". */
   isCurrent: boolean;
   labelText: string;
   lastSeenText: string;
   registeredText: string;
+}
+
+export type DeviceKind = "computer" | "phone" | "tablet" | "unknown";
+
+/**
+ * Limit of what the name carries: the server only knows the system from the headers, so an Android tablet arrives as
+ * "Android" and is a phone here, and Safari on an iPad in desktop mode says "Macintosh" and arrives as "Safari no
+ * Mac", a computer here. Nothing in the request tells those apart, so the detection stays as it is. Both tables follow
+ * `DEVICE_FAMILY_LABELS` of `server/device-family-label.ts`, and `server/device-family-label.test.ts` fails when one of them differs.
+ */
+export const KIND_BY_SYSTEM: Readonly<Record<string, DeviceKind>> = {
+  Android: "phone",
+  ChromeOS: "computer",
+  iPad: "tablet",
+  iPhone: "phone",
+  Linux: "computer",
+  Mac: "computer",
+  Windows: "computer",
+};
+
+export const FAMILY_BROWSERS: ReadonlySet<string> = new Set([
+  "Chrome",
+  "Edge",
+  "Firefox",
+  "Navegador",
+  "Opera",
+  "Safari",
+  "Samsung Internet",
+]);
+
+/**
+ * The server names a device it was not told the name of by browser and system ("Chrome no Android", from a closed
+ * table in `server/device-family-label.ts`); the system is the only thing it knows about the kind, and an Android
+ * tablet is a phone for it. Only a name of exactly that shape says anything: one the person typed ("Loja no Mac"), or
+ * none, leaves the neutral icon.
+ */
+export function deviceKind(label: string | null): DeviceKind {
+  const [browser, system, ...rest] = (label ?? "").trim().split(" no ");
+  if (rest.length > 0 || !(browser && system && FAMILY_BROWSERS.has(browser))) {
+    return "unknown";
+  }
+  return KIND_BY_SYSTEM[system] ?? "unknown";
 }
 
 /** This device first, then the most recently seen; revoked devices are not shown. */
@@ -49,6 +93,7 @@ export function deviceRows(
     .map(({ device, isCurrent }) => ({
       id: device.id,
       isCurrent,
+      kind: deviceKind(device.label),
       labelText: device.label?.trim() || "Aparelho sem nome",
       lastSeenText: formatInstant(device.lastSeenAt),
       registeredText: formatInstant(device.createdAt),
@@ -157,8 +202,9 @@ export function confirmLabel(endOtherSessions: boolean): string {
 }
 
 export const LOADING_TEXT = "Carregando seus aparelhos…";
-export const EMPTY_TEXT =
-  "Nenhum aparelho registrado nesta conta. Um aparelho aparece aqui depois que você abre o Polaris nele com internet.";
+export const EMPTY_TITLE = "Nenhum aparelho registrado nesta conta.";
+export const EMPTY_SUPPORT =
+  "Um aparelho aparece aqui depois que você abre o Polaris nele com internet.";
 export const OFFLINE_TEXT =
   "Sem conexão. Para revogar um aparelho ou encerrar sessões, conecte-se à internet. Nada fica guardado para depois.";
 const UNCERTAIN_TEXT =

@@ -78,12 +78,84 @@ export const alertSignals = [
     notify: "wake",
     severity: "critical",
     source: {
-      events: ["server_error"],
-      where: "httpStatus >= 500",
+      events: [
+        "server_error",
+        "auth_database_not_configured",
+        "auth_password_pepper_missing",
+        "better_auth_internal_error",
+        "catalog_read_failed",
+      ],
+      where: "httpStatus >= 500, or the event is not server_error",
     },
     threshold: { atLeast: 5, kind: "count" },
     title: "Respostas 5xx",
     windowMinutes: 15,
+  },
+  {
+    // a refund that did not finish became an incident: the customer's money, so one occurrence is enough
+    id: "incidente-de-reembolso-aberto",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["billing_refund_pending_incident"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Reembolso não concluído virou incidente",
+    windowMinutes: 60,
+  },
+  {
+    // a rejected key fails every delivery, and the provider pauses the webhook after 15 failures
+    id: "chave-do-provedor-recusada",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["billing_provider_rejected"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Provedor de cobrança recusou a chave do Polaris",
+    windowMinutes: 60,
+  },
+  {
+    // the event is answered 200, so the provider never sends it again: the fact is lost unless a person reads it
+    id: "webhook-de-cobranca-abandonado",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["billing_webhook_unresolved_given_up"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Evento de cobrança abandonado sem organização",
+    windowMinutes: 60,
+  },
+  {
+    // the notice consumer logs `email_misconfigured` as an incident (the switch is on with a sending that cannot happen)
+    // and the cycle's notice is skipped; the sweep and the failed sends are the same series failing
+    id: "serie-falhando",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: [
+        "activation_notice_email_misconfigured",
+        "activation_notice_failed",
+        "activation_sweep_failed",
+      ],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "A série de dicas falhou ao enviar ou ao varrer",
+    windowMinutes: 60,
+  },
+  {
+    // the screen answer is the same on purpose, so a revoked key or an unverified sender domain
+    // breaks sign-up and recovery with nothing to see; sign-up traffic is low, so one occurrence is enough
+    id: "email-de-acesso-falhando",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["auth_email_delivery_failed"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "E-mail de acesso (verificação, senha, desbloqueio) não saiu",
+    windowMinutes: 60,
   },
   {
     id: "latencia-p95",
@@ -107,6 +179,7 @@ export const alertSignals = [
         "queue_dead_letter_not_recorded",
         "queue_dead_letter_send_failed",
         "outbox_events_exhausted",
+        "queue_message_failed",
       ],
     },
     threshold: { atLeast: 3, kind: "count" },
@@ -147,6 +220,13 @@ export const alertSignals = [
         "billing_event_retry_failed",
         "billing_grant_sweep_failed",
         "billing_webhook_processing_failed",
+        "billing_notice_handover_failed",
+        "billing_notice_record_failed",
+        "billing_notice_sweep_failed",
+        "billing_trial_setup_sweep_failed",
+        "billing_unclaimed_trial_settle_failed",
+        "billing_unclaimed_trials_incomplete",
+        "billing_refund_safety_net_incomplete",
       ],
     },
     threshold: { atLeast: 3, kind: "count" },
@@ -187,6 +267,7 @@ export const alertSignals = [
         "server_error",
         "scheduler_state_unavailable",
         "queue_ledger_unavailable",
+        "legal_acceptance_unavailable",
       ],
       where: "sqlState exists, or the event is not server_error",
     },
@@ -220,6 +301,8 @@ export const alertSignals = [
         "media_removed_asset_failed",
         "media_removed_asset_not_finalized",
         "media_removed_reconciliation_incomplete",
+        "catalog_media_authorization_failed",
+        "catalog_media_object_missing",
         "catalog_media_read_failed",
       ],
     },
@@ -314,7 +397,10 @@ export const alertSignals = [
     notify: "report",
     severity: "warning",
     source: {
-      events: ["organization_purge_stalled"],
+      events: [
+        "organization_purge_stalled",
+        "organization_purge_failure_not_recorded",
+      ],
     },
     threshold: { atLeast: 1, kind: "count" },
     title:
@@ -412,6 +498,65 @@ export const alertSignals = [
     title: "Operador chegou ao limite de revelações de dado pessoal por hora",
     windowMinutes: 60,
   },
+  {
+    // a stop is the series doing its job, not a failure: it is reported so the origin of the complaint is looked at the
+    // same day (the account of the provider is shared with sign-in and billing e-mails), not to wake anyone
+    id: "serie-parada",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["activation_series_stopped"],
+      where: "stopped = true",
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "A série de dicas parou depois de uma reclamação de spam",
+    windowMinutes: 1440,
+  },
+  {
+    id: "aviso-nao-entregue",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: [
+        "activation_notice_delivery_window_passed",
+        "billing_notice_delivery_window_passed",
+        "billing_notice_failed",
+      ],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Aviso de dica ou de cobrança que perdeu a janela de 23 h, ou e-mail de cobrança recusado",
+    windowMinutes: 1440,
+  },
+  {
+    id: "cobranca-fato-estranho",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: [
+        "billing_trial_fact_without_claim",
+        "billing_webhook_state_not_shown",
+        "billing_webhook_fact_event_malformed",
+        "billing_provider_response_malformed",
+      ],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Fato ou resposta de cobrança fora da forma esperada (olhar no mesmo dia)",
+    windowMinutes: 1440,
+  },
+  {
+    // a limiter that cannot answer does not refuse the request, so it goes through without the check
+    id: "limitador-indisponivel",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["rate_limit_unavailable"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Limitador de taxa indisponível (a requisição segue sem a checagem)",
+    windowMinutes: 1440,
+  },
 ] as const satisfies readonly AlertSignal[];
 
 export type AlertSignalId = (typeof alertSignals)[number]["id"];
@@ -422,3 +567,31 @@ export function alertSourceEvents(): string[] {
     ...new Set(alertSignals.flatMap((signal) => signal.source.events)),
   ].sort();
 }
+
+/**
+ * `logger.error` events that deliberately have no signal, each with the
+ * reason. A test fails for an error event that is neither in `alertSignals`
+ * nor here, so a new one cannot go without a decision.
+ */
+export const errorEventsWithoutSignal = [
+  {
+    event: "queue_ledger_not_recorded",
+    reason:
+      "the work was done and the next delivery finds the handler idempotent; nobody has to act",
+  },
+  {
+    event: "billing_woovi_reconcile_failed",
+    reason:
+      "fails every hour until the Woovi sandbox answers again (Gate 7); joins cobranca-reconcile, and the staging policy 4, when it does",
+  },
+  {
+    event: "billing_woovi_reconcile_incomplete",
+    reason:
+      "the partial form of billing_woovi_reconcile_failed, the same reason and the same destination",
+  },
+  {
+    event: "organization_purge_step_failed",
+    reason:
+      "from the 3rd attempt the job emits organization_purge_stalled with it, which purge-parado reads; counting both would double the alert",
+  },
+] as const satisfies readonly { event: string; reason: string }[];

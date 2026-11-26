@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  deleteNameKey,
   filterByName,
   productInitials,
   searchKey,
+  typedNameMatches,
 } from "./product-search-model";
 
 const products = [
@@ -39,5 +41,29 @@ describe("iniciais do produto", () => {
     expect(productInitials("Calça jeans")).toBe("CA");
     expect(productInitials("  tênis casual ")).toBe("TÊ");
     expect(productInitials("X")).toBe("X");
+  });
+});
+
+describe("nome digitado para excluir um produto", () => {
+  it("compara como a regra do nome único: sem maiúsculas, sem espaços repetidos e sem espaço nas pontas", () => {
+    expect(
+      typedNameMatches("  jaqueta   DE  inverno ", "Jaqueta de inverno")
+    ).toBe(true);
+    expect(typedNameMatches("Jaqueta de inverno", "Jaqueta de inverno")).toBe(
+      true
+    );
+  });
+
+  it("nome diferente, parcial ou vazio não confirma", () => {
+    expect(typedNameMatches("Jaqueta", "Jaqueta de inverno")).toBe(false);
+    expect(typedNameMatches("Jaqueta de inverno 2", "Jaqueta de inverno")).toBe(
+      false
+    );
+    expect(typedNameMatches("", "Jaqueta de inverno")).toBe(false);
+    expect(typedNameMatches("   ", "Jaqueta de inverno")).toBe(false);
+  });
+
+  it("o espaço sem quebra é um caractere do nome: o banco não o junta ao espaço comum", () => {
+    expect(deleteNameKey("a b")).not.toBe(deleteNameKey("a b"));
   });
 });

@@ -15,6 +15,7 @@ import {
   cancelGoal,
   createGoal,
   evaluateActiveGoals,
+  listGoals,
   listPausedGoalIds,
   updateGoal,
 } from "../src/goal-repository";
@@ -27,7 +28,6 @@ import {
   archiveProduct,
   configureProductVariants,
   createProduct,
-  deleteProduct,
 } from "../src/product-repository";
 import { runSyncCommand } from "../src/sync-command-repository";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
@@ -38,6 +38,7 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -306,7 +307,7 @@ async function run() {
       "past the raised variant limit"
     );
     await as(free, "product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: withGrant.version,
         id: withGrant.id,
         requestId: randomUUID(),
@@ -543,20 +544,40 @@ async function run() {
       })
     );
     assert.equal(edited.changed, true, "the goal that runs can be edited");
-    const measured = await withAuthorizedTenantTransaction(
+    const evaluation = await withAuthorizedTenantTransaction(
       db,
       {
         authenticatedUserId: goalsDown.userId,
         capability: "goal:manage",
         isolationLevel: "repeatable read",
         requestedOrganizationId: goalsDown.organizationId,
+        requireLegalAcceptance: false,
       },
-      (tx, identity) => evaluateActiveGoals(tx, identity)
+      async (tx, identity) => ({
+        ...(await evaluateActiveGoals(tx, identity)),
+        listed: await listGoals(tx, identity),
+        pausedListed: await listPausedGoalIds(tx, identity),
+      })
     );
     assert.deepEqual(
-      measured.map((entry) => entry.goalId),
+      evaluation.progress.map((entry) => entry.goalId),
       [g1.id],
       "a paused goal is not measured"
+    );
+    assert.deepEqual(
+      evaluation.goals,
+      evaluation.listed,
+      "the evaluation hands back the same goals, in the same order, that listGoals reads"
+    );
+    assert.deepEqual(
+      evaluation.paused,
+      evaluation.pausedListed,
+      "the evaluation hands back the same paused ids that listPausedGoalIds reads"
+    );
+    assert.deepEqual(
+      [...evaluation.paused].sort(),
+      [g2.id, g3.id].sort(),
+      "the paused ids it returns are the ones the plan pauses"
     );
     await as(goalsDown, "goal:manage", (tx, identity) =>
       cancelGoal(tx, identity, {
@@ -618,8 +639,9 @@ async function run() {
         capability: "goal:manage",
         isolationLevel: "repeatable read",
         requestedOrganizationId: goalsEnded.organizationId,
+        requireLegalAcceptance: false,
       },
-      (tx, identity) => evaluateActiveGoals(tx, identity)
+      async (tx, identity) => (await evaluateActiveGoals(tx, identity)).progress
     );
     assert.equal(measuredEnded.length, 2, "both are evaluated");
     assert.ok(
@@ -826,7 +848,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

@@ -1,6 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader } from "@/ui/card";
+import { Block } from "@/ui/block";
 
 interface StatePanelProps {
   /** The buttons or links under the text. */
@@ -23,9 +23,10 @@ interface StatePanelProps {
 
 /**
  * A screen of the shell that says what happened and gives the way out (v5.1): the 404, the failure of a screen, the
- * organization that did not open, the offline access that expired. One card of 32 rem under the frame (the section is
- * the card's own width, so the focus ring wraps the card); in `fullPage` it also stands alone on the page (the failure
- * of the whole app has no shell to sit in).
+ * organization that did not open, the offline access that expired. One plain `Block` of 32 rem under the frame; the
+ * section is the block's own width, so the focus ring wraps it, and the heading is the page's `h1`, so the block
+ * brings no title of its own. In `fullPage` it also stands alone on the page (the failure of the whole app has no
+ * shell to sit in).
  */
 export function StatePanel({
   actions,
@@ -53,8 +54,8 @@ export function StatePanel({
         role={role}
         tabIndex={tabIndex}
       >
-        <Card>
-          <CardHeader>
+        <Block variant="plain">
+          <div className="grid items-start gap-0.5">
             {eyebrow ? (
               <p className="text-muted-foreground text-support">{eyebrow}</p>
             ) : null}
@@ -62,14 +63,14 @@ export function StatePanel({
               {icon}
               {title}
             </h1>
-          </CardHeader>
-          <CardContent className="grid gap-4">
+          </div>
+          <div className="grid gap-4">
             {children}
             {actions ? (
               <div className="flex flex-wrap gap-3">{actions}</div>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </Block>
       </section>
     </div>
   );

@@ -22,6 +22,7 @@ import {
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const AT = new Date("2026-11-19T15:00:00.000Z");
 
 describe("the retention registry", () => {
   it("declares every class once, in one place", () => {
@@ -504,7 +505,7 @@ describe("approved periods", () => {
     expect(policy.period).toEqual({ kind: "provider_rotation" });
     // the window is only text (the provider rotates, Polaris does not count it): lock the number
     expect(policy.rule).toContain("A janela de backup é de 35 dias");
-    expect(() => retentionExpiry("provider_backups", new Date())).toThrow(
+    expect(() => retentionExpiry("provider_backups", AT)).toThrow(
       RetentionNotApprovedError
     );
   });
@@ -516,7 +517,7 @@ describe("approved periods", () => {
         new Date("2026-01-01T00:00:00.000Z")
       ).toISOString()
     ).toBe("2026-04-01T00:00:00.000Z");
-    expect(() => retentionExpiry("sync_change_log", new Date())).toThrow(
+    expect(() => retentionExpiry("sync_change_log", AT)).toThrow(
       RetentionNotApprovedError
     );
   });
@@ -564,7 +565,7 @@ describe("approved periods", () => {
       expect(() => approvedRetention(retentionClass)).toThrow(
         RetentionNotApprovedError
       );
-      expect(() => retentionExpiry(retentionClass, new Date())).toThrow(
+      expect(() => retentionExpiry(retentionClass, AT)).toThrow(
         RetentionNotApprovedError
       );
     }
@@ -612,7 +613,7 @@ describe("the notices of billing", () => {
     expect(() => approvedRetention("billing_notices")).toThrow(
       RetentionNotApprovedError
     );
-    expect(() => retentionExpiry("billing_notices", new Date())).toThrow(
+    expect(() => retentionExpiry("billing_notices", AT)).toThrow(
       RetentionNotApprovedError
     );
   });
@@ -657,6 +658,21 @@ describe("the activation series", () => {
     expect(policy.proposed).toContain("12 meses contados de `recorded_at`");
     expect(policy.proposed).toContain("legal hold");
     expect(policy.proposed).toContain("não sai com a conta");
+  });
+
+  it("lists the stop, its releases and the inbox, and keeps the inbox out of any purge with the reason", () => {
+    const policy = retentionPolicy("activation_series");
+    const data = policy.data.join(" ");
+    expect(data).toContain("activation_series_stops");
+    expect(data).toContain("activation_series_stop_releases");
+    expect(data).toContain("activation_email_events");
+    expect(data).toContain("identificador da chave");
+    if (policy.status !== "proposta") {
+      throw new Error("activation_series must stay proposed");
+    }
+    expect(policy.proposed).toContain("A caixa de entrada: sem purga");
+    expect(policy.proposed).toContain("não é dado pessoal");
+    expect(policy.rule).toContain("funções do dono da série");
   });
 });
 

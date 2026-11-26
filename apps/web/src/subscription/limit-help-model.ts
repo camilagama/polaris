@@ -50,7 +50,8 @@ export function planRoom(
   return Math.max(max - plan.usage.variants, 0);
 }
 
-type PlanRead = Pick<BillingPlanView, "limits" | "state" | "usage">;
+type PlanRead = Pick<BillingPlanView, "limits" | "state" | "usage"> &
+  Partial<Pick<BillingPlanView, "proLimits">>;
 
 function usageOf(plan: PlanRead, subject: LimitSubject): LimitUsage | null {
   if (subject !== "goals" && subject !== "images" && subject !== "variants") {
@@ -101,4 +102,80 @@ export function limitUsageText(usage: LimitUsage): string {
   const [one, many] = SUBJECT_WORDS[usage.subject];
   const word = usage.max === 1 && usage.used <= 1 ? one : many;
   return `Você usa ${usage.used} de ${usage.max} ${word} no plano Free.`;
+}
+
+/** The warning starts at this share of the limit, rounded up (45 of 50), and goes on at the limit and above it. */
+const NEAR_LIMIT_SHARE = 0.9;
+
+export type NearLimitSubject = "images" | "variants";
+
+/** "near": the share was reached; "reached": the limit was (or it was passed, a Free store that left the Pro). */
+export interface NearLimitView {
+  kind: "near" | "reached";
+  /** Archived products with no stock that deleting would free (`usage.freeable`): only for variants, zero otherwise or without the field. */
+  freeableProducts: number;
+  /** The Pro's limit for the same count, when the read carried the catalog's (`proLimits`) and the Pro has one. */
+  proMax: number | null;
+  usage: LimitUsage;
+}
+
+/**
+ * Whether a cadastro screen warns that the Free plan's limit is close, and how: the same table of who sees it as
+ * `limitHelpFor` (only the owner, Free or Free over the limit, the self-service on), and only with both numbers of the
+ * server's read. Never the refusal's place: the screen shows one or the other.
+ */
+export function nearLimitFor(input: {
+  billingSelfService: boolean;
+  canManageBilling: boolean;
+  plan: PlanRead | null;
+  subject: NearLimitSubject;
+}): NearLimitView | null {
+  const help = limitHelpFor(input);
+  if (help === null || help.action !== "upgrade" || help.usage === null) {
+    return null;
+  }
+  const { usage } = help;
+  if (usage.max <= 0 || usage.used < Math.ceil(usage.max * NEAR_LIMIT_SHARE)) {
+    return null;
+  }
+  return {
+    freeableProducts:
+      usage.subject === "variants"
+        ? (input.plan?.usage.freeable?.products ?? 0)
+        : 0,
+    kind: usage.used >= usage.max ? "reached" : "near",
+    proMax: input.plan?.proLimits?.[usage.subject] ?? null,
+    usage,
+  };
+}
+
+/** "No Pro: até 2.000 variantes.", only when the read brought the Pro's limit; no sentence otherwise. */
+export function nearLimitProText(view: NearLimitView): string | null {
+  if (view.proMax === null) {
+    return null;
+  }
+  const [, many] = SUBJECT_WORDS[view.usage.subject];
+  return `No Pro: até ${view.proMax.toLocaleString("pt-BR")} ${many}.`;
+}
+
+/** "Você usa 47 de 50 variantes no plano Free." or "Você chegou ao limite de 50 variantes do plano Free." */
+export function nearLimitText(view: NearLimitView): string {
+  if (view.kind === "near") {
+    return limitUsageText(view.usage);
+  }
+  const [, many] = SUBJECT_WORDS[view.usage.subject];
+  return `Você chegou ao limite de ${view.usage.max} ${many} do plano Free.`;
+}
+
+/**
+ * "Você tem 3 produtos arquivados sem estoque. Excluir libera vaga.": a count, not a limit, so the singular follows the
+ * number alone. `null` when there is nothing to free: the line exists only with the warning and `freeableProducts > 0`.
+ */
+export function freeableLineText(view: NearLimitView): string | null {
+  const count = view.freeableProducts;
+  if (count <= 0) {
+    return null;
+  }
+  const what = count === 1 ? "produto arquivado" : "produtos arquivados";
+  return `Você tem ${count} ${what} sem estoque. Excluir libera vaga.`;
 }

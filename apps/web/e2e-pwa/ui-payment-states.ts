@@ -1,7 +1,9 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
+import { chooseProfileAction } from "../e2e/payment-profile-actions";
 
 /**
  * The states of the payment profiles screen the interface guardrails measure: the screen in the lab of the screens
@@ -11,6 +13,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * are proved in `e2e/usabilidade-formularios.e2e.ts` and in the captures of the pull request. The lab's own controls
  * are hidden at the end of each state, so what is measured is the screen alone.
  */
+const NOW = new Date("2026-10-15T12:00:00.000Z");
+const DAY = 86_400_000;
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
 
 const rpc = (body: unknown) => ({
@@ -35,8 +39,11 @@ const profile = (
   status: "active" | "archived",
   rules: unknown[]
 ) => ({
-  archivedAt: status === "archived" ? "2026-10-02T12:00:00.000Z" : null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  archivedAt:
+    status === "archived"
+      ? new Date(NOW.getTime() - 13 * DAY).toISOString()
+      : null,
+  createdAt: new Date(NOW.getTime() - 14 * DAY).toISOString(),
   id: `0199c2d0-0000-7000-8000-0000000000c${n}`,
   name,
   organizationId: ORGANIZATION_ID,
@@ -45,7 +52,7 @@ const profile = (
     ...(rule as object),
   })),
   status,
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: new Date(NOW.getTime() - 14 * DAY).toISOString(),
   version: 1,
 });
 
@@ -89,6 +96,7 @@ const PROFILES = [
 
 /** Starts the lab's runtime and waits for the screen with the list read. */
 async function openProfilesLab(page: Page) {
+  await page.clock.setFixedTime(NOW);
   await page.route("**/rpc/paymentProfile/list", (route: Route) =>
     route.fulfill(rpc({ profiles: PROFILES }))
   );
@@ -110,26 +118,11 @@ async function openProfilesLab(page: Page) {
   await page.getByText("Maquininha da loja").first().waitFor();
 }
 
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
-}
-
 export const paymentStates = {
   /** The edit of the profile with the credit rule: the form filled with both fees of each rule. */
   async edit(page: Page) {
     await openProfilesLab(page);
-    await page
-      .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-      .click();
+    await chooseProfileAction(page, "Editar", "Maquininha da loja");
     await page.getByRole("heading", { name: "Editar perfil" }).waitFor();
     await page.getByLabel("Valor fixo por pagamento").waitFor();
     await showScreenAlone(page);

@@ -172,7 +172,7 @@ describe("queueing a validated sale on the device", () => {
     const { outbox, stores } = await setup();
     await queueOfflineSale({ labels, request: prepared().request, stores });
     expect(await pendingSales(outbox)).toMatchObject([
-      { commandId: uuid(101), itemCount: 1, state: "pending" },
+      { commandId: uuid(101), lineCount: 1, state: "pending", unitCount: 2 },
     ]);
   });
 });
@@ -197,6 +197,24 @@ describe("the outcome of confirming on the device", () => {
     if (outcome.submission.phase === "failed") {
       expect(outcome.submission.failure.message).toContain("Nada foi guardado");
     }
+  });
+
+  it("says the sale has a date of its own, not that saving failed, and keeps the attempt", async () => {
+    const { outbox, stores } = await setup();
+    const dated = prepared();
+    dated.request.recordedAt = "2026-10-14T12:30:05.000Z";
+    const outcome = await confirmOnDevice(dated, stores, labels);
+    expect(outcome.completed).toBe(false);
+    expect(outcome.attempt).toBe(dated.attempt);
+    expect(outcome.submission.phase).toBe("failed");
+    if (outcome.submission.phase === "failed") {
+      expect(outcome.submission.failure.message).toContain("tem data própria");
+      expect(outcome.submission.failure.message).toContain("com conexão");
+      expect(outcome.submission.failure.message).not.toContain(
+        "Não foi possível guardar a venda"
+      );
+    }
+    expect((await outbox.snapshot()).commands).toHaveLength(0);
   });
 });
 
@@ -224,6 +242,78 @@ describe("a sale with a payment profile", () => {
     await expect(
       queueOfflineSale({ labels, request: dated.request, stores })
     ).rejects.toThrow("device_sale_not_carriable");
+    expect((await outbox.snapshot()).commands).toHaveLength(0);
+  });
+
+  it("keeps a sale paid in two parts with its parts in order, each with its own profile, and no sale-level profile", async () => {
+    const { outbox, stores } = await setup();
+    const split = prepared();
+    const { payment, paymentProfile: _profile, ...rest } = split.request;
+    if (payment === undefined) {
+      throw new Error("the fixture pays in one go");
+    }
+    const card = {
+      expectedVersion: 4,
+      id: "0199c2d0-0000-7000-8000-0000000000c1",
+    };
+    const request = {
+      ...rest,
+      payments: [
+        { ...payment, amount: "40.00", paymentProfile: null },
+        {
+          ...payment,
+          amount: "50.00",
+          installmentPlan: "merchant" as const,
+          installments: 3,
+          method: "credit_card" as const,
+          paymentProfile: card,
+        },
+      ],
+    };
+    const view = await queueOfflineSale({ labels, request, stores });
+
+    expect(view.totalDue).toContain("90,00");
+    const { commands } = await outbox.snapshot();
+    expect(commands).toHaveLength(1);
+    const stored = commands[0]?.payload as Record<string, unknown>;
+    expect(stored).not.toHaveProperty("payment");
+    expect(stored).not.toHaveProperty("paymentProfile");
+    expect(stored.payments).toEqual([
+      {
+        amount: "40.00",
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        paymentProfile: null,
+      },
+      {
+        amount: "50.00",
+        anticipationRequested: false,
+        installmentPlan: "merchant",
+        installments: 3,
+        method: "credit_card",
+        paymentProfile: card,
+      },
+    ]);
+  });
+
+  it("refuses parts that do not add up to the total before anything is queued", async () => {
+    const { outbox, stores } = await setup();
+    const { payment, paymentProfile: _profile, ...rest } = prepared().request;
+    if (payment === undefined) {
+      throw new Error("the fixture pays in one go");
+    }
+    const request = {
+      ...rest,
+      payments: [
+        { ...payment, amount: "40.00", paymentProfile: null },
+        { ...payment, amount: "40.00", paymentProfile: null },
+      ],
+    };
+    await expect(
+      queueOfflineSale({ labels, request, stores })
+    ).rejects.toThrow();
     expect((await outbox.snapshot()).commands).toHaveLength(0);
   });
 });

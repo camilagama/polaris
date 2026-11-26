@@ -147,6 +147,7 @@ test.describe("desktop (1280 px)", () => {
     ]);
     // one store: nothing to switch to; "Sair" is the last item, with its own separator before it
     await expect(menu.getByRole("menuitem")).toHaveText([
+      "Minha conta",
       "Ajuda e contato",
       "Termos de Uso (abre em outra aba)",
       "Política de Privacidade (abre em outra aba)",
@@ -530,6 +531,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
   });
 
   const tabScreens: {
+    current?: string;
     label: string;
     path: string;
     tabs: [name: string, address: string][];
@@ -554,16 +556,16 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
       title: "Resultado",
     },
     {
-      label: "Configurações",
+      current: "Configurações",
+      label: "Configurações da loja",
       path: "/configuracoes",
-      // Assinatura without billing:manage and Senha with the password off are not offered (map § 1)
+      // Assinatura without billing:manage is not offered (map § 1); Senha and Aparelhos are Minha conta
       tabs: [
         ["Formas de receber", "/configuracoes"],
         ["Catálogo público", "/configuracoes?aba=catalogo-publico"],
-        ["Aparelhos", "/configuracoes?aba=aparelhos"],
         ["Seus dados", "/configuracoes?aba=seus-dados"],
       ],
-      title: "Configurações",
+      title: "Configurações da loja",
     },
   ];
   for (const screen of tabScreens) {
@@ -587,7 +589,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
         await expect.poll(() => pathOf(page)).toBe(address);
         // the menu keeps the destination current on every tab
         await expect(sidebar(page).locator('[aria-current="page"]')).toHaveText(
-          screen.title
+          screen.current ?? screen.title
         );
         await expect(page.getByRole("tabpanel")).toHaveCount(1);
       }
@@ -631,7 +633,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
     await page.goto("/configuracoes?aba=nenhuma");
     const stepsBefore = await page.evaluate(() => history.length);
     await expect(
-      tabList(page, "Configurações").getByRole("tab", {
+      tabList(page, "Configurações da loja").getByRole("tab", {
         exact: true,
         name: "Formas de receber",
       })
@@ -673,7 +675,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
   }) => {
     await serve(page);
     await page.goto("/configuracoes");
-    const list = tabList(page, "Configurações");
+    const list = tabList(page, "Configurações da loja");
     await list
       .getByRole("tab", { exact: true, name: "Formas de receber" })
       .focus();
@@ -694,7 +696,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
     ).toBeVisible();
     // one h1 a page: the destination
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-      "Configurações"
+      "Configurações da loja"
     );
   });
 
@@ -713,33 +715,30 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
       [
         "/payment-profiles",
         "/configuracoes",
-        "Configurações",
+        "Configurações da loja",
         "Formas de receber",
       ],
       [
         "/public-catalog",
         "/configuracoes?aba=catalogo-publico",
-        "Configurações",
+        "Configurações da loja",
         "Catálogo público",
-      ],
-      [
-        "/devices",
-        "/configuracoes?aba=aparelhos",
-        "Configurações",
-        "Aparelhos",
       ],
       [
         "/subscription",
         "/configuracoes?aba=assinatura",
-        "Configurações",
+        "Configurações da loja",
         "Assinatura",
       ],
+      ["/devices", "/conta?aba=aparelhos", "Minha conta", "Aparelhos"],
+      ["/conta/seguranca", "/conta", "Minha conta", "Senha"],
       [
-        "/conta/seguranca",
-        "/configuracoes?aba=senha",
-        "Configurações",
-        "Senha",
+        "/configuracoes?aba=aparelhos",
+        "/conta?aba=aparelhos",
+        "Minha conta",
+        "Aparelhos",
       ],
+      ["/configuracoes?aba=senha", "/conta", "Minha conta", "Senha"],
     ] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: one address at a time
       await page.goto(old);
@@ -1085,6 +1084,7 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
+    await page.clock.install();
     const reads = await serveFoot(page, {});
     await page.goto("/products");
     await expect(stepsLink(page)).toBeVisible();
@@ -1110,16 +1110,40 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     await expect(
       page.locator('[data-sidebar="footer"]').getByRole("link")
     ).toHaveCount(2);
-    // two lines each, taller than a destination (32 px) and not cut by it
-    expect(steps?.height ?? 0).toBeGreaterThan(40);
+    // the steps are one line as tall as a destination (32 px) with the ring in the place of an icon; the trial keeps its two lines
+    const destination = await sidebar(page)
+      .getByRole("link", { exact: true, name: "Produtos" })
+      .boundingBox();
+    expect(steps?.height ?? 0).toBeCloseTo(destination?.height ?? 0, 0);
     expect(trial?.height ?? 0).toBeGreaterThan(48);
-    for (const link of [stepsLink(page), trialLink(page)]) {
-      // biome-ignore lint/performance/noAwaitInLoops: one link at a time
-      const cut = await link.evaluate(
+    await expect(stepsLink(page).locator("[data-progress-ring]")).toBeVisible();
+    await expect(stepsLink(page).locator("svg")).toHaveCount(1);
+    await expect(stepsLink(page).locator("[data-progress-ring]")).toHaveCSS(
+      "width",
+      "16px"
+    );
+    // the two lines of the trial are whole; the one line of the steps has its name and its figure whole (like a destination, its box is shorter than its line)
+    expect(
+      await trialLink(page).evaluate(
         (element) => element.scrollHeight > element.clientHeight
-      );
-      expect(cut).toBe(false);
-    }
+      )
+    ).toBe(false);
+    expect(
+      await stepsLink(page)
+        .locator("span.truncate")
+        .evaluate((element) => element.scrollWidth > element.clientWidth)
+    ).toBe(false);
+    // the foot and the limit notice at the end of Produtos share the memory of the plan: one read for both (after the screen, hence expect.poll)
+    await expect.poll(() => reads.plan).toBe(1);
+    // and no second one later: two frames, the page's clock 11 s ahead (a read late by a timer or by the 10 s of the memory fires), then the network idle, and the count is still 1
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    await page.clock.runFor(11_000);
+    await page.waitForLoadState("networkidle");
     expect(reads.plan).toBe(1);
     await trialLink(page).click();
     await page.waitForURL("**/configuracoes?aba=assinatura");
@@ -1214,6 +1238,11 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       await expect(link).toBeVisible();
       const box = await link.boundingBox();
       expect(box?.width ?? 99).toBeLessThanOrEqual(48);
+      const mark = await link.locator("svg").first().boundingBox();
+      expect(mark?.width).toBeCloseTo(16, 0);
+      expect((mark?.x ?? 0) + (mark?.width ?? 0)).toBeLessThanOrEqual(
+        (box?.x ?? 0) + (box?.width ?? 0)
+      );
       await link.hover();
       await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
         tooltip
@@ -1297,6 +1326,11 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     const trialBox = await trial.boundingBox();
     const legalBox = await legal.boundingBox();
     expect(stepsBox?.y ?? 0).toBeLessThan(trialBox?.y ?? 0);
+    // the steps have the height of any other line of the sheet (44 px with touch)
+    const helpBox = await panel
+      .getByRole("link", { exact: true, name: "Ajuda e contato" })
+      .boundingBox();
+    expect(stepsBox?.height ?? 0).toBeCloseTo(helpBox?.height ?? 0, 0);
     expect((trialBox?.y ?? 0) + (trialBox?.height ?? 0)).toBeLessThanOrEqual(
       legalBox?.y ?? 0
     );
@@ -1623,6 +1657,7 @@ test.describe("Ajuda e contato", () => {
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
+    await page.clock.install();
     await serve(page);
     await page.goto("/ajuda");
     await expectHelpPage(page);
@@ -1640,7 +1675,15 @@ test.describe("Ajuda e contato", () => {
     await expect(
       page.locator("main form, main input, main textarea")
     ).toHaveCount(0);
-    await page.waitForTimeout(300);
+    // two frames, then 300 ms of the page's clock (a read scheduled by a timer fires), then the network idle
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    await page.clock.runFor(300);
+    await page.waitForLoadState("networkidle");
     expect(
       requests.filter(
         (path) => path.startsWith("/rpc/") && !path.startsWith("/rpc/sync/")

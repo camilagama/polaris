@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "./ui-guardrails";
+import { axeFaults } from "./ui-guardrails/measures";
 import { stockStates } from "./ui-stock-states";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -22,7 +22,7 @@ const SHIRT_VARIANT = "0199c2d0-0000-7000-8000-0000000000b1";
 const JEANS_VARIANT = "0199c2d0-0000-7000-8000-0000000000b2";
 
 const rows = (page: Page) =>
-  page.getByRole("list", { name: "Saldos por variante" });
+  page.getByRole("list", { name: "Saldos em estoque" });
 
 const rpc = (body: unknown, status = 200) => ({
   body: JSON.stringify({ json: body, meta: [] }),

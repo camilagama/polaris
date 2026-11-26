@@ -25,15 +25,17 @@ const MAIN_MINIMUM_REM = 24;
 const SIDEBAR_KEY = "sidebar_state";
 const LAB_PROFILE = /Maquininha do laboratório/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
+const NOW = new Date("2026-10-01T12:00:00-03:00");
+const STAMP = NOW.toISOString();
 const PROFILE = {
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: STAMP,
   id: "0199c2d0-0000-7000-8000-0000000000c1",
   name: "Maquininha do laboratório",
   organizationId: "0199c2d0-0000-7000-8000-00000000a001",
   rules: [],
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 };
 
@@ -49,7 +51,9 @@ function saleLayout(page: Page) {
     const form = document.querySelector("[data-sale-form]");
     const container = form?.parentElement;
     const bar = document.querySelector("[data-submit-bar]");
-    const aside = form?.querySelector("aside");
+    const aside = form?.querySelector(
+      '[data-block="plain"][role="region"]'
+    )?.parentElement;
     const confirm = aside?.querySelector('button[type="submit"]');
     const control = form?.querySelector("button");
     const shown = (element: Element | null | undefined) =>
@@ -163,6 +167,7 @@ for (const [pixels, width, columns] of [
 
 /** The lab of the offline screens has no shell: the sale is as wide as the window less the lab's own margin. */
 async function openLabSale(page: Page, pixels: number, width: number) {
+  await page.clock.setFixedTime(NOW);
   await page.setViewportSize({ height: 640, width });
   await setBrowserFont(page, pixels);
   await page.route("**/rpc/paymentProfile/list", (route) =>
@@ -303,7 +308,9 @@ for (const pixels of [16, 20]) {
     const refresh = await page
       .getByRole("button", { name: "Atualizar estoque e perfis" })
       .boundingBox();
-    const count = await page.getByText("1 item", { exact: true }).boundingBox();
+    const count = await page
+      .getByText("1 linha · 1 unidade", { exact: true })
+      .boundingBox();
     expect(refresh).not.toBeNull();
     expect(count).not.toBeNull();
     expect(overlap(refresh as Box, count as Box)).toBe(false);
@@ -325,6 +332,8 @@ for (const pixels of [16, 20]) {
 
 const CARDS_TWO_FROM_REM = 18.5;
 const CARDS_THREE_FROM_REM = 26.5;
+const KEYS_TWO_FROM_REM = 21;
+const KEYS_THREE_FROM_REM = 32;
 
 for (const pixels of [16, 20]) {
   test(`letra de ${pixels} px: os cartões de método seguem a largura do grupo (uma, duas e três colunas) e "Transferência" cabe em todas`, async ({
@@ -358,6 +367,9 @@ for (const pixels of [16, 20]) {
         return {
           columns: getComputedStyle(node).gridTemplateColumns.split(" ").length,
           cut: cut.map((label) => label.textContent?.trim()),
+          numbers:
+            getComputedStyle(node.querySelector("[data-method-key]") as Element)
+              .display !== "none",
         };
       }, rem);
       expect(read.cut, `${rem} rem`).toEqual([]);
@@ -368,6 +380,10 @@ for (const pixels of [16, 20]) {
         expected = 2;
       }
       expect(read.columns, `${rem} rem`).toBe(expected);
+      expect(read.numbers, `${rem} rem: números`).toBe(
+        (rem >= KEYS_TWO_FROM_REM && rem < CARDS_THREE_FROM_REM) ||
+          rem >= KEYS_THREE_FROM_REM
+      );
       seen.add(read.columns);
     }
     expect([...seen].sort()).toEqual([1, 2, 3]);
@@ -377,6 +393,97 @@ for (const pixels of [16, 20]) {
 const INSTALLMENTS_TWO_FROM_REM = 24.5;
 const ADJUSTMENT_THREE_FROM_REM = 26.5;
 
+interface PointerRecord {
+  buttonTop: number | null;
+  clientX: number | null;
+  clientY: number | null;
+  scrollY: number;
+  target: string;
+  time: number;
+  type: string;
+}
+
+interface AddAdjustmentLog {
+  console: string[];
+  pageErrors: string[];
+}
+
+let addAdjustmentLog: AddAdjustmentLog | null = null;
+
+// diagnóstico do FLAKE-SALE-COLUMNS-383; sai quando a causa for provada
+function watchAddAdjustment(page: Page) {
+  const log: AddAdjustmentLog = {
+    console: [],
+    pageErrors: [],
+  };
+  page.on("console", (message) =>
+    log.console.push(`${message.type()}: ${message.text()}`)
+  );
+  page.on("pageerror", (error) => log.pageErrors.push(error.message));
+  addAdjustmentLog = log;
+  return page.evaluate(() => {
+    const records: PointerRecord[] = [];
+    (
+      window as unknown as { __addAdjustmentLog?: PointerRecord[] }
+    ).__addAdjustmentLog = records;
+    const record = (event: Event) => {
+      const element = event.target instanceof Element ? event.target : null;
+      const label = (
+        element?.getAttribute("aria-label") ??
+        element?.textContent ??
+        ""
+      )
+        .trim()
+        .slice(0, 40);
+      const button = [...document.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === "Adicionar ajuste"
+      );
+      const pointer = event instanceof MouseEvent ? event : null;
+      records.push({
+        buttonTop: button ? button.getBoundingClientRect().top : null,
+        clientX: pointer ? pointer.clientX : null,
+        clientY: pointer ? pointer.clientY : null,
+        scrollY: window.scrollY,
+        target: `${element?.tagName.toLowerCase() ?? "?"} ${label}`,
+        time: Math.round(performance.now()),
+        type: event.type,
+      });
+    };
+    for (const type of ["pointerdown", "pointerup", "click", "scroll"]) {
+      document.addEventListener(type, record, { capture: true, passive: true });
+    }
+  });
+}
+
+test.afterEach(async ({ page }, testInfo) => {
+  const log = addAdjustmentLog;
+  addAdjustmentLog = null;
+  if (!log || testInfo.status === testInfo.expectedStatus) {
+    return;
+  }
+  const collected = await page
+    .evaluate(
+      () =>
+        (window as unknown as { __addAdjustmentLog?: PointerRecord[] })
+          .__addAdjustmentLog ?? null
+    )
+    .then(
+      (events) =>
+        events
+          ? { events }
+          : { collectError: "registro ausente na página", events: null },
+      (error: unknown) => ({ collectError: String(error), events: null })
+    );
+  await testInfo.attach("diag-adicionar-ajuste", {
+    body: JSON.stringify(
+      { console: log.console, ...collected, pageErrors: log.pageErrors },
+      null,
+      2
+    ),
+    contentType: "application/json",
+  });
+});
+
 for (const pixels of [16, 20]) {
   test(`letra de ${pixels} px: as parcelas e o ajuste seguem a largura do cartão e nenhum campo corta o valor`, async ({
     page,
@@ -384,6 +491,7 @@ for (const pixels of [16, 20]) {
     await openLabSale(page, pixels, 1280);
     await page.getByRole("radio", { name: "Crédito" }).check();
     await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
+    await watchAddAdjustment(page);
     await page.getByRole("button", { name: "Adicionar ajuste" }).click();
     await page
       .getByRole("combobox", { exact: true, name: "Tipo de ajuste" })

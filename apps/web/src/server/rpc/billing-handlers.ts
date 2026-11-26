@@ -380,6 +380,15 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
             : []
         ),
       },
+      ...(facts.entitlements.plan === "pro"
+        ? {}
+        : {
+            proLimits: {
+              goals: facts.proEntitlements["goals.active.max"],
+              images: facts.proEntitlements["images.active.max"],
+              variants: facts.proEntitlements["variants.active.max"],
+            },
+          }),
       recovery: recoveryOf(record),
       refund: refund && {
         amount: refund.amount,

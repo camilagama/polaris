@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -13,7 +14,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * state, so what is measured is the screen alone.
  */
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
-const NOW = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00.000Z");
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -29,15 +30,15 @@ const category = (
   name: string,
   status: "active" | "archived" = "active"
 ) => ({
-  archivedAt: status === "archived" ? NOW : null,
-  createdAt: NOW,
+  archivedAt: status === "archived" ? NOW.toISOString() : null,
+  createdAt: NOW.toISOString(),
   groupKey,
   id: uuid(n),
   name,
   organizationId: ORGANIZATION_ID,
   status,
   systemKey: null,
-  updatedAt: NOW,
+  updatedAt: NOW.toISOString(),
   version: 1,
 });
 
@@ -63,7 +64,7 @@ const expense = (
   categoryId: of.id,
   categoryName: of.name,
   competenceOn: "2026-10-05",
-  createdAt: NOW,
+  createdAt: NOW.toISOString(),
   description,
   id: uuid(100 + n),
   organizationId: ORGANIZATION_ID,
@@ -71,7 +72,7 @@ const expense = (
   recurringRuleId: null,
   saleId: null,
   status: "active",
-  updatedAt: NOW,
+  updatedAt: NOW.toISOString(),
   version: 1,
   voidedAt: null,
   ...extra,
@@ -106,7 +107,7 @@ const rule = (
   categoryGroup: of.groupKey,
   categoryId: of.id,
   categoryName: of.name,
-  createdAt: NOW,
+  createdAt: NOW.toISOString(),
   description,
   endsOn: null,
   frequency: "monthly",
@@ -117,7 +118,7 @@ const rule = (
   payee: null,
   startsOn: "2026-07-01",
   status: "active",
-  updatedAt: NOW,
+  updatedAt: NOW.toISOString(),
   version: 1,
   ...extra,
 });
@@ -127,7 +128,7 @@ const RULES = [
     payee: "Imobiliária Centro",
   }),
   rule(2, "Assinatura do sistema", "49.90", MARKETING, {
-    archivedAt: NOW,
+    archivedAt: NOW.toISOString(),
     endsOn: "2027-06-30",
     status: "archived",
   }),
@@ -171,7 +172,7 @@ async function serveExpenses(page: Page) {
 /** Starts the lab's runtime and waits for the screen with the list read. */
 async function openExpensesLab(page: Page) {
   // the month the screen opens on is the organization's today: keep it the month of the synthetic expenses
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(NOW);
   await serveExpenses(page);
   await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=expenses");
@@ -185,19 +186,6 @@ async function openExpensesLab(page: Page) {
     .getByRole("heading", { exact: true, level: 1, name: "Despesas" })
     .waitFor();
   await page.getByText("DAS do Simples").waitFor();
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
 }
 
 export const expenseStates = {

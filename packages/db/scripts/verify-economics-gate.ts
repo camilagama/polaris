@@ -21,7 +21,6 @@ import {
   voidExpense,
 } from "../src/expense-repository";
 import { createPaymentProfile } from "../src/payment-profile-repository";
-import { deleteProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
@@ -29,6 +28,7 @@ import {
   TenantAuthorizationError,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -347,6 +347,7 @@ async function run() {
           capability: "report:read",
           isolationLevel: "repeatable read",
           requestedOrganizationId: tenant.organizationId,
+          requireLegalAcceptance: false,
         },
         operation
       );
@@ -551,7 +552,7 @@ async function run() {
       })
     );
     await as(tenantA, "product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: p3.version,
         id: p3.productId,
         requestId: randomUUID(),
@@ -942,7 +943,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

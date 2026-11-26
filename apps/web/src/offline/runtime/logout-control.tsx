@@ -1,5 +1,6 @@
 import LogOutIcon from "lucide-react/dist/esm/icons/log-out";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/ui/button";
 import { browserConnection } from "../../lib/browser-connection";
 import { orpcClient } from "../../lib/orpc";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
@@ -239,15 +240,16 @@ function LogoutButton({ logout }: { logout: Logout }) {
   }
   return (
     <div className="grid gap-2">
-      <button
-        className="touch-hit focus-ring inline-flex h-ctl-md w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 font-medium text-foreground text-sm shadow-xs motion-full:transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 dark:bg-secondary/60 dark:hover:bg-accent [&_svg]:size-4"
+      <Button
+        className="w-full"
         disabled={logout.busy}
         onClick={logout.start}
         type="button"
+        variant="outline"
       >
         <LogOutIcon aria-hidden="true" />
         Sair
-      </button>
+      </Button>
       <LogoutNotices logout={logout} />
     </div>
   );

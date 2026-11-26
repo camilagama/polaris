@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   expectedOutboxPolicies,
+  OUTBOX_POLICIES_SQL,
   type OutboxPolicyRow,
   sortedOutboxPolicies,
 } from "./event-outbox-policies";
@@ -29,7 +30,34 @@ describe("expectedOutboxPolicies", () => {
   });
 });
 
+describe("OUTBOX_POLICIES_SQL", () => {
+  it("reads the oid 0 that TO PUBLIC stores in polroles as the role public, beside the names from pg_roles", () => {
+    expect(OUTBOX_POLICIES_SQL).toContain(
+      "|| CASE WHEN '0'::oid = ANY (polroles) THEN ARRAY['public'] ELSE ARRAY[]::text[] END AS roles"
+    );
+    expect(OUTBOX_POLICIES_SQL).toContain(
+      "ARRAY(SELECT rolname::text FROM pg_roles WHERE oid = ANY (polroles))"
+    );
+  });
+});
+
 describe("sortedOutboxPolicies", () => {
+  it("carries a row whose role is public through the sort as public and refuses it (the catalog read itself is proved by the gate)", () => {
+    const [first] = expected();
+    if (!first) {
+      throw new Error("the expected list is empty");
+    }
+    const everyone = [
+      ...expected(),
+      { ...first, name: "event_outbox_to_public", roles: ["public"] },
+    ];
+    const shown = sortedOutboxPolicies(everyone).find(
+      (row) => row.name === "event_outbox_to_public"
+    );
+    expect(shown?.roles).toBe("public");
+    expect(sortedOutboxPolicies(everyone)).not.toEqual(sortedExpected());
+  });
+
   it("does not depend on the order the catalog returns", () => {
     expect(sortedOutboxPolicies([...expected()].reverse())).toEqual(
       sortedExpected()

@@ -87,11 +87,13 @@ const cards = (
   comparison: ComponentProps<typeof ResultCards>["comparison"] = SEPTEMBER,
   salesComparison: ComponentProps<
     typeof ResultCards
-  >["salesComparison"] = SEPTEMBER_SALES
+  >["salesComparison"] = SEPTEMBER_SALES,
+  onOpenSales: ComponentProps<typeof ResultCards>["onOpenSales"] = null
 ) =>
   renderToStaticMarkup(
     <ResultCards
       comparison={comparison}
+      onOpenSales={onOpenSales}
       salesComparison={salesComparison}
       summary={summary}
       today={TODAY}
@@ -155,14 +157,14 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
       const markup = cards(summary);
       const margin = card(markup, "result-kpi-margin");
       expect(words(margin)).toContain("—");
-      expect(words(margin)).toContain("estimativa incompleta");
+      expect(words(margin)).toContain("Incompleta");
       expect(words(margin)).toContain("Sem custo informado");
       expect(margin).not.toContain("%");
       expect(margin).not.toContain("data-kpi-value");
 
       const result = card(markup, "result-kpi-result");
       expect(words(result)).toContain("—");
-      expect(words(result)).toContain("estimativa incompleta");
+      expect(words(result)).toContain("Incompleta");
       expect(words(result)).toContain(
         "Sem custo informado: não dá para estimar."
       );
@@ -193,12 +195,12 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     expect(words(margin)).toContain("41,2");
     expect(words(margin)).not.toContain("Sem custo informado");
     const result = card(markup, "result-kpi-result");
-    expect(words(result)).toContain("estimativa incompleta");
+    expect(words(result)).toContain("Incompleta");
     expect(result).toContain('data-kpi-unknown="">3 de 25 dias sem custo<');
-    expect(result).toContain('data-kpi-notice=""');
+    expect(result).not.toContain("data-kpi-notice");
     expect(words(result)).not.toContain("lucro líquido");
     expect(words(margin)).not.toContain("lucro líquido");
-    expect(words(margin)).toContain("estimativa incompleta");
+    expect(words(margin)).toContain("Incompleta");
     expect(words(result)).toContain("R$");
     expect(words(result)).not.toContain("Sem custo informado");
   });
@@ -215,7 +217,7 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
         )
       );
       const result = card(markup, "result-kpi-result");
-      expect(words(result)).toContain("estimativa incompleta");
+      expect(words(result)).toContain("Incompleta");
       expect(words(result)).toContain("25 de 25 dias sem custo");
       expect(words(result)).toContain("R$");
       expect(result).toContain("data-kpi-value");
@@ -229,7 +231,7 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
 
   it("every day known: no badge and no dash, with the chip and the curve of the result", () => {
     const markup = cards(october([]));
-    expect(markup).not.toContain("estimativa incompleta");
+    expect(markup).not.toContain("Incompleta");
     const result = card(markup, "result-kpi-result");
     expect(words(result)).toContain("1.000,00");
     expect(result).toContain("data-kpi-delta=");
@@ -397,27 +399,48 @@ describe("the strip of tiles and its (i)", () => {
 
 describe("the days with no cost: on the badge line while they fit, in the (i) when they do not", () => {
   const warning = (props: Parameters<typeof resultWarning>[0]) =>
-    renderToStaticMarkup(<div>{resultWarning(props)}</div>);
+    renderToStaticMarkup(
+      <div>
+        {resultWarning(props).warning}
+        {resultWarning(props).warningDetail}
+      </div>
+    );
   const missing = (unknown: number, total: number) =>
-    warning({ incomplete: true, missing: { total, unknown }, noCost: false });
+    warning({
+      incomplete: true,
+      missing: { input: "cost", month: null, total, unknown },
+      noCost: false,
+    });
 
   it("fits two digits on each side", () => {
     const fits = missing(5, 23);
-    expect(words(fits)).toContain("estimativa incompleta");
+    expect(words(fits)).toContain("Incompleta");
     expect(fits).toContain('data-kpi-unknown="">5 de 23 dias sem custo<');
     expect(missing(99, 99)).toContain("99 de 99 dias sem custo");
+  });
+
+  it("says the fee when only the fee is missing, and the month when the days are of one month (RES-T2)", () => {
+    const fee = warning({
+      incomplete: true,
+      missing: { input: "fee", month: "novembro", total: 7, unknown: 1 },
+      noCost: false,
+    });
+    expect(fee).toContain(
+      'data-kpi-unknown="">novembro: 1 de 7 dias sem taxa<'
+    );
+    expect(fee).not.toContain("sem custo");
   });
 
   it("leaves the badge alone when the count is wider", () => {
     const long = missing(5, 120);
     expect(long).not.toContain("data-kpi-unknown");
-    expect(words(long)).toContain("estimativa incompleta");
+    expect(words(long)).toContain("Incompleta");
   });
 
   it("leaves the days out when no cost is known: the cause is the whole warning", () => {
     const none = warning({
       incomplete: true,
-      missing: { total: 25, unknown: 25 },
+      missing: { input: "cost", month: null, total: 25, unknown: 25 },
       noCost: true,
     });
     expect(words(none)).toContain("Sem custo informado: não dá para estimar.");
@@ -495,6 +518,7 @@ describe("the result while a day with no cost is read (RES-1)", () => {
       period: summary.period,
       previous: null,
       previousSales: null,
+      quality: summary.quality,
       today: TODAY,
     });
   };
@@ -505,6 +529,27 @@ describe("the result while a day with no cost is read (RES-1)", () => {
     expect(noCostDayText(kpis, 11, false)).toBe("sem custo neste dia");
     expect(noCostDayText(kpis, 3, false)).toBeUndefined();
     expect(noCostDayText(kpis, 5, false)).toBeUndefined();
+  });
+
+  it("says the fee when only the fee is missing (RES-T2)", () => {
+    const summary = october([5]);
+    const kpis = resultKpis({
+      cards: summary.cards,
+      daily: summary.daily ?? [],
+      period: summary.period,
+      previous: null,
+      previousSales: null,
+      quality: {
+        ...summary.quality,
+        itemLinesWithUnknownCost: 0,
+        processingFeesUnknown: 1,
+      },
+      today: TODAY,
+    });
+    expect(noCostDayText(kpis, 4, false)).toBe("sem taxa neste dia");
+    expect(kpis.read(null).result.help).toContain(
+      "dias ainda sem taxa informada"
+    );
   });
 
   it("is not due at rest, with no cost of the goods known, or on a month of a long period", () => {
@@ -530,5 +575,85 @@ describe("the result while a day with no cost is read (RES-1)", () => {
     const result = card(cards(october([5])), "result-kpi-result");
     expect(words(result)).not.toContain("sem custo neste dia");
     expect(words(result)).toContain("1 de 25 dias sem custo");
+  });
+});
+
+describe("the link of the sales card to the Histórico", () => {
+  const open = () => undefined;
+  const sales = (summary: StoredPeriodSummary, onOpen = open) =>
+    card(
+      cards(summary, SEPTEMBER, SEPTEMBER_SALES, onOpen),
+      "result-kpi-sales"
+    );
+
+  it("covers the card with a button named 'Ver as N vendas' with the dates from the first day to today, the count staying text", () => {
+    const markup = sales(october([]));
+    expect(markup).toContain('data-kpi-sales-link=""');
+    expect(markup).toContain(
+      'aria-label="Ver as 25 vendas de 01/10 a 25/10 no Histórico"'
+    );
+    expect(words(markup)).toContain("25 vendas");
+    expect(words(markup)).not.toContain("Ver as 25 vendas");
+  });
+
+  it("says 'Ver a venda' with one sale", () => {
+    const summary = october([]);
+    summary.cards.salesCount = 1;
+    const markup = sales(summary);
+    expect(markup).toContain(
+      'aria-label="Ver a venda de 01/10 a 25/10 no Histórico"'
+    );
+  });
+
+  it("stays the text of the count with no way to open it (no connection, or the device's copy)", () => {
+    const markup = card(cards(october([])), "result-kpi-sales");
+    expect(markup).not.toContain("data-kpi-sales-link");
+    expect(words(markup)).toContain("25 vendas");
+  });
+
+  it("has no link for a period that has not started: no day is counted yet", () => {
+    const summary = october([]);
+    summary.period = { from: "2026-11-01", to: "2026-11-30" };
+    expect(sales(summary)).not.toContain("data-kpi-sales-link");
+  });
+
+  it("has no link with no sale", () => {
+    const summary = october([]);
+    summary.cards.salesCount = 0;
+    expect(sales(summary)).not.toContain("data-kpi-sales-link");
+  });
+
+  it("stays on the one support line of the tile, with the chip or without it, and covers the card", () => {
+    const withChip = sales(october([]));
+    expect(withChip).toContain("data-kpi-chip-row");
+    expect(withChip.indexOf("data-kpi-sales-link")).toBeLessThan(
+      withChip.indexOf("data-kpi-chip-row")
+    );
+    expect(withChip).not.toContain("basis-full");
+    expect(withChip).toContain("after:absolute after:inset-0");
+    const without = card(
+      renderToStaticMarkup(
+        <ResultCards
+          comparison={null}
+          onOpenSales={open}
+          salesComparison={null}
+          summary={october([])}
+          today={TODAY}
+        />
+      ),
+      "result-kpi-sales"
+    );
+    expect(without).not.toContain("data-kpi-chip-row");
+    expect(without).toContain("data-kpi-sales-link");
+    expect(without).not.toContain("basis-full");
+  });
+
+  it("keeps the count on the same line as the chip when there is no link", () => {
+    const summary = october([]);
+    summary.cards.salesCount = 0;
+    const markup = sales(summary);
+    expect(markup).not.toContain("data-kpi-sales-link");
+    expect(markup).not.toContain("basis-full");
+    expect(words(markup)).toContain("Nenhuma venda ainda");
   });
 });

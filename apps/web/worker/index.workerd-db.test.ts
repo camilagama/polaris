@@ -7,6 +7,10 @@ import {
 } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { createDatabase } from "@polaris/db/client";
+import {
+  type RecordedStatement,
+  recordStatements,
+} from "@polaris/db/statement-counter-testing";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../src/server/environment";
@@ -76,6 +80,132 @@ interface Fixture {
 }
 
 const UUID = /^[0-9a-f-]{36}$/;
+
+/**
+ * Statements one call of each of the routes the screens open, with BEGIN, COMMIT and the settings of the
+ * transaction (the platform counts every one against the daily quota of the Hyperdrive). They are the numbers the
+ * routes send today, not a goal: a route that sends one more fails here, and the one that sends fewer lowers its number
+ * in the same change. The rows with a plain name are the fixed cost of a call on a store with no products, sales or
+ * goals (what a row adds is not counted); the ones that say so are the same route with a sale, with an active goal
+ * and with a customer who bought. `sale/confirm` is a new sale of one item paid with one method under a payment
+ * profile; `sale/confirm with two parts` is the same sale paid in two parts under two different profiles, and must
+ * cost the same: the parts go in one INSERT and every profile and rule comes from the same two reads.
+ * `billing/readPlan` is measured with BILLING_SELF_SERVICE_ENABLED on (off, it answers 404 before any statement);
+ * `offline/issueLease` with a lease secret; the other routes run with the bindings as the wrangler file has them.
+ */
+const STATEMENT_COUNTS: Record<string, number> = {
+  "auth get-session": 1,
+  "billing/readPlan": 17,
+  "category/list": 5,
+  "customer/get": 5,
+  "customer/get with one purchase": 5,
+  "customer/list": 5,
+  "customer/list with one purchase": 5,
+  "device/check": 8,
+  "expense/list": 7,
+  "expense/listCategories": 6,
+  "expense/listRules": 6,
+  "goal/list": 7,
+  "goal/list with an active goal": 21,
+  "inventory/listBalances": 5,
+  "offline/issueLease": 13,
+  "organization/listMine": 4,
+  "product/list": 5,
+  "report/dailySales": 5,
+  "report/periodSummary": 5,
+  "sale/confirm": 28,
+  "sale/confirm with two parts": 28,
+  "sale/list": 5,
+  "sale/list with one sale": 11,
+  "sync/pull": 5,
+};
+
+/**
+ * The same routes counted on their first call in this store (after the sign-in and the creation of the store, on an
+ * isolate the earlier tests already warmed, so it is not a cold start). They differ from the numbers above only where
+ * the first call writes something the next one finds: the default expense categories. The test holds them exactly as well.
+ */
+const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
+  "auth get-session": 1,
+  "billing/readPlan": 17,
+  "category/list": 5,
+  "customer/get": 5,
+  "customer/get with one purchase": 5,
+  "customer/list": 5,
+  "customer/list with one purchase": 5,
+  "device/check": 8,
+  "expense/list": 7,
+  "expense/listCategories": 7,
+  "expense/listRules": 6,
+  "goal/list": 7,
+  "goal/list with an active goal": 21,
+  "inventory/listBalances": 5,
+  "offline/issueLease": 13,
+  "organization/listMine": 4,
+  "product/list": 5,
+  "report/dailySales": 5,
+  "report/periodSummary": 5,
+  "sale/confirm": 28,
+  "sale/confirm with two parts": 28,
+  "sale/list": 5,
+  "sale/list with one sale": 11,
+  "sync/pull": 5,
+};
+
+/**
+ * The routes that keep the check of the legal acceptance at the gate of the request (a read on the authentication
+ * connection) when LEGAL_ACCEPTANCE_ENFORCED is on: those that do not enter a single tenant transaction. Every other
+ * route checks it inside the entry of its transaction (`begin_tenant_request`), so with the control on it sends exactly
+ * what it sends with the control off; `auth get-session` does not pass through the request context at all.
+ */
+const ROUTES_CHECKED_AT_THE_GATE = new Set([
+  "device/check",
+  "organization/listMine",
+]);
+
+/** The numbers of `STATEMENT_COUNTS` with LEGAL_ACCEPTANCE_ENFORCED on: one more only where the gate reads it. */
+const ENFORCED_STATEMENT_COUNTS: Record<string, number> = Object.fromEntries(
+  Object.entries(STATEMENT_COUNTS).map(([name, count]) => [
+    name,
+    ROUTES_CHECKED_AT_THE_GATE.has(name) ? count + 1 : count,
+  ])
+);
+
+/** The secret that signs the lease of `offline/issueLease`: a made-up value, long enough for the signer. */
+const LEASE_SECRET = "harness-offline-lease-secret-of-32-bytes-or-more";
+/** The secret of the content hash of `sync/push`: a made-up value, long enough for the hash. */
+const PAYLOAD_HASH_SECRET = "harness-sync-payload-hash-secret-of-32-bytes";
+
+/** Makes the store Pro the way a paid charge does, through the insert the billing login has on that record. */
+async function upgradeToPro(connectionString: string, organizationId: string) {
+  const { pool } = createDatabase(connectionString, { maxConnections: 1 });
+  try {
+    await pool.query(
+      "INSERT INTO public.organization_billing (organization_id, state, access_ends_at) VALUES ($1, 'active', now() + interval '365 days')",
+      [organizationId]
+    );
+  } finally {
+    await pool.end();
+  }
+}
+
+/** The day and the instant the database reads, in the store's time zone: the clock a goal is active by. */
+async function databaseClock(connectionString: string) {
+  const { pool } = createDatabase(connectionString, { maxConnections: 1 });
+  try {
+    return await pool.query<{
+      ends_on: string;
+      now: string;
+      today: string;
+    }>(
+      `SELECT to_char(timezone('America/Sao_Paulo', now()), 'YYYY-MM-DD') AS today,
+              to_char(timezone('America/Sao_Paulo', now()) + interval '29 days', 'YYYY-MM-DD') AS ends_on,
+              to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS now`
+    );
+  } finally {
+    await pool.end();
+  }
+}
 
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
 const HYPERDRIVES: Binding[] = [
@@ -365,14 +495,21 @@ describe("the scheduled handler of the web worker", () => {
     });
     await runScheduled("19 * * * *", bindings);
     const { dispatchExport, dispatchRenewal } = fixture.events;
-    expect(standard.sent).toEqual([{ ...dispatchExport, attempt: 1 }]);
-    expect(critical.sent).toEqual([{ ...dispatchRenewal, attempt: 1 }]);
-    expect(media.sent).toEqual([]);
+    // only this test's own events: the maintenance lane writes notices of its own, which this dispatcher also sends when that test ran first
+    const ownIds = [dispatchExport.eventId, dispatchRenewal.eventId];
+    const ownSent = (queue: { sent: unknown[] }) =>
+      queue.sent.filter((message) =>
+        ownIds.includes((message as { eventId: string }).eventId)
+      );
+    expect(ownSent(standard)).toEqual([{ ...dispatchExport, attempt: 1 }]);
+    expect(ownSent(critical)).toEqual([{ ...dispatchRenewal, attempt: 1 }]);
+    expect(ownSent(media)).toEqual([]);
     expect(
       events().filter((entry) => entry.event === "outbox_dispatch_complete")
     ).toHaveLength(1);
 
     // the same window again: the lease is refused, so the dispatcher does not even run
+    const sentBefore = standard.sent.length + critical.sent.length;
     await runScheduled("19 * * * *", bindings);
     const skipped = events().filter(
       (entry) => entry.event === "scheduled_job_skipped"
@@ -381,8 +518,9 @@ describe("the scheduled handler of the web worker", () => {
     expect(
       events().filter((entry) => entry.event === "outbox_dispatch_complete")
     ).toHaveLength(1);
-    expect(standard.sent).toHaveLength(1);
-    expect(critical.sent).toHaveLength(1);
+    expect(standard.sent.length + critical.sent.length).toBe(sentBefore);
+    expect(ownSent(standard)).toHaveLength(1);
+    expect(ownSent(critical)).toHaveLength(1);
   });
 
   it("the maintenance lane runs its five jobs, and the ones that cannot reach their database fail alone", async () => {
@@ -677,6 +815,7 @@ describe("the e-mail and password flows of the web worker", () => {
   async function call(
     path: string,
     options: {
+      bindings?: Bindings;
       body?: unknown;
       cookie?: string;
       ip: string;
@@ -715,7 +854,7 @@ describe("the e-mail and password flows of the web worker", () => {
         headers,
         method,
       } as RequestInit),
-      bindingsWith(AUTH_BINDINGS),
+      bindingsWith({ ...AUTH_BINDINGS, ...options.bindings }),
       context
     );
     await waitOnExecutionContext(context);
@@ -892,6 +1031,406 @@ describe("the e-mail and password flows of the web worker", () => {
         seq: expect.any(Number),
       });
     }
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("sends exactly the recorded number of statements to the database on each of the most frequent routes (the Hyperdrive counts every one)", async () => {
+    const network = fakeNetwork();
+    const address = email("statements");
+    const ip = "198.51.100.21";
+    await verifiedUser(network, address, ip);
+    const cookie = await signedInCookie(address, PASSWORD, ip);
+    const post = async <Answer>(path: string, json: unknown) => {
+      const response = await call(path, { body: { json }, cookie, ip });
+      expect(response.status, path).toBe(200);
+      return ((await response.json()) as { json: Answer }).json;
+    };
+    const created = await post<{ organization: { id: string } }>(
+      "/rpc/organization/createInitial",
+      { name: "Loja dos statements", timezone: "America/Sao_Paulo" }
+    );
+    const organizationId = created.organization.id;
+    const { nextCursor } = await post<{ nextCursor: string }>(
+      "/rpc/sync/pull",
+      { limit: 200, organizationId }
+    );
+    const { device } = await post<{ device: { id: string } }>(
+      "/rpc/device/register",
+      { label: "Aparelho dos statements" }
+    );
+    // the dates do not change the count: the store has no sale, and the 31 days stay under the ceiling of the period
+    const period = { from: "2026-10-01", organizationId, to: "2026-10-31" };
+    interface Route {
+      bindings?: Bindings;
+      /** A function when each call needs a body of its own (a new command ID). */
+      body?: unknown;
+      method?: string;
+      name: string;
+      path: string;
+    }
+    const customer = await post<{ id: string }>("/rpc/customer/create", {
+      email: null,
+      name: "Cliente dos statements",
+      notes: null,
+      organizationId,
+      phone: "+5511999990000",
+    });
+    const emptyStoreRoutes: Route[] = [
+      {
+        method: "GET",
+        name: "auth get-session",
+        path: "/api/auth/get-session",
+      },
+      {
+        body: { json: { cursor: nextCursor, limit: 200, organizationId } },
+        name: "sync/pull",
+        path: "/rpc/sync/pull",
+      },
+      {
+        bindings: { BILLING_SELF_SERVICE_ENABLED: "true" },
+        body: { json: { organizationId } },
+        name: "billing/readPlan",
+        path: "/rpc/billing/readPlan",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "goal/list",
+        path: "/rpc/goal/list",
+      },
+      {
+        body: { json: period },
+        name: "report/periodSummary",
+        path: "/rpc/report/periodSummary",
+      },
+      {
+        body: { json: period },
+        name: "report/dailySales",
+        path: "/rpc/report/dailySales",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "inventory/listBalances",
+        path: "/rpc/inventory/listBalances",
+      },
+      {
+        body: { json: {} },
+        name: "organization/listMine",
+        path: "/rpc/organization/listMine",
+      },
+      {
+        body: { json: { deviceId: device.id } },
+        name: "device/check",
+        path: "/rpc/device/check",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "product/list",
+        path: "/rpc/product/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "category/list",
+        path: "/rpc/category/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "sale/list",
+        path: "/rpc/sale/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "customer/list",
+        path: "/rpc/customer/list",
+      },
+      {
+        body: { json: { id: customer.id, organizationId } },
+        name: "customer/get",
+        path: "/rpc/customer/get",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "expense/list",
+        path: "/rpc/expense/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "expense/listCategories",
+        path: "/rpc/expense/listCategories",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "expense/listRules",
+        path: "/rpc/expense/listRules",
+      },
+    ];
+    const measure = async (route: Route) => {
+      const recorder = recordStatements();
+      try {
+        const body =
+          typeof route.body === "function" ? route.body() : route.body;
+        const response = await call(route.path, {
+          ...(body === undefined ? {} : { body }),
+          ...(route.bindings ? { bindings: route.bindings } : {}),
+          cookie,
+          ip,
+          ...(route.method ? { method: route.method } : {}),
+        });
+        expect(response.status, route.name).toBe(200);
+        await response.text();
+      } finally {
+        recorder.stop();
+      }
+      expect(
+        recorder.statements.length,
+        `${route.name} sent no statement: the call did not reach the database`
+      ).toBeGreaterThan(0);
+      return recorder.statements;
+    };
+    const first: Record<string, number> = {};
+    const firstStatements: Record<string, RecordedStatement[]> = {};
+    const second: Record<string, number> = {};
+    const enforced: Record<string, number> = {};
+    const detail: string[] = [];
+    const listStatements = (statements: RecordedStatement[]) =>
+      statements.map(
+        (statement, index) =>
+          `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
+      );
+    // each route is called twice, one at a time so the statements of two calls never mix: the first call is counted
+    // as it comes, and the second, after what the first warmed in the isolate, is the number a later call sends
+    const measureAll = async (routes: Route[]) => {
+      for (const route of routes) {
+        // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
+        const statements = await measure(route);
+        firstStatements[route.name] = statements;
+        first[route.name] = statements.length;
+      }
+      for (const route of routes) {
+        // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
+        const statements = await measure(route);
+        second[route.name] = statements.length;
+        const firstCall = firstStatements[route.name] ?? [];
+        detail.push(
+          `${route.name}: ${statements.length} (first call ${firstCall.length})`,
+          ...listStatements(statements)
+        );
+        if (
+          firstCall.length !== statements.length ||
+          firstCall.length !== FIRST_CALL_STATEMENT_COUNTS[route.name]
+        ) {
+          detail.push(
+            `${route.name}: first call, ${firstCall.length} statements`,
+            ...listStatements(firstCall)
+          );
+        }
+        // the same call with the control of the legal acceptance on (the user accepted both documents at the sign-up)
+        const withControl = await measure({
+          ...route,
+          bindings: { ...route.bindings, LEGAL_ACCEPTANCE_ENFORCED: "true" },
+        });
+        enforced[route.name] = withControl.length;
+        if (withControl.length !== ENFORCED_STATEMENT_COUNTS[route.name]) {
+          detail.push(
+            `${route.name}: with LEGAL_ACCEPTANCE_ENFORCED, ${withControl.length} statements`,
+            ...listStatements(withControl)
+          );
+        }
+      }
+    };
+    await measureAll(emptyStoreRoutes);
+
+    // the same routes where a row changes what they read: a sale and an active goal (the clock is the database's)
+    const { rows } = await databaseClock(env.HYPERDRIVE.connectionString);
+    const today = rows[0]?.today as string;
+    const endsOn = rows[0]?.ends_on as string;
+    const productId = crypto.randomUUID();
+    const variantId = crypto.randomUUID();
+    await post("/rpc/product/create", {
+      initialStock: {
+        commandId: crypto.randomUUID(),
+        quantity: 10,
+        unitCost: "4.00",
+      },
+      listPrice: "10.00",
+      name: "Camiseta dos statements",
+      organizationId,
+      productId,
+      variantId,
+    });
+    const confirmedSale = await post<{ sale: { id: string } }>(
+      "/rpc/sale/confirm",
+      {
+        adjustments: [],
+        commandId: crypto.randomUUID(),
+        commandVersion: 1,
+        items: [
+          {
+            chargedUnitPrice: "10.00",
+            listedUnitPrice: "10.00",
+            quantity: 1,
+            variantId,
+          },
+        ],
+        occurredAt: rows[0]?.now as string,
+        organizationId,
+        payment: {
+          anticipationRequested: false,
+          installmentPlan: null,
+          installments: null,
+          method: "cash",
+        },
+        paymentProfile: null,
+      }
+    );
+    await post("/rpc/goal/create", {
+      endsOn,
+      kind: "net_sales",
+      organizationId,
+      startsOn: today,
+      target: "1000.00",
+    });
+    await measureAll([
+      {
+        body: { json: { organizationId } },
+        name: "goal/list with an active goal",
+        path: "/rpc/goal/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "sale/list with one sale",
+        path: "/rpc/sale/list",
+      },
+    ]);
+
+    // the sale gets its customer only now: with one, `sale/list` reads the names too and sends one more statement
+    await post("/rpc/sale/assignCustomer", {
+      customerId: customer.id,
+      expectedVersion: 0,
+      organizationId,
+      saleId: confirmedSale.sale.id,
+    });
+    await measureAll([
+      {
+        body: { json: { organizationId } },
+        name: "customer/list with one purchase",
+        path: "/rpc/customer/list",
+      },
+      {
+        body: { json: { id: customer.id, organizationId } },
+        name: "customer/get with one purchase",
+        path: "/rpc/customer/get",
+      },
+    ]);
+
+    // a sale confirmed under a payment profile, then the same sale in two parts under two profiles: each call is a
+    // new command (a repeated one would replay)
+    const profileFor = (method: "cash" | "pix", name: string) =>
+      post<{ id: string; version: number }>("/rpc/paymentProfile/create", {
+        name,
+        organizationId,
+        rules: [
+          {
+            anticipationFee: {
+              fixedAmount: null,
+              mode: "none",
+              percentage: null,
+            },
+            expectedSettlementDays: 1,
+            installmentPlan: null,
+            installments: null,
+            method,
+            processingFee: {
+              fixedAmount: null,
+              mode: "percentage",
+              percentage: "1.000000",
+            },
+          },
+        ],
+      });
+    const cashProfile = await profileFor("cash", "Caixa");
+    const pixProfile = await profileFor("pix", "Banco");
+    const saleBody = (payment: Record<string, unknown>) => () => ({
+      json: {
+        adjustments: [],
+        commandId: crypto.randomUUID(),
+        commandVersion: 1,
+        items: [
+          {
+            chargedUnitPrice: "10.00",
+            listedUnitPrice: "10.00",
+            quantity: 1,
+            variantId,
+          },
+        ],
+        occurredAt: rows[0]?.now as string,
+        organizationId,
+        ...payment,
+      },
+    });
+    const part = (
+      method: "cash" | "pix",
+      amount: string,
+      profile: { id: string; version: number }
+    ) => ({
+      amount,
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method,
+      paymentProfile: { expectedVersion: profile.version, id: profile.id },
+    });
+    await measureAll([
+      {
+        body: saleBody({
+          payment: {
+            anticipationRequested: false,
+            installmentPlan: null,
+            installments: null,
+            method: "cash",
+          },
+          paymentProfile: {
+            expectedVersion: cashProfile.version,
+            id: cashProfile.id,
+          },
+        }),
+        name: "sale/confirm",
+        path: "/rpc/sale/confirm",
+      },
+      {
+        body: saleBody({
+          payments: [
+            part("cash", "4.00", cashProfile),
+            part("pix", "6.00", pixProfile),
+          ],
+        }),
+        name: "sale/confirm with two parts",
+        path: "/rpc/sale/confirm",
+      },
+    ]);
+
+    // a lease is for Pro only (Free answers 409): the billing role writes the record a paid charge would write
+    await upgradeToPro(env.BILLING_HYPERDRIVE.connectionString, organizationId);
+    await measureAll([
+      {
+        bindings: { OFFLINE_LEASE_SECRET: LEASE_SECRET },
+        body: { json: { deviceId: device.id, organizationId } },
+        name: "offline/issueLease",
+        path: "/rpc/offline/issueLease",
+      },
+    ]);
+
+    const advice = `statements per call, in order:\n${detail.join("\n")}\nRaise a number only for a route that must send more; lower it when the route sends fewer.`;
+    // a route that did not run (a skipped case) is a missing key, not a zero: both maps must hold exactly the rows
+    expect(Object.keys(second).sort(), advice).toEqual(
+      Object.keys(STATEMENT_COUNTS).sort()
+    );
+    expect(second, advice).toEqual(STATEMENT_COUNTS);
+    expect(
+      second["sale/confirm with two parts"],
+      "a sale in two parts sends what a sale of one part does"
+    ).toBe(second["sale/confirm"]);
+    expect(first, advice).toEqual(FIRST_CALL_STATEMENT_COUNTS);
+    expect(enforced, advice).toEqual(ENFORCED_STATEMENT_COUNTS);
     expect(network.strangers).toEqual([]);
   });
 
@@ -1139,6 +1678,122 @@ describe("the e-mail and password flows of the web worker", () => {
     expect(location.searchParams.has("error")).toBe(false);
     const session = await sessionOf(cookiesOf(callback), "198.51.100.15");
     expect(session?.user.id).toBe(userId);
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("refuses a person with the legal acceptance pending with the same body whether the entry of the tenant or the gate checks it, and lets the exempt routes through", async () => {
+    // a person who came in with Google accepted nothing at the sign-up: both documents are pending
+    const address = email("legal-pending");
+    const ip = "198.51.100.22";
+    const network = fakeNetwork(
+      claimsOf(`${fixture.auth.tag}-legal-pending`, address)
+    );
+    const callback = await googleSignIn(ip, "harness-code-legal-pending");
+    expect(callback.status).toBe(302);
+    const cookie = cookiesOf(callback);
+    expect(cookie).toContain("session_token=");
+    const post = async (
+      path: string,
+      json: unknown,
+      bindings: Bindings = {}
+    ) => {
+      const response = await call(path, {
+        bindings: {
+          OFFLINE_LEASE_SECRET: LEASE_SECRET,
+          SYNC_PAYLOAD_HASH_SECRET: PAYLOAD_HASH_SECRET,
+          ...bindings,
+        },
+        body: { json },
+        cookie,
+        ip,
+      });
+      return {
+        body: (await response.json()) as unknown,
+        status: response.status,
+      };
+    };
+    // the store, the device and a lease, made with the control off
+    const created = await post("/rpc/organization/createInitial", {
+      name: "Loja do aceite pendente",
+      timezone: "America/Sao_Paulo",
+    });
+    expect(created.status).toBe(200);
+    const organizationId = (
+      created.body as { json: { organization: { id: string } } }
+    ).json.organization.id;
+    await upgradeToPro(env.BILLING_HYPERDRIVE.connectionString, organizationId);
+    const registered = await post("/rpc/device/register", {
+      label: "Aparelho do aceite pendente",
+    });
+    expect(registered.status).toBe(200);
+    const deviceId = (registered.body as { json: { device: { id: string } } })
+      .json.device.id;
+    const issued = await post("/rpc/offline/issueLease", {
+      deviceId,
+      organizationId,
+    });
+    expect(issued.status).toBe(200);
+    const { lease } = (issued.body as { json: { lease: string } }).json;
+    const { rows } = await databaseClock(env.HYPERDRIVE.connectionString);
+    const push = {
+      commands: [
+        {
+          baseVersion: null,
+          commandId: crypto.randomUUID(),
+          createdAt: rows[0]?.now as string,
+          deviceId,
+          lease,
+          payload: { name: "Cliente do aceite pendente" },
+          type: "customer.create",
+        },
+      ],
+      organizationId,
+    };
+    const on = { LEGAL_ACCEPTANCE_ENFORCED: "true" };
+    const refusals = {
+      "device/check (gate)": await post("/rpc/device/check", { deviceId }, on),
+      "offline/issueLease (entry)": await post(
+        "/rpc/offline/issueLease",
+        { deviceId, organizationId },
+        on
+      ),
+      "sync/pull (entry)": await post(
+        "/rpc/sync/pull",
+        { limit: 10, organizationId },
+        on
+      ),
+      "sync/push (entry)": await post("/rpc/sync/push", push, on),
+    };
+    const expected = {
+      body: refusals["device/check (gate)"].body,
+      status: 403,
+    };
+    expect(expected.body).toMatchObject({
+      json: {
+        code: "FORBIDDEN",
+        data: {
+          pending: [
+            { document: "terms", version: LEGAL_DOCUMENTS.terms.version },
+            { document: "privacy", version: LEGAL_DOCUMENTS.privacy.version },
+          ],
+          reason: "legal_acceptance_required",
+        },
+      },
+    });
+    expect(refusals).toEqual(
+      Object.fromEntries(Object.keys(refusals).map((name) => [name, expected]))
+    );
+    // nothing of the push ran: the customer is not in the store
+    const pulled = await post("/rpc/sync/pull", { limit: 200, organizationId });
+    expect(pulled.status).toBe(200);
+    expect(JSON.stringify(pulled.body)).not.toContain(
+      "Cliente do aceite pendente"
+    );
+    // the exempt routes still answer with the acceptance pending
+    expect((await post("/rpc/device/list", {}, on)).status).toBe(200);
+    expect(
+      (await post("/rpc/dataExport/list", { organizationId }, on)).status
+    ).toBe(200);
     expect(network.strangers).toEqual([]);
   });
 });

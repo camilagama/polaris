@@ -6,7 +6,12 @@ import { ScreenTitle } from "../app-shell/screen-title";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { readErrorMessage } from "../lib/rpc-error";
 import { CloseStoreSection } from "../organization/close-store-section";
+import {
+  type EmailPreferenceCalls,
+  EmailPreferenceCard,
+} from "../settings/email-preference-card";
 import { type DataExportCalls, DataExportCards } from "./data-export-cards";
 import {
   exportFileHref,
@@ -21,7 +26,8 @@ function Title() {
 
 /**
  * Seus dados: the owner asks for a copy of the store's data and downloads it
- * (ADR 0078). Only with `organization:export`; the server refuses the others anyway.
+ * (ADR 0078), below the card of the e-mails the person receives (ADR 0106). Only with `organization:export`; the server
+ * refuses the others anyway.
  * At the end, "Encerrar a loja" for whoever holds `organization:close` (ADR 0081).
  */
 export function DataExportPage() {
@@ -68,6 +74,16 @@ function DataExportScreen({
     [organizationId]
   );
 
+  const emailCalls = useMemo<EmailPreferenceCalls>(
+    () => ({
+      read: () => orpcClient.account.emailPreference({ organizationId }),
+      readRefusal: (error) =>
+        readErrorMessage(error, "as preferências de e-mail"),
+      setTips: (on) => orpcClient.account.setTips({ on, organizationId }),
+    }),
+    [organizationId]
+  );
+
   const fileHref = useCallback(
     (exportId: string, ordinal: number) =>
       exportFileHref(exportId, ordinal, organizationId),
@@ -77,6 +93,7 @@ function DataExportScreen({
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <Title />
+      <EmailPreferenceCard calls={emailCalls} online={online} />
       <DataExportCards
         calls={calls}
         fileHref={fileHref}

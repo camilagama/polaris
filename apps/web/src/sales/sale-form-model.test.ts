@@ -796,7 +796,7 @@ describe("payment profile choice and fee preview", () => {
     const result = evaluate(form);
     // 1,5% of 99,80 = 1,497 -> 1,50
     expect(result.feePreview?.anticipation.text).toContain("R$ 1,50");
-    expect(result.body?.payment.anticipationRequested).toBe(true);
+    expect(result.body?.payment?.anticipationRequested).toBe(true);
   });
 
   it("reports no exact rule when installments do not match any rule", () => {

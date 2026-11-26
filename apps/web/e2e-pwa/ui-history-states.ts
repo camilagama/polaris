@@ -2,6 +2,7 @@
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
 import { applyEditor, onPhone } from "../e2e/filter-bar-editor";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -136,17 +137,12 @@ async function addFilter(page: Page, field: string) {
   return popup;
 }
 
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
+/** The picker of the period, the button of the title line: opened, with its calendar. */
+async function openPeriod(page: Page) {
+  await page.locator('header button[aria-label^="Período"]').click();
+  const popup = page.getByRole("dialog", { name: "Período" });
+  await popup.waitFor();
+  return popup;
 }
 
 export const WORST_CUSTOMER_NAME = WORST_NAME;
@@ -167,12 +163,13 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
-  /** The list on its way: three rows of skeleton in the card, and the line for the screen reader (P-14). */
+  /** The list on its way: three rows of skeleton in the frame, and the line for the screen reader (P-14). */
   async loading(page: Page) {
     await openHistoryLab(page, false, true);
     await page
+      .locator("[data-list-block]")
       .getByRole("status")
-      .getByText("Carregando vendas…")
+      .filter({ hasText: "Carregando…" })
       .waitFor({ state: "attached" });
     await showScreenAlone(page);
   },
@@ -186,14 +183,32 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
-  /** The bar with three pills (Período, Situação, Cliente) and "Limpar tudo", every editor closed. */
+  /** The period alone, with the server's net total of the period in the footer (the other filters take it away). */
+  async periodTotal(page: Page) {
+    await page.route("**/rpc/report/periodSummary", (route: Route) =>
+      route.fulfill(rpc({ cards: { netSales: "123.40", salesCount: 3 } }))
+    );
+    await openHistoryLab(page, true);
+    await page.getByText("Ângela Souza").waitFor();
+    const period = await openPeriod(page);
+    await period.locator('button[data-day="2026-10-12"]').click();
+    await period.locator('button[data-day="2026-10-05"]').click();
+    await period.waitFor({ state: "hidden" });
+    const footer = page.locator("[data-list-total]");
+    await footer.getByText("Vendas líquidas do período").waitFor();
+    await footer.locator("[data-list-total-skeleton]").waitFor({
+      state: "detached",
+    });
+    await showScreenAlone(page);
+  },
+
+  /** The period of the title line and the bar with two pills (Situação, Cliente) and "Limpar tudo", every editor closed. */
   async filters(page: Page) {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
-    const period = await addFilter(page, "Período");
+    const period = await openPeriod(page);
     await period.locator('button[data-day="2026-10-12"]').click();
     await period.locator('button[data-day="2026-10-05"]').click();
-    await applyEditor(page, period);
     await period.waitFor({ state: "hidden" });
     const status = await addFilter(page, "Situação");
     await status

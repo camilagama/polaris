@@ -313,7 +313,11 @@ test("U-24 e U-28: cliente sem contato — o erro fica junto do botão, os campo
   // U-28: the 3 px halo of the field in focus clears the text of the error under it (6 px between the two)
   await page.locator("#customer-phone").fill("");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  // the save moves the focus to the phone in a timer: clearing the name before it fires sends the Delete key to the phone and the name keeps its old value
+  await expect(error).toBeVisible();
+  await expect(page.locator("#customer-phone")).toBeFocused();
   await page.locator("#customer-name").fill("");
+  await expect(page.locator("#customer-name")).toHaveValue("");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
   const nameError = page.locator("#customer-name-error");
   await expect(nameError).toHaveText("Informe o nome do cliente.");
@@ -339,9 +343,14 @@ test("U-25: cliente parecido — o aviso é anunciado e 'Usar existente' é a a�
   await register(page, "Carla D.", "11900000003");
   await expect(page.getByText("Mesmo telefone")).toBeVisible();
   // a live region that was there before the panel, now with the sentence
-  await expect(page.locator('p.sr-only[role="status"]').first()).toContainText(
-    "Encontramos possíveis clientes existentes"
-  );
+  await expect(
+    page.getByRole("dialog").locator('p.sr-only[role="status"]').first()
+  ).toContainText("Encontramos possíveis clientes existentes");
+  await expect(
+    page.getByRole("group", {
+      name: "Encontramos possíveis clientes existentes",
+    })
+  ).toBeVisible();
   const useExisting = page.getByRole("button", {
     name: "Usar existente: Carla Dias",
   });

@@ -4,7 +4,7 @@ status: accepted
 
 # Despachante e varredor do outbox
 
-> O número deste ADR (0084) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR do purge usa 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes. A migration é a 0071, a mesma do PR #126: o segundo a entrar renumera a migration e o snapshot.
+> A migration é a `0071_outbox_dispatcher.sql`.
 
 > **Emenda ([ADR 0085](0085-dlq-incidente-operacional-e-retry-no-admin.md)):** o evento que chega ao teto de 1000 tentativas passa a ser registrado como incidente operacional e como evento morto pelo cron do despachante (`record_exhausted_outbox_events`), e o Admin pode reenviá-lo (`retry_dead_letter`: tentativas recomeçam e o registro de processamento da chave é apagado). Onde este texto diz "à espera da DLQ" ou "sem DLQ", vale o ADR 0085.
 
@@ -46,7 +46,7 @@ I/O (esperar o banco, a fila, o R2) não conta como CPU. Além disso: 50 subrequ
 - O caminho assíncrono da exportação é: pedido → evento (mesma transação) → despachante (cron `:19`) → `polaris-default` → consumidor → job da exportação daquele pedido. O job horário só varre e re-arma.
 - Antes do deploy: a migration aplicada (o Worker chama funções novas, e o pedido de exportação já depende do outbox desde o PR108), o papel de login do outbox e o Hyperdrive sem query caching criados pelo responsável, as filas criadas; o binding `OUTBOX_HYPERDRIVE` só entra no deploy por último, depois das conferências e medições. Ordem no [runbook das filas](../runbooks/queues.md).
 - Quem adiciona um tipo de evento declara também as suas chaves no domínio e na política, e decide se precisa de um re-arm próprio.
-- O purge (PR #126) apaga os eventos da organização; um evento tomado e apagado no meio do envio não é marcado (sem erro), e a mensagem já enviada é recusada pelo registro (`unknown`). O purge (ADR 0081) apaga `queue_processing` junto com o resto do tenant: a tabela está em `PURGE_DELETE_ORDER`, e o papel do purge a lê e apaga só para organização `purge_pending`.
+- O purge (migration 0075, ADR 0081) apaga os eventos da organização; um evento tomado e apagado no meio do envio não é marcado (sem erro), e a mensagem já enviada é recusada pelo registro (`unknown`). O purge (ADR 0081) apaga `queue_processing` junto com o resto do tenant: a tabela está em `PURGE_DELETE_ORDER`, e o papel do purge a lê e apaga só para organização `purge_pending`.
 
 ## Limites aceitos
 

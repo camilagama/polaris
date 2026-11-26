@@ -7,7 +7,11 @@ import {
 } from "@polaris/domain/billing/notices";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  rollbackQuietly,
+  withGateRole,
+} from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -77,7 +81,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 4 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
 
   try {
@@ -107,7 +111,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const billingUrl = await login(BILLING_RUNTIME, "polaris_notice_billing");
@@ -133,14 +137,11 @@ async function run() {
       role: string,
       operation: (client: Client) => Promise<T>
     ): Promise<T> =>
-      as(adminUrl, async (client) => {
-        await client.query("BEGIN");
-        try {
-          return await withGateRole(client, role, () => operation(client));
-        } finally {
-          await client.query("ROLLBACK");
-        }
-      });
+      as(adminUrl, (client) =>
+        inRolledBackTransaction(client, () =>
+          withGateRole(client, role, () => operation(client))
+        )
+      );
 
     const suffix = randomUUID().slice(0, 8);
     const newTenant = (label: string) =>
@@ -1268,9 +1269,8 @@ async function run() {
       assert.ok(!(await setting(SWEEP_SCOPE)), "the sweep's scope is cleared");
     });
     // the Free limit missing from the catalog fails the call instead of answering a made-up one
-    await as(adminUrl, async (client) => {
-      await client.query("BEGIN");
-      try {
+    await as(adminUrl, (client) =>
+      inRolledBackTransaction(client, async () => {
         await client.query(
           "DELETE FROM public.plan_entitlements WHERE plan_id = 'free' AND key = 'variants.active.max'"
         );
@@ -1289,10 +1289,8 @@ async function run() {
             "the Free limit is missing"
           );
         });
-      } finally {
-        await client.query("ROLLBACK");
-      }
-    });
+      })
+    );
     tests.push(
       "billing_notice_sweep_zones is SECURITY DEFINER and volatile with a fixed search_path, owned by the billing owner and executed only by the billing role; it answers the id and time zone of the stores in a trial, in grace or active on the yearly cycle and no other (monthly, semiannual, free over limit, no record, purged); the billing owner sees an organization only with such a record, and its billing record only in those states, and only inside the call (no row without the scope, with another value or with the scope in capitals); the scope of each function is cleared when the call ends, also on a connection that is reused, and a notice of another store is no row on it; the billing role has no grant on organizations; a catalog without the Free limit fails the call with 22023"
     );
@@ -1372,7 +1370,7 @@ async function run() {
           await client.query("COMMIT");
           return { candidates: found.rows.length, recorded };
         } catch (error: unknown) {
-          await client.query("ROLLBACK");
+          await rollbackQuietly(client);
           throw error;
         }
       });
@@ -1559,8 +1557,7 @@ async function run() {
       )
     );
   } finally {
-    for (const [role, group] of logins) {
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

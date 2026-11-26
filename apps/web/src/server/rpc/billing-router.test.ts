@@ -7,12 +7,22 @@ import {
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { logger } from "@polaris/observability/logger";
 import { RejectedBillingEventError } from "@polaris/domain/billing/subscription-state";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import { payerLockKey } from "../billing/commands";
 import type { WorkerBindings } from "../environment";
 import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const EIGHT_HEX = /^[\da-f]{8}$/;
 const PAYER_CUSTOMER_KEY = /^polaris-payer-[\da-f]{32}$/;
@@ -398,7 +408,7 @@ describe("billing.startCheckout", () => {
             {
               fact: {
                 cycleMonths: 12 as const,
-                occurredAt: new Date(),
+                occurredAt: new Date(NOW),
                 type: "trial_method_ready" as const,
               },
               providerEventId: "reconcile:sub_1:CHECKOUT_PAID",

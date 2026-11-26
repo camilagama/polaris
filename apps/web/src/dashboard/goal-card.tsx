@@ -1,3 +1,4 @@
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import {
   MASKED_SPOKEN,
@@ -7,8 +8,9 @@ import {
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
+import { Block } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
+import { PaceLine } from "@/ui/pace-line";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +39,7 @@ import {
   goalStatusLabel,
   goalTitle,
 } from "./goal-model";
+import { goalPace, goalPaceLine, goalPaceSpoken } from "./goal-pace";
 import type { GoalOutcome } from "./use-goal-commands";
 
 interface GoalCardProps {
@@ -66,7 +69,7 @@ function GoalHeader({ goal, today }: { goal: GoalReadModel; today: string }) {
   return (
     <div className="grid gap-0.5">
       <div className="flex flex-wrap items-center gap-2">
-        <h4 className="text-section">{goalTitle(goal)}</h4>
+        <h3 className="text-section">{goalTitle(goal)}</h3>
         <Badge variant={goalBadgeVariant(goal.status, goal.paused)}>
           {goal.paused ? "Pausada pelo plano" : goalStatusLabel(goal.status)}
         </Badge>
@@ -92,9 +95,11 @@ function progressTargetText(goal: GoalReadModel): string {
 function GoalProgress({
   goal,
   pausedHelp = null,
+  today,
 }: {
   goal: GoalReadModel;
   pausedHelp?: LimitHelpView | null;
+  today: string;
 }) {
   const { progress } = goal;
   const [hidden] = useHiddenValues();
@@ -123,24 +128,34 @@ function GoalProgress({
     hidden ? maskMoney(text, MASKED_SPOKEN) : text;
   const valueText = formatGoalValue(goal.kind, progress.value);
   const percentText = formatGoalPercent(progress.percent);
+  const pace = goalPace(goal, today);
   return (
-    <Progress
-      aria-label={`Progresso de ${goalTitle(goal)}`}
-      aria-valuetext={spoken(`${valueText} de ${targetText}, ${percentText}`)}
-      value={width}
-    >
-      <span className="font-medium text-sm tabular-nums">
-        <span className="font-semibold">
-          <MoneyText text={valueText} />
-        </span>{" "}
-        <span className="font-normal text-muted-foreground">
-          de <MoneyText text={targetText} />
+    <div className="grid gap-1.5">
+      <Progress
+        aria-label={`Progresso de ${goalTitle(goal)}`}
+        aria-valuetext={spoken(
+          `${valueText} de ${targetText}, ${percentText}${pace ? `. ${goalPaceSpoken(pace)}` : ""}`
+        )}
+        {...(pace ? { marker: pace.position } : {})}
+        value={width}
+      >
+        <span className="font-medium text-sm">
+          <Figure className="font-semibold">
+            <MoneyText text={valueText} />
+          </Figure>{" "}
+          <span className="font-normal text-muted-foreground">
+            de{" "}
+            <Figure>
+              <MoneyText text={targetText} />
+            </Figure>
+          </span>
         </span>
-      </span>
-      <ProgressValue className="font-medium text-foreground">
-        {() => percentText}
-      </ProgressValue>
-    </Progress>
+        <ProgressValue className="font-medium text-foreground">
+          {() => <Figure>{percentText}</Figure>}
+        </ProgressValue>
+      </Progress>
+      <PaceLine {...goalPaceLine(pace)} />
+    </div>
   );
 }
 
@@ -194,25 +209,23 @@ export function SettledGoalCard({
   const [historyOpen, setHistoryOpen] = useState(false);
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
   return (
-    <Card className="bg-muted/30 shadow-none">
-      <CardContent className="grid gap-3">
-        <GoalHeader goal={goal} today={today} />
-        <SettledResult goal={goal} timezone={timezone} />
-        <div className={ACTIONS}>
-          <GoalHistoryToggle
-            goal={goal}
-            onToggle={handleHistory}
-            open={historyOpen}
-          />
-        </div>
-        <GoalHistoryBody
+    <Block className="bg-muted/30 shadow-none" variant="plain">
+      <GoalHeader goal={goal} today={today} />
+      <SettledResult goal={goal} timezone={timezone} />
+      <div className={ACTIONS}>
+        <GoalHistoryToggle
           goal={goal}
+          onToggle={handleHistory}
           open={historyOpen}
-          organizationId={organizationId}
-          timezone={timezone}
         />
-      </CardContent>
-    </Card>
+      </div>
+      <GoalHistoryBody
+        goal={goal}
+        open={historyOpen}
+        organizationId={organizationId}
+        timezone={timezone}
+      />
+    </Block>
   );
 }
 
@@ -388,43 +401,41 @@ export function ActiveGoalCard({
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
 
   return (
-    <Card>
-      <CardContent className="grid gap-3">
-        <GoalHeader goal={goal} today={today} />
-        <GoalProgress goal={goal} pausedHelp={pausedHelp} />
-        {mode === "edit" ? (
-          <GoalEditForm
-            disabled={busyKey !== null}
-            goal={goal}
-            key={goal.version}
-            onCancel={handleCloseEdit}
-            onSave={handleSave}
-            saving={busyKey === `update:${goal.id}`}
-          />
-        ) : null}
-        <ActiveActions
-          busyKey={busyKey}
+    <Block variant="plain">
+      <GoalHeader goal={goal} today={today} />
+      <GoalProgress goal={goal} pausedHelp={pausedHelp} today={today} />
+      {mode === "edit" ? (
+        <GoalEditForm
+          disabled={busyKey !== null}
           goal={goal}
-          historyOpen={historyOpen}
-          mode={mode}
-          onAskCancel={handleAskCancel}
-          onEdit={handleEdit}
-          onHistory={handleHistory}
+          key={goal.version}
+          onCancel={handleCloseEdit}
+          onSave={handleSave}
+          saving={busyKey === `update:${goal.id}`}
         />
-        <GoalHistoryBody
-          goal={goal}
-          open={historyOpen}
-          organizationId={organizationId}
-          timezone={timezone}
-        />
-        <CancelDialog
-          busyKey={busyKey}
-          goal={goal}
-          onConfirm={handleCancelConfirm}
-          onOpenChange={handleDialog}
-          open={mode === "cancel"}
-        />
-      </CardContent>
-    </Card>
+      ) : null}
+      <ActiveActions
+        busyKey={busyKey}
+        goal={goal}
+        historyOpen={historyOpen}
+        mode={mode}
+        onAskCancel={handleAskCancel}
+        onEdit={handleEdit}
+        onHistory={handleHistory}
+      />
+      <GoalHistoryBody
+        goal={goal}
+        open={historyOpen}
+        organizationId={organizationId}
+        timezone={timezone}
+      />
+      <CancelDialog
+        busyKey={busyKey}
+        goal={goal}
+        onConfirm={handleCancelConfirm}
+        onOpenChange={handleDialog}
+        open={mode === "cancel"}
+      />
+    </Block>
   );
 }

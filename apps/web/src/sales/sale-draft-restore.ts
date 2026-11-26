@@ -1,12 +1,16 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
+import { calendarDayInTimezone } from "../lib/dates";
 import { formatBrlAmount } from "../lib/format";
 import { priceFieldText } from "./last-prices-model";
+import { clearSaleConsequenceText, type SaleCount } from "./sale-count-text";
 import {
   createBlankSaleForm,
   type ItemDraft,
   parseMoneyText,
+  quantityUnits,
   type SaleFormState,
 } from "./sale-form-model";
+import { SPLIT_TOTAL_CHANGED_MESSAGE } from "./sale-split-model";
 import { itemChangesForEntry } from "./sale-variant-picker-model";
 
 interface RepricedLine {
@@ -120,7 +124,7 @@ export function refreshRestoredItems(
 }
 
 export const DRAFT_EXPIRED_MESSAGE =
-  "A venda em andamento era de outro dia e foi descartada.";
+  "A venda em andamento ficou parada por muito tempo e foi descartada.";
 export const DRAFT_RECORDED_MESSAGE =
   "A venda em andamento já foi confirmada ou guardada neste aparelho.";
 export const DRAFT_UNREADABLE_MESSAGE =
@@ -151,8 +155,12 @@ function repricedText(line: RepricedLine): string {
     : `${listed}; o preço cobrado não mudou.`;
 }
 
-/** What the screen says after the cart was read again, or null when nothing changed. */
+/**
+ * What the screen says after the cart was read again, or null when nothing changed. A cart paid in two parts with an
+ * amount typed in the last one also says that the total moved: only the rest follows the total by itself.
+ */
 export function refreshedDraftMessage({
+  form,
   removed,
   repriced,
 }: RefreshedDraft): string | null {
@@ -160,17 +168,65 @@ export function refreshedDraftMessage({
     ...(removed.length > 0 ? [removedText(removed)] : []),
     ...repriced.map(repricedText),
   ];
-  return parts.length > 0 ? parts.join(" ") : null;
+  if (parts.length === 0) {
+    return null;
+  }
+  const typedParts = form.split !== null && form.split.second.amount !== null;
+  return (typedParts ? [...parts, SPLIT_TOTAL_CHANGED_MESSAGE] : parts).join(
+    " "
+  );
 }
 
-/** How many lines of the cart have a variant chosen: what "Limpar venda" takes out. */
-export function chosenItemCount(form: SaleFormState): number {
-  return form.items.filter((item) => item.variantId !== "").length;
+/** The lines of the cart with a variant chosen and the units they add up to: what "Limpar venda" takes out. */
+export function chosenSaleCount(form: SaleFormState): SaleCount {
+  const chosen = form.items.filter((item) => item.variantId !== "");
+  return {
+    lines: chosen.length,
+    units: chosen.reduce((sum, item) => sum + quantityUnits(item.quantity), 0),
+  };
 }
 
 /** The consequence said before "Limpar venda" takes the lines out. */
-export function clearSaleConsequence(count: number): string {
-  return count === 1
-    ? "Isso tira o item da venda."
-    : `Isso tira os ${count} itens da venda.`;
+export function clearSaleConsequence(count: SaleCount): string {
+  return clearSaleConsequenceText(count);
+}
+
+const dayBefore = (day: string): string =>
+  new Date(Date.parse(`${day}T00:00:00.000Z`) - 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+/**
+ * Said while a cart that began on another store day is still on the screen with the date empty: the sale is dated at
+ * the moment of confirmation, not at the day it began. Derived from the clock and the form, never stored. Offline
+ * there is no date field, so the sentence ends at "de hoje".
+ */
+export function draftNewDayNotice({
+  dateEmpty,
+  now,
+  offline,
+  startedAt,
+  timezone,
+}: {
+  dateEmpty: boolean;
+  now: Date;
+  offline: boolean;
+  startedAt: string | null;
+  timezone: string | null;
+}): string | null {
+  if (startedAt === null || !dateEmpty) {
+    return null;
+  }
+  const startedDay = calendarDayInTimezone(new Date(startedAt), timezone);
+  const today = calendarDayInTimezone(now, timezone);
+  if (startedDay === today) {
+    return null;
+  }
+  const began =
+    startedDay === dayBefore(today)
+      ? "Esta venda começou ontem."
+      : "Esta venda começou em outro dia.";
+  return offline
+    ? `${began} Ela será registrada com a data de hoje.`
+    : `${began} Ela será registrada com a data de hoje, a não ser que você preencha “Data e hora da venda”.`;
 }

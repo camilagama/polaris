@@ -16,6 +16,7 @@ const row = (
 ) => ({
   id: "0199c2d0-0000-7000-8000-000000000002",
   isCurrent: false,
+  kind: "unknown" as const,
   labelText: "Celular da Ana",
   lastSeenText: "13/10/2026, 07:00",
   registeredText: "01/10/2026, 09:00",
@@ -230,5 +231,54 @@ describe("the form of the confirmation of a revocation", () => {
     expect(html).not.toContain(">Sim, revogar este aparelho<");
     expect(buttonTag(html, "Cancelar")).toContain('aria-disabled="true"');
     expect(buttonTag(html, "Revogando…")).toContain('aria-disabled="true"');
+  });
+});
+
+const TILE = /<span aria-hidden="true"[^>]*data-row-tile=""[^>]*><svg/;
+const CURRENT_BADGE = /data-slot="badge"[^>]*>Este aparelho</;
+
+describe("a device row, its tile and its badge", () => {
+  it("draws the 36 px tile with a 16 px decorative icon before the name", () => {
+    const html = render();
+    expect(html).toMatch(TILE);
+    expect(html.search(TILE)).toBeLessThan(html.indexOf("Celular da Ana"));
+    expect(html).toContain("size-9");
+  });
+
+  it("draws the icon of the kind the name says, and the neutral one when it says nothing", () => {
+    const icons = {
+      computer: "lucide-monitor",
+      phone: "lucide-smartphone",
+      tablet: "lucide-tablet",
+      unknown: "lucide-monitor-smartphone",
+    } as const;
+    for (const [kind, icon] of Object.entries(icons)) {
+      const html = render({
+        row: row({ kind: kind as keyof typeof icons }),
+      });
+      expect(html).toContain(`${icon}"`);
+    }
+  });
+
+  it("reads name, support, state and then the action, and the state is a word in the badge", () => {
+    const current = render({ row: row({ isCurrent: true }) });
+    const order = ["Celular da Ana", "Registrado em", "Este aparelho"].map(
+      (text) => current.indexOf(text)
+    );
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(order).not.toContain(-1);
+    expect(current).toMatch(CURRENT_BADGE);
+    const other = render();
+    expect(other).not.toContain("Este aparelho");
+    expect(other.indexOf("Registrado em")).toBeLessThan(
+      other.indexOf("Revogar o aparelho")
+    );
+  });
+
+  it("is a line of the list block, with no card of its own, and Revogar stays the destructive button", () => {
+    const html = render();
+    expect(html).toContain("data-list-block-row");
+    expect(html).not.toContain('data-slot="card"');
+    expect(buttonTag(html, "Revogar")).toContain('data-slot="button"');
   });
 });

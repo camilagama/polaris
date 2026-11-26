@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserConnection } from "../lib/browser-connection";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -18,7 +19,12 @@ import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   LimitHelp,
   LimitLeaveScope,
+  FreeableLineScope,
+  type FreeableLine,
+  NearLimitNotice,
+  ViewArchivedScope,
   useLimitHelp,
+  useNearLimit,
 } from "../subscription/limit-help";
 import { isLimitReached } from "../subscription/limit-help-model";
 import {
@@ -27,6 +33,7 @@ import {
   type NewProductIds,
   newProductIds,
 } from "./product-commands";
+import { ProductDeleteDialog } from "./product-delete-dialog";
 import { ProductDialog, type ProductTab } from "./product-dialog";
 import type { ProductImportDialogProps } from "./product-import/product-import-dialog";
 import {
@@ -37,7 +44,11 @@ import {
   productErrorMessage,
 } from "./product-errors";
 import { emptyDraft, type ProductDraft } from "./product-form";
-import { ProductList, type ProductListStatus } from "./product-list";
+import {
+  PRODUCT_LIST_TITLE_ID,
+  ProductList,
+  type ProductListStatus,
+} from "./product-list";
 import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
 import type { VariantConfigurationDraft } from "./product-variants-model";
@@ -56,13 +67,9 @@ import {
   ProductsHeader,
   ProductsImportFooter,
 } from "./products-page-parts";
-import { countLineShown, shownListCount } from "./list-page-model";
-import {
-  ListCountLine,
-  LoadMoreButton,
-  StatusNav,
-  useListPage,
-} from "./screen-parts";
+import { shownListCount } from "./list-page-model";
+import { LoadMoreButton, useListPage } from "./screen-parts";
+import { useProductDelete } from "./use-product-delete";
 import { useProductsData } from "./use-products-data";
 import { useProductsLink } from "./use-products-link";
 
@@ -138,6 +145,16 @@ async function createFromDraft(
 }
 
 const PRODUCT_NOUN = ["produto", "produtos"] as const;
+
+/** The count beside the title of the list: empty while it loads, fails or finds nothing. */
+function countText(
+  listIsShown: boolean,
+  found: number,
+  total: number,
+  query: string
+): string {
+  return shownListCount(listIsShown, found, total, query, PRODUCT_NOUN) ?? "";
+}
 
 /**
  * An action's error comes first; the failed read of the address's product is said only once the list is shown, so
@@ -273,6 +290,29 @@ function isCategoryRefusal(
   return action === "create" && isCategoryUnavailable(cause);
 }
 
+interface KeptList {
+  productId: string;
+  status: ProductListStatus;
+}
+
+/** A draft kept by Esc stays while the list it was kept from is the one on screen. */
+function keptStaysOn(
+  list: KeptList | null,
+  productId: string,
+  next: ProductListStatus
+): boolean {
+  return list?.productId === productId && list.status === next;
+}
+
+/** Already in "Arquivados" the second line has no link to it. */
+const FREEABLE_LINE: Record<
+  ProductListStatus,
+  Exclude<FreeableLine, "hidden">
+> = {
+  active: "link",
+  archived: "plain",
+};
+
 export function ProductsPage() {
   const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
@@ -293,6 +333,8 @@ export function ProductsPage() {
   const [focusVariantId, setFocusVariantId] = useState<string | null>(null);
   // the draft kept when the dialog was closed by Esc, "Fechar" or the step back: "new", or the id of the product
   const keptRef = useRef<string | null>(returned.keptKey);
+  // the list the product of the kept draft was on when its dialog was dismissed: coming back to it keeps the draft
+  const keptListRef = useRef<KeptList | null>(null);
   // where the focus goes back to when the dialog closes without a message to read: what opened it
   const originRef = useRef<() => HTMLElement | null>(() => null);
   // the tabs of the dialog with work not saved yet: a save of the data does not close the dialog over it
@@ -313,6 +355,9 @@ export function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
   // what goes with the plan's limit refusal (corte 61b, corte 1.6); shown only while that error is shown
   const { help: limitHelp, show: showLimitHelp } = useLimitHelp();
+  // a product created, the variants saved in the dialog or a spreadsheet imported change the use: the warning at the end of the list reads it again
+  const [usageVersion, setUsageVersion] = useState(0);
+  const nearLimit = useNearLimit("variants", usageVersion);
   const showLimitHelpOn = useCallback(
     (cause: unknown, action: "create" | "update") => {
       if (action === "create" && isLimitReached(cause)) {
@@ -360,6 +405,16 @@ export function ProductsPage() {
     },
     [focusFeedback]
   );
+
+  /** After a tab was chosen for the person (the address, "Ver arquivados"): the focus goes to the selected tab, in an effect, after it is drawn. */
+  const [tabFocus, setTabFocus] = useState(0);
+  useEffect(() => {
+    if (tabFocus > 0) {
+      rootRef.current
+        ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+        ?.focus();
+    }
+  }, [tabFocus]);
 
   /** What the last action said goes away when another starts. */
   const clearMessages = useCallback(() => {
@@ -411,6 +466,7 @@ export function ProductsPage() {
   const handleImported = useCallback(() => {
     // the products live on the server: bring them to this device, then show them
     workspace?.runtime.syncNow().catch(() => undefined);
+    setUsageVersion((version) => version + 1);
     refresh();
   }, [refresh, workspace]);
 
@@ -514,6 +570,7 @@ export function ProductsPage() {
             return;
           }
           setNotice(created);
+          setUsageVersion((version) => version + 1);
           newProductNames.current = null;
         }
         keptRef.current = null;
@@ -546,8 +603,45 @@ export function ProductsPage() {
     ]
   );
 
-  // `?produto=` and `?novo=1`: the dialog the address names opens, on the variants of the product or for a new one
+  const handleStatus = useCallback(
+    (value: ProductListStatus) => {
+      setStatus(value);
+      clearMessages();
+      // the variants typed for a product of the other list go with it
+      if (value !== status) {
+        setVariantsDraft((current) =>
+          current && keptStaysOn(keptListRef.current, current.productId, value)
+            ? current
+            : null
+        );
+      }
+      // the draft kept for a product of the other list goes with it (a new product's draft stays)
+      if (
+        keptRef.current !== null &&
+        keptRef.current !== "new" &&
+        !keptStaysOn(keptListRef.current, keptRef.current, value)
+      ) {
+        keptRef.current = null;
+        setDialogProductId(null);
+        setDraft(emptyDraft);
+      }
+    },
+    [clearMessages, status]
+  );
+
+  /**
+   * "Ver arquivados" and `?arquivados=1`: the list on "Arquivados", the focus on its tab. What the dialog that sent the
+   * person here kept stays for the way back to the list it came from.
+   */
+  const handleViewArchived = useCallback(() => {
+    setStatus("archived");
+    clearMessages();
+    setTabFocus((count) => count + 1);
+  }, [clearMessages]);
+
+  // `?produto=`, `?novo=1` and `?arquivados=1`: the dialog the address names opens, on the variants of the product or for a new one
   const { retry: retryLink } = useProductsLink(workspace, organizationId, {
+    onArchived: handleViewArchived,
     onImport: handleImport,
     onNew: () => openDialog(null, "dados"),
     onNotice: (message) => {
@@ -606,10 +700,12 @@ export function ProductsPage() {
       product ? draftOf(product) : emptyDraft
     );
     keptRef.current = changed ? (dialogProductId ?? "new") : null;
+    keptListRef.current =
+      dialogProductId === null ? null : { productId: dialogProductId, status };
     setDialogOpen(false);
     setError(null);
     setNotice(null);
-  }, [dialogProductId, draft, products]);
+  }, [dialogProductId, draft, products, status]);
 
   /** The draft is empty again only once the dialog has finished closing (and only when nothing was kept). */
   const handleDialogClosed = useCallback(() => {
@@ -652,6 +748,7 @@ export function ProductsPage() {
     (_product: ProductReadModel) => {
       // The variants live on the server: bring them to this device, then show them.
       workspace?.runtime.syncNow().catch(() => undefined);
+      setUsageVersion((version) => version + 1);
       refresh();
     },
     [refresh, workspace]
@@ -687,6 +784,7 @@ export function ProductsPage() {
           action === "archive" && result.changed ? result.product : null
         );
         refresh();
+        setUsageVersion((version) => version + 1);
       } catch (cause: unknown) {
         setError(productErrorMessage(cause, action));
         refresh();
@@ -712,24 +810,6 @@ export function ProductsPage() {
       handleProductAction(undoProduct, "restore", true);
     }
   }, [handleProductAction, undoProduct]);
-
-  const handleStatus = useCallback(
-    (value: ProductListStatus) => {
-      setStatus(value);
-      clearMessages();
-      // the variants typed for a product of the other list go with it
-      if (value !== status) {
-        setVariantsDraft(null);
-      }
-      // the draft kept for a product of the other list goes with it (a new product's draft stays)
-      if (keptRef.current !== null && keptRef.current !== "new") {
-        keptRef.current = null;
-        setDialogProductId(null);
-        setDraft(emptyDraft);
-      }
-    },
-    [clearMessages, status]
-  );
 
   const dialogProduct =
     products.find((product) => product.id === dialogProductId) ?? null;
@@ -774,6 +854,29 @@ export function ProductsPage() {
   const page = useListPage(visibleProducts, `${status}\n${query}`);
   const isOffline = workspace !== null && !workspace.online;
   const listIsShown = !(isLoading || loadError);
+  const handleDeleteStart = useCallback(() => {
+    setError(null);
+    setNotice(null);
+    setUndoProduct(null);
+  }, []);
+  const handleDeleted = useCallback((product: ProductReadModel) => {
+    setNotice(`Produto “${product.name}” excluído.`);
+    setUsageVersion((version) => version + 1);
+  }, []);
+  const productDelete = useProductDelete({
+    isLoading,
+    onDeleted: handleDeleted,
+    onStart: handleDeleteStart,
+    organizationId,
+    products,
+    refresh,
+    workspace,
+  });
+  const askDelete = productDelete.ask;
+  const handleDeleteProduct = useCallback(
+    (product: ProductReadModel) => askDelete(product, page.items),
+    [askDelete, page.items]
+  );
   const feedbackError = linkFeedbackError(
     error,
     linkFailure,
@@ -791,126 +894,152 @@ export function ProductsPage() {
   }, [focusFeedback, linkAlertShown]);
 
   return (
-    <div className="products-page" ref={rootRef}>
-      <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-        <ProductsHeader
-          buttonRef={newButtonRef}
-          importButtonRef={importButtonRef}
-          isOffline={isOffline}
-          onImport={handleImport}
-          onNew={handleNew}
-          showNew={status === "active"}
-        />
-        {isOffline ? <OfflineNotice /> : null}
-        {/* while the dialog is open it covers this part of the screen: what the actions say is said inside it */}
-        <ActionFeedback
-          error={dialogShown ? null : feedbackError.message}
-          errorExtra={<LimitHelp help={shownLimitHelp} />}
-          notice={dialogShown ? null : notice}
-          onRetryError={feedbackError.onRetry}
-          onUndo={undoProduct ? handleUndoArchive : undefined}
-          regionRef={feedbackRef}
-          undoDisabled={isOffline || pendingAction !== null}
-          undoReasonId={isOffline ? OFFLINE_NOTICE_ID : undefined}
-        />
+    <ViewArchivedScope value={handleViewArchived}>
+      <FreeableLineScope value={FREEABLE_LINE[status]}>
+        <div className="products-page" ref={rootRef}>
+          <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
+            <ProductsHeader
+              buttonRef={newButtonRef}
+              importButtonRef={importButtonRef}
+              isOffline={isOffline}
+              onImport={handleImport}
+              onNew={handleNew}
+              showNew={status === "active"}
+            />
+            {isOffline ? <OfflineNotice /> : null}
+            {/* while the dialog is open it covers this part of the screen: what the actions say is said inside it */}
+            <ActionFeedback
+              error={dialogShown ? null : feedbackError.message}
+              errorExtra={<LimitHelp help={shownLimitHelp} />}
+              notice={dialogShown ? null : notice}
+              onRetryError={feedbackError.onRetry}
+              onUndo={undoProduct ? handleUndoArchive : undefined}
+              regionRef={feedbackRef}
+              undoDisabled={isOffline || pendingAction !== null}
+              undoReasonId={isOffline ? OFFLINE_NOTICE_ID : undefined}
+            />
 
-        {/* the dialog of a product that exists opens once the product is in the list (an address can name it first);
+            {/* the dialog of a product that exists opens once the product is in the list (an address can name it first);
             "Conhecer o Pro" inside it closes it as Esc does, keeping the draft */}
-        <LimitLeaveScope value={handleDismissDialog}>
-          <ProductDialog
-            categories={categories}
-            categoryRefusal={categoryRefusal}
-            draft={draft}
-            error={dialogShown ? feedbackError.message : null}
-            errorExtra={<LimitHelp help={shownLimitHelp} />}
-            feedbackRef={feedbackRef}
-            finalFocus={finalFocus}
-            focusVariantId={focusVariantId}
-            isOffline={isOffline}
-            isPending={pendingAction === "create" || pendingAction === "update"}
-            notice={dialogShown ? notice : null}
-            onCancel={handleCancelDialog}
-            onChange={handleDraftChange}
-            onClosed={handleDialogClosed}
-            onDismiss={handleDismissDialog}
-            onProductUpdated={handleVariantsUpdated}
-            onSubmit={handleSubmit}
-            onTabChange={setDialogTab}
-            onUnsentTabsChange={handleUnsentTabs}
-            onVariantsDraftChange={handleVariantsDraftChange}
-            open={dialogShown}
-            organizationId={organizationId}
-            product={dialogProduct}
-            stockHref={dialogStockHref}
-            tab={dialogTab}
-            variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
-          />
-        </LimitLeaveScope>
+            <LimitLeaveScope value={handleDismissDialog}>
+              <ProductDialog
+                categories={categories}
+                categoryRefusal={categoryRefusal}
+                draft={draft}
+                error={dialogShown ? feedbackError.message : null}
+                errorExtra={<LimitHelp help={shownLimitHelp} />}
+                feedbackRef={feedbackRef}
+                finalFocus={finalFocus}
+                focusVariantId={focusVariantId}
+                isOffline={isOffline}
+                isPending={
+                  pendingAction === "create" || pendingAction === "update"
+                }
+                notice={dialogShown ? notice : null}
+                onCancel={handleCancelDialog}
+                onChange={handleDraftChange}
+                onClosed={handleDialogClosed}
+                onDismiss={handleDismissDialog}
+                onProductUpdated={handleVariantsUpdated}
+                onSubmit={handleSubmit}
+                onTabChange={setDialogTab}
+                onUnsentTabsChange={handleUnsentTabs}
+                onVariantsDraftChange={handleVariantsDraftChange}
+                open={dialogShown}
+                organizationId={organizationId}
+                product={dialogProduct}
+                stockHref={dialogStockHref}
+                tab={dialogTab}
+                variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
+              />
+            </LimitLeaveScope>
 
-        <ImportDialogSlot
-          categories={categories}
-          Dialog={ImportDialog}
-          finalFocus={importFinalFocus}
-          onClose={closeImport}
-          onClosed={handleImportClosed}
-          onEntered={handleImported}
-          onShowProducts={handleShowImported}
-          open={importOpen}
-        />
+            <ProductDeleteDialog
+              finalFocus={productDelete.finalFocus}
+              isOffline={isOffline}
+              onCancel={productDelete.cancel}
+              onConfirm={productDelete.confirm}
+              organizationId={organizationId}
+              pending={productDelete.pending}
+              product={productDelete.target}
+              refusal={productDelete.refusal}
+              stockHref={productStockHref(
+                productDelete.target,
+                organization.role
+              )}
+            />
 
-        <ProductSearch onChange={setQuery} value={query} />
-        <StatusNav
-          label="Estado dos produtos"
-          onSelect={handleStatus}
-          options={PRODUCT_STATUS_OPTIONS}
-          value={status}
-        />
-        <ListCountLine
-          shown={countLineShown(isLoading, listIsShown, products.length)}
-          text={shownListCount(
-            listIsShown,
-            visibleProducts.length,
-            products.length,
-            query,
-            PRODUCT_NOUN
-          )}
-        />
+            <ImportDialogSlot
+              categories={categories}
+              Dialog={ImportDialog}
+              finalFocus={importFinalFocus}
+              onClose={closeImport}
+              onClosed={handleImportClosed}
+              onEntered={handleImported}
+              onShowProducts={handleShowImported}
+              open={importOpen}
+            />
 
-        {loadError ? (
-          <LoadErrorNotice message={loadError} onRetry={handleRetryList} />
-        ) : (
-          <ProductList
-            categories={categories}
-            isLoading={isLoading}
-            isOffline={isOffline}
-            onArchive={handleArchiveProduct}
-            onEdit={handleEdit}
-            onManageMedia={handleManageMedia}
-            onManageVariants={handleManageVariants}
-            onNew={handleNew}
-            onRestore={handleRestoreProduct}
-            pendingAction={pendingAction}
-            products={page.items}
-            query={query}
-            status={status}
-            syncStates={syncStates}
-            total={products.length}
-          />
-        )}
-        {listIsShown && page.hasMore ? (
-          <LoadMoreButton
-            listLabel="Produtos"
-            onClick={page.loadMore}
-            shown={page.items.length}
-          />
-        ) : null}
-        <ProductsImportFooter
-          importButtonRef={importButtonRef}
-          isOffline={isOffline}
-          onImport={handleImport}
-          showNew={status === "active"}
-        />
-      </div>
-    </div>
+            <div className="grid gap-4 min-[47.5rem]:flex min-[47.5rem]:items-center min-[47.5rem]:justify-between">
+              <div className="min-w-0 min-[47.5rem]:flex-1">
+                <ProductSearch onChange={setQuery} value={query} />
+              </div>
+              <SegmentedFilter
+                label="Estado dos produtos"
+                onSelect={handleStatus}
+                options={PRODUCT_STATUS_OPTIONS}
+                value={status}
+              />
+            </div>
+            {loadError ? (
+              <LoadErrorNotice message={loadError} onRetry={handleRetryList} />
+            ) : (
+              <ProductList
+                categories={categories}
+                count={countText(
+                  listIsShown,
+                  visibleProducts.length,
+                  products.length,
+                  query
+                )}
+                isLoading={isLoading}
+                isOffline={isOffline}
+                onArchive={handleArchiveProduct}
+                onDelete={handleDeleteProduct}
+                onEdit={handleEdit}
+                onManageMedia={handleManageMedia}
+                onManageVariants={handleManageVariants}
+                onNew={handleNew}
+                onRestore={handleRestoreProduct}
+                pendingAction={pendingAction}
+                products={page.items}
+                query={query}
+                status={status}
+                syncStates={syncStates}
+                total={products.length}
+              />
+            )}
+            {listIsShown && page.hasMore ? (
+              <LoadMoreButton
+                listHeadingId={PRODUCT_LIST_TITLE_ID}
+                onClick={page.loadMore}
+                shown={page.items.length}
+              />
+            ) : null}
+            <ProductsImportFooter
+              importButtonRef={importButtonRef}
+              isOffline={isOffline}
+              onImport={handleImport}
+              showNew={status === "active"}
+            />
+            <NearLimitNotice
+              freeable={FREEABLE_LINE[status]}
+              hidden={feedbackError.message === PRODUCT_LIMIT_REACHED}
+              view={nearLimit}
+            />
+          </div>
+        </div>
+      </FreeableLineScope>
+    </ViewArchivedScope>
   );
 }

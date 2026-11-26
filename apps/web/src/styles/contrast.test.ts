@@ -172,26 +172,86 @@ describe.each([
 });
 
 /**
- * The step of the hour of the "Primeiros passos" (Início): its number is `mark-foreground` over the tint of the circle
- * (`mark/10`, `mark/15` in the dark) and its border is `mark` over the card. Both pairs are rows of the tables above;
- * this one says they cannot leave the map, and holds the number to the 4.5:1 of text and the border to the 3:1 of a
- * graphic element.
+ * The bar of "Por categoria" (Despesas): `--chart-2`, the color of the expenses in the bar of parts of the Resultado,
+ * over the `--muted` track it grows on. The bar is a drawing beside the written name, share and amount, and still
+ * reaches the 3:1 of a graphic element (WCAG 1.4.11) in both themes.
  */
 describe.each([
-  ["Tema claro", tokens(block(":root")), "mark/10"],
+  ["Tema claro", tokens(block(":root"))],
   [
     "Tema escuro",
     new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
-    "mark/15",
   ],
-])("contraste do passo atual, %s", (section, palette, tint) => {
+])("contraste da barra de Por categoria, %s", (section, palette) => {
+  it("`chart-2` / `muted` is in the map and reaches 3:1", () => {
+    const row = pairs(section).find(
+      (item) => item.foreground === "`chart-2`" && item.background === "`muted`"
+    );
+    expect(row, `chart-2 / muted is not in "${section}"`).toBeDefined();
+    expect(
+      ratio(color("`chart-2`", palette), color("`muted`", palette))
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/**
+ * The step of the hour of the "Primeiros passos" (Início): its icon is `primary` (ink) over the tint of the circle
+ * (`primary/10`) and its border is `primary` over the card, never the brand red (which reads as an error in a box).
+ * Both pairs are rows of the tables above; this one says they cannot leave the map, and holds the icon to the 4.5:1 of
+ * text and the border to the 3:1 of a graphic element.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste do passo atual, %s", (section, palette) => {
   const rows = pairs(section);
 
   it.each([
-    ["`mark-foreground`", `\`${tint} sobre card\``, 4.5],
-    ["`mark`", "`card`", 3],
+    ["`primary`", "`primary/10 sobre card`", 4.5],
+    ["`primary`", "`card`", 3],
   ] as const)(
     "%s / %s is in the map and reaches %d:1",
+    (foreground, background, bar) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground && item.background === background
+      );
+      expect(
+        row,
+        `${foreground} / ${background} is not in "${section}"`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
+
+/**
+ * The ring and the box of the "Primeiros passos" (menu and Início): the arc of the ring is ink over the sidebar and over
+ * the card, the check is ink over `primary/10`, and the words of a done step are `muted-foreground` over the soft row
+ * (`muted/50`). The drawings are graphic elements (3:1, WCAG 1.4.11) and the words are text (4.5:1). Each pair is a row of
+ * the tables above; this one says they cannot leave the map.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste do anel e do passo feito, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`primary`", "`sidebar`", 3],
+    ["`primary`", "`card`", 3],
+    ["`primary`", "`primary/10 sobre card`", 3],
+    ["`muted-foreground`", "`muted/50 sobre card`", 4.5],
+  ] as const)(
+    "%s / %s reaches %d:1 and is in the map",
     (foreground, background, bar) => {
       const row = rows.find(
         (item) =>
@@ -261,6 +321,512 @@ describe("contraste do contorno do campo sobre muted, tema escuro", () => {
     expect(row, "input / `muted` is not in the map").toBeDefined();
     expect(
       ratio(color("`input`", palette), color("`muted`", palette))
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/**
+ * The framed card (Início blocks, from 760 px): the title and the foot sit on `--muted`, and the panel in `--card` stands
+ * out of it. `--card` against `--muted` does not reach the 3:1 of a graphic edge in either theme, so the panel must carry
+ * the 1 px `--border` line (AC-2.4); the test reads the class of the panel and fails if the line goes while the pair is
+ * under 3:1, and holds the text on the frame to the 4.5:1 of text.
+ */
+const cardSource = readFileSync(
+  new URL("../ui/card.tsx", import.meta.url),
+  "utf8"
+);
+const PANEL_CLASS = /function CardFramePanel[\s\S]*?cn\(\s*"([^"]*)"/;
+
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da moldura do cartão, %s", (_section, palette) => {
+  it("o painel tem o fio de --border enquanto --card sobre --muted fica abaixo de 3:1", () => {
+    const edge = ratio(color("`card`", palette), color("`muted`", palette));
+    const panel = PANEL_CLASS.exec(cardSource)?.[1] ?? "";
+    expect(panel).not.toBe("");
+    if (edge < 3) {
+      expect(panel.split(" ")).toContain("md:ring-1");
+      expect(panel.split(" ")).toContain("md:ring-border");
+    }
+  });
+
+  it("o título e o pé (foreground) e a ação de cabeçalho (muted-foreground) leem sobre --muted com 4,5:1", () => {
+    for (const text of ["`foreground`", "`muted-foreground`"]) {
+      expect(
+        ratio(color(text, palette), color("`muted`", palette))
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+/**
+ * The tab of a screen in the `line` variant (src/ui/tabs.tsx) over the page: the 2 px stroke under the open tab is ink
+ * (a graphic element, 3:1, WCAG 1.4.11) and the words of a closed tab are `muted-foreground` (text, 4.5:1). Both pairs
+ * are rows of the tables above, so the stroke and the closed tab cannot leave the map; the stroke is never the brand
+ * color.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da aba de tela em linha, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`foreground`", "traço de 2 px sob a aba de tela aberta", 3],
+    ["`muted-foreground`", "texto da aba de tela fechada", 4.5],
+  ] as const)(
+    "%s (%s) reaches %d:1 and is in the map",
+    (foreground, use, bar) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground &&
+          item.background === "`background`" &&
+          item.use.startsWith(use)
+      );
+      expect(row, `${use} is not in "${section}"`).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color("`background`", palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
+
+const badgeSource = readFileSync(
+  new URL("../ui/badge.tsx", import.meta.url),
+  "utf8"
+);
+const BADGE_VARIANTS = /variant:\s*\{([\s\S]*?)\n\s*\}/;
+const WHITESPACE = /\s+/;
+const DARK_PREFIX = /^dark:/;
+const TEXT_SIZE_CLASS =
+  /^text-(?:xs|sm|base|lg|[2-9]?xl|\[[\d.]+(?:px|rem|em|%)\])(?:\/[\w.[\]]+)?$/;
+const NOT_A_COLOR_CLASS =
+  /^(?:text-(?:left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip|shadow-[\w-]+)|bg-(?:no-repeat|repeat(?:-x|-y|-round|-space)?|clip-(?:border|padding|content|text)|origin-(?:border|padding|content)|fixed|local|scroll|auto|cover|contain|none|(?:top|bottom|left|right|center)(?:-(?:top|bottom|left|right))?|(?:size|position)-[\w./[\]-]+|blend-[\w-]+))$/;
+const BADGE_COLOR_CLASS = /^[a-z]+-([a-z-]+?)(?:\/(\d+))?$/;
+const BADGE_VARIANT_ENTRY = /(\w+):\s*"([^"]*)"/g;
+const BADGE_VARIANT_KEY = /^\s*[\w"'`]+:/gm;
+
+const badgeBlock = BADGE_VARIANTS.exec(badgeSource)?.[1] ?? "";
+const badgeVariants = [...badgeBlock.matchAll(BADGE_VARIANT_ENTRY)].map(
+  ([, name, classes]) => ({
+    classes: classes as string,
+    name: name as string,
+  })
+);
+
+function badgePair(
+  classes: string,
+  palette: ReturnType<typeof tokens>,
+  dark: boolean
+) {
+  const items = classes.split(WHITESPACE).filter(Boolean);
+  const light = items.filter((item) => !item.includes(":"));
+  const darkOnly = dark
+    ? items.filter((item) => DARK_PREFIX.test(item) && !item.includes(":", 5))
+    : [];
+  const pick = (utility: string) => {
+    const read = (list: string[]) =>
+      list
+        .map((item) => item.replace(DARK_PREFIX, ""))
+        .filter(
+          (item) =>
+            item.startsWith(`${utility}-`) &&
+            !TEXT_SIZE_CLASS.test(item) &&
+            !NOT_A_COLOR_CLASS.test(item)
+        )
+        .map((item) => {
+          const match = BADGE_COLOR_CLASS.exec(item);
+          if (!(match && palette.has(match[1] as string))) {
+            throw new Error(
+              `class "${item}" is not a ${utility}-<token> of theme.css`
+            );
+          }
+          return match;
+        })
+        .at(-1);
+    return read(darkOnly) ?? read(light);
+  };
+  const fill = pick("bg");
+  const text = pick("text");
+  if (!(fill && text)) {
+    return null;
+  }
+  if (text[2]) {
+    throw new Error(
+      `text-${text[1]}/${text[2]} has an opacity on the text: use a plain text-<token> so the pair is measured`
+    );
+  }
+  const background = fill[2] ? `${fill[1]}/${fill[2]} sobre sidebar` : fill[1];
+  return {
+    background: `\`${background}\``,
+    foreground: `\`${text[1]}\``,
+  };
+}
+
+describe("variantes do Badge lidas de ui/badge.tsx", () => {
+  it("lê toda variante do arquivo, sem cortar nem pular nenhuma", () => {
+    expect(badgeVariants.map((item) => item.name)).toEqual(
+      expect.arrayContaining([
+        "destructive",
+        "ink",
+        "outline",
+        "secondary",
+        "warning",
+      ])
+    );
+    expect(
+      badgeVariants.length,
+      'a variant of src/ui/badge.tsx was not read: write each as `name: "classes"` on one line of the `variant` object'
+    ).toBe(badgeBlock.match(BADGE_VARIANT_KEY)?.length);
+  });
+});
+
+/**
+ * The `Badge` (src/ui/badge.tsx): the pair of each variant is read from the classes of the variant in the source, so
+ * a color changed there is measured and a variant added there is measured too. The text is the `text-*` token and the
+ * fill the `bg-*` token (`dark:bg-*` replaces it in the dark theme); a fill with an opacity is a tint over the header
+ * (`sidebar`, where the sync chip sits), a plain one is solid. All are text (4.5:1, WCAG 1.4.3) and each pair must be
+ * a row of the tables above, so a token change that breaks one is read there too.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), false],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    true,
+  ],
+] as const)("contraste do Badge, %s", (section, palette, dark) => {
+  const rows = pairs(section);
+
+  it.each(badgeVariants)(
+    "variante $name reaches 4.5:1 and is in the map",
+    ({ classes, name }) => {
+      const pair = badgePair(classes, palette, dark);
+      expect(
+        pair,
+        `Badge variant "${name}" in src/ui/badge.tsx has no readable pair: give it a bg-<token> and a text-<token> class of theme.css`
+      ).not.toBeNull();
+      const { background, foreground } = pair as NonNullable<typeof pair>;
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground && item.background === background
+      );
+      expect(
+        row,
+        `Badge variant "${name}": ${foreground} / ${background} is not in "${section}" of docs/design/contraste-v5.1.md; add the row with its measured ratio, or use a pair already in the map`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  );
+});
+
+const NOT_A_COLOR_CASES = [
+  "text-left",
+  "text-center",
+  "text-right",
+  "text-justify",
+  "text-start",
+  "text-end",
+  "text-wrap",
+  "text-nowrap",
+  "text-balance",
+  "text-pretty",
+  "text-ellipsis",
+  "text-clip",
+  "text-shadow-2xs",
+  "text-shadow-lg",
+  "text-shadow-none",
+  "text-shadow-red-500",
+  "text-shadow-sky-500",
+  "bg-no-repeat",
+  "bg-repeat",
+  "bg-repeat-x",
+  "bg-repeat-y",
+  "bg-repeat-round",
+  "bg-repeat-space",
+  "bg-clip-border",
+  "bg-clip-padding",
+  "bg-clip-content",
+  "bg-clip-text",
+  "bg-origin-border",
+  "bg-origin-padding",
+  "bg-origin-content",
+  "bg-fixed",
+  "bg-local",
+  "bg-scroll",
+  "bg-auto",
+  "bg-cover",
+  "bg-contain",
+  "bg-none",
+  "bg-top",
+  "bg-bottom",
+  "bg-left",
+  "bg-right",
+  "bg-center",
+  "bg-top-left",
+  "bg-top-right",
+  "bg-bottom-left",
+  "bg-bottom-right",
+  "bg-left-top",
+  "bg-left-bottom",
+  "bg-right-top",
+  "bg-right-bottom",
+  "bg-size-cover",
+  "bg-size-[auto_10px]",
+  "bg-size-[1.5rem_2rem]",
+  "bg-size-[100px/50px]",
+  "bg-position-[top_left]",
+  "bg-position-[0.5rem_1.25rem]",
+  "bg-position-[10px/20px]",
+  "bg-position-[-1rem_-2rem]",
+  "bg-position-center",
+  "bg-blend-multiply",
+  "bg-blend-color-dodge",
+] as const;
+
+const menuProgressSource = readFileSync(
+  new URL("../app-shell/menu-progress.tsx", import.meta.url),
+  "utf8"
+);
+const DEFAULT_BADGE_VARIANT = /defaultVariants:\s*\{\s*variant:\s*"(\w+)"/;
+const MENU_BADGE = /<Badge([^>]*)>\s*Assinatura\s*<\/Badge>/;
+
+/**
+ * The "Assinatura" mark of the trial line at the foot of the menu is the `Badge` with no variant and no color class of
+ * its own, so its pair is the one of the default variant of `ui/badge.tsx`: read from there, it is in the map of the
+ * two themes and reaches 4.5:1 (WCAG 1.4.3). A variant or a `text-*`/`bg-*` class added to the mark leaves this pair.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), false],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    true,
+  ],
+] as const)(
+  "contraste do selo Assinatura do menu, %s",
+  (section, palette, dark) => {
+    it("usa a variante padrão do Badge, sem cor própria, e o par chega a 4.5:1", () => {
+      const attributes = MENU_BADGE.exec(menuProgressSource)?.[1];
+      expect(
+        attributes,
+        'the "Assinatura" mark of src/app-shell/menu-progress.tsx must be a `<Badge>`'
+      ).toBeDefined();
+      expect((attributes as string).trim()).toBe("");
+      const name = DEFAULT_BADGE_VARIANT.exec(badgeSource)?.[1];
+      const variant = badgeVariants.find((item) => item.name === name);
+      expect(
+        variant,
+        "the default variant of the Badge was not read"
+      ).toBeDefined();
+      const pair = badgePair(
+        (variant as NonNullable<typeof variant>).classes,
+        palette,
+        dark
+      );
+      const { background, foreground } = pair as NonNullable<typeof pair>;
+      expect(
+        pairs(section).find(
+          (item) =>
+            item.foreground === foreground && item.background === background
+        ),
+        `${foreground} / ${background} is not in "${section}" of docs/design/contraste-v5.1.md`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+);
+
+describe("badgePair: a ordem das classes e as utilidades que não são cor", () => {
+  const palette = new Map([
+    ...tokens(block(":root")),
+    ...tokens(block(".dark")),
+  ]);
+
+  it("mede o mesmo par com a classe dark: antes ou depois da clara", () => {
+    const normal = "bg-card text-foreground dark:bg-secondary";
+    const inverted = "dark:bg-secondary bg-card text-foreground";
+    expect(badgePair(inverted, palette, true)).toEqual(
+      badgePair(normal, palette, true)
+    );
+    expect(badgePair(inverted, palette, true)?.background).toBe("`secondary`");
+    expect(badgePair(inverted, palette, false)).toEqual(
+      badgePair(normal, palette, false)
+    );
+    expect(badgePair(inverted, palette, false)?.background).toBe("`card`");
+  });
+
+  it("mede cada ramo de tamanho, também com o prefixo dark:", () => {
+    const base = badgePair("bg-card text-foreground", palette, true);
+    for (const size of [
+      "text-xs",
+      "text-sm",
+      "text-base",
+      "text-lg",
+      "text-xl",
+      "text-2xl",
+      "text-9xl",
+      "text-[11px]",
+      "text-[0.75rem]",
+      "text-[0.75em]",
+      "text-[110%]",
+      "text-sm/6",
+      "text-base/[1.5]",
+    ]) {
+      for (const dark of [false, true]) {
+        const expected = badgePair("bg-card text-foreground", palette, dark);
+        expect(
+          badgePair(`bg-card text-foreground ${size}`, palette, dark),
+          `${size} depois das cores`
+        ).toEqual(expected);
+        expect(
+          badgePair(`${size} bg-card text-foreground`, palette, dark),
+          `${size} antes das cores`
+        ).toEqual(expected);
+      }
+      expect(
+        badgePair(`bg-card text-foreground dark:${size}`, palette, true),
+        `dark:${size}`
+      ).toEqual(base);
+    }
+  });
+
+  it.each(NOT_A_COLOR_CASES)(
+    "ignora %s, que não é cor, sem erro de token",
+    (other) => {
+      for (const dark of [false, true]) {
+        const expected = badgePair("bg-card text-foreground", palette, dark);
+        expect(
+          badgePair(`${other} bg-card text-foreground`, palette, dark),
+          `${other} antes das cores`
+        ).toEqual(expected);
+        expect(
+          badgePair(`bg-card text-foreground ${other}`, palette, dark),
+          `${other} depois das cores`
+        ).toEqual(expected);
+        expect(
+          badgePair(`bg-card text-foreground dark:${other}`, palette, dark),
+          `dark:${other}`
+        ).toEqual(expected);
+      }
+    }
+  );
+
+  it.each([
+    "text-leftover",
+    "text-end-foo",
+    "text-shadow",
+    "bg-cover-x",
+    "bg-top-leftish",
+    "bg-nonexistent",
+  ])(
+    "%s quase casa com uma utilidade que não é cor e segue recusada",
+    (near) => {
+      expect(() =>
+        badgePair(`bg-card text-foreground ${near}`, palette, false)
+      ).toThrow(`class "${near}" is not a`);
+    }
+  );
+
+  it("a utilidade que não é cor não esconde a cor que vem depois", () => {
+    expect(
+      badgePair("bg-card text-center text-foreground", palette, false)
+    ).toEqual(badgePair("bg-card text-foreground", palette, false));
+    expect(
+      badgePair(
+        "bg-card bg-no-repeat bg-secondary text-foreground",
+        palette,
+        false
+      )?.background
+    ).toBe("`secondary`");
+  });
+
+  it.each(badgeVariants)(
+    "a variante real $name mede o mesmo par com utilidades que não são cor",
+    ({ classes }) => {
+      for (const dark of [false, true]) {
+        expect(
+          badgePair(
+            `${classes} text-center bg-no-repeat text-sm`,
+            palette,
+            dark
+          )
+        ).toEqual(badgePair(classes, palette, dark));
+      }
+    }
+  );
+
+  it("só a classe dark: de um nível troca a clara", () => {
+    for (const nested of [
+      "dark:hover:bg-secondary",
+      "hover:dark:bg-secondary",
+    ]) {
+      expect(
+        badgePair(`bg-card text-foreground ${nested}`, palette, true)
+          ?.background
+      ).toBe("`card`");
+    }
+  });
+
+  it("segue recusando text-* de cor arbitrária, que não é tamanho", () => {
+    for (const arbitrary of ["text-[#fff]", "text-[var(--x)]"]) {
+      expect(() =>
+        badgePair(`bg-card text-foreground ${arbitrary}`, palette, false)
+      ).toThrow("is not a text-<token> of theme.css");
+    }
+  });
+
+  it("segue recusando text-* que não é token nem tamanho", () => {
+    expect(() => badgePair("bg-card text-nao-existe", palette, false)).toThrow(
+      "is not a text-<token> of theme.css"
+    );
+  });
+});
+
+/**
+ * The ring of `InsetBlock tone="destructive"` (the confirmation of what cannot be undone, in the row itself): the
+ * opacity is read from the component, not copied here, and `destructive` at that opacity over the `--muted` the block
+ * is filled with has to keep the 3:1 of a graphic element (WCAG 1.4.11) in both themes.
+ */
+const insetSource = readFileSync(
+  new URL("../ui/inset-block.tsx", import.meta.url),
+  "utf8"
+);
+const DESTRUCTIVE_RING = /ring-destructive\/(\d+)/g;
+
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste do anel da confirmação destrutiva, %s", (section, palette) => {
+  it("o anel destructive sobre --muted está no mapa e fica em pelo menos 3:1", () => {
+    const rings = [...insetSource.matchAll(DESTRUCTIVE_RING)].map(
+      (match) => match[1] as string
+    );
+    expect(rings).toHaveLength(1);
+    const foreground = `\`destructive/${rings[0]} sobre muted\``;
+    const row = pairs(section).find(
+      (item) => item.foreground === foreground && item.background === "`muted`"
+    );
+    expect(
+      row,
+      `${foreground} / muted is not in "${section}" of docs/design/contraste-v5.1.md; add the row with its measured ratio`
+    ).toBeDefined();
+    expect(
+      ratio(color(foreground, palette), color("`muted`", palette))
     ).toBeGreaterThanOrEqual(3);
   });
 });

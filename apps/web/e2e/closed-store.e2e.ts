@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { runClockFor } from "./run-clock-for";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const STORE_ID = "0199c2d0-0000-7000-8000-00000000a001";
@@ -801,6 +802,7 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
   test("recusa por entrada de mais de 15 minutos: o texto próprio, sem releitura nem segunda chamada", async ({
     page,
   }) => {
+    await page.clock.install({ time: NOW });
     const calls = await openPanel(page, {
       recover: (route) =>
         route.fulfill(refusal("FORBIDDEN", 403, "fresh_session_required")),
@@ -812,7 +814,7 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
     );
     await expect(page.getByRole("main")).not.toContainText(REOPENED);
     await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
-    await page.waitForTimeout(1500);
+    await runClockFor(page, 1500);
     expect(calls.recovers).toHaveLength(1);
     expect(calls.statuses).toBe(1);
   });

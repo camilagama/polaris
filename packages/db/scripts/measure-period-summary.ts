@@ -20,6 +20,7 @@ import {
 import { evaluateActiveGoals } from "../src/goal-repository";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import { assertAllowedGateUrl } from "./gate-hosts";
+import { rollbackAndRelease } from "./gate-roles";
 import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
 import {
   runtimeRole,
@@ -166,6 +167,7 @@ async function measureStore(
         capability,
         isolationLevel: "repeatable read",
         requestedOrganizationId: fixture.organizationId,
+        requireLegalAcceptance: false,
       },
       operation
     );
@@ -333,11 +335,10 @@ async function explainLongHistory(
         [fixture.organizationId, count]
       );
       await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
       client.release();
+    } catch (error) {
+      await rollbackAndRelease(client);
+      throw error;
     }
     stores.push(fixture);
   }
@@ -421,7 +422,6 @@ async function main() {
   } finally {
     await runtime?.pool.end();
     if (roleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

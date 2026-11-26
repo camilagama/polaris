@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { PoolClient } from "pg";
 import { createDatabase } from "../src/client";
+import { inRolledBackTransaction, rollbackAndRelease } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -74,18 +75,21 @@ async function replayMigration(client: PoolClient): Promise<void> {
   }
 }
 
-/** Runs `body` in a transaction that is always rolled back. */
-async function inRolledBackTransaction(
+/**
+ * Runs `body` in a transaction that is always rolled back, on a connection taken from the pool. A failed ROLLBACK after
+ * a body that passed fails the gate, and the connection is destroyed instead of going back to the pool.
+ */
+async function withPooledConnectionRolledBack(
   owner: ReturnType<typeof createDatabase>,
   body: (client: PoolClient) => Promise<void>
 ): Promise<void> {
   const client = await owner.pool.connect();
+  let discard = true;
   try {
-    await client.query("BEGIN");
-    await body(client);
+    await inRolledBackTransaction(client, () => body(client));
+    discard = false;
   } finally {
-    await client.query("ROLLBACK");
-    client.release();
+    client.release(discard);
   }
 }
 
@@ -149,7 +153,7 @@ async function run() {
       "the index is unique, valid, not partial and on (provider_id, account_id), in that order"
     );
 
-    await inRolledBackTransaction(owner, async (client) => {
+    await withPooledConnectionRolledBack(owner, async (client) => {
       const first = await insertUser(client, "first");
       const second = await insertUser(client, "second");
       await insertAccount(client, first, "google", "subject-1");
@@ -179,7 +183,7 @@ async function run() {
       migrationStatements[0]?.startsWith("SET LOCAL lock_timeout = '10s'"),
       "the migration sets its lock_timeout first"
     );
-    await inRolledBackTransaction(owner, async (client) => {
+    await withPooledConnectionRolledBack(owner, async (client) => {
       await client.query(`DROP INDEX public.${INDEX}`);
       const first = await insertUser(client, "replay-first");
       const second = await insertUser(client, "replay-second");
@@ -224,7 +228,7 @@ async function run() {
       await holder.query("LOCK TABLE public.account IN ROW EXCLUSIVE MODE");
       const started = performance.now();
       // the index stays: the migration gives up at its LOCK TABLE, before it would reach the CREATE INDEX
-      await inRolledBackTransaction(owner, async (client) => {
+      await withPooledConnectionRolledBack(owner, async (client) => {
         await expectSqlState(
           () => replayMigration(client),
           LOCK_NOT_AVAILABLE,
@@ -237,8 +241,7 @@ async function run() {
         `it gives up after its lock_timeout of 10 s (waited ${waited} ms)`
       );
     } finally {
-      await holder.query("ROLLBACK");
-      holder.release();
+      await rollbackAndRelease(holder);
     }
     tests.push(
       "with a write holding account, the migration gives up with 55P03 after its lock_timeout of 10 s instead of queueing sign-ins behind it"

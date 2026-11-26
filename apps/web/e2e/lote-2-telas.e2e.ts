@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import { FORM_VIEWPORTS } from "./date-pickers";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import {
@@ -28,7 +28,8 @@ const ORGANIZATION = {
   timezone: "America/Sao_Paulo",
 };
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
-const DAY = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const DAY = NOW.toISOString();
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
@@ -96,6 +97,7 @@ async function openScreen(
     const handler = answers[procedure];
     return handler ? handler(route) : route.abort("internetdisconnected");
   });
+  await page.clock.setFixedTime(NOW);
   await page.goto(path);
   // Categorias and Catálogo público are tabs now (of Produtos and of Configurações): their title is an h2 there
   const level = TAB_PATHS.includes(path) ? 2 : 1;
@@ -143,6 +145,12 @@ const listByStatus =
 
 const menuOf = (page: Page, name: string) =>
   page.getByRole("button", { name: `Mais ações para ${name}` });
+
+/** Runs the clock and then sends one call of its own: it reaches the route after any resend the run let go. */
+async function runClockFor(page: Page, milliseconds: number) {
+  await page.clock.runFor(milliseconds);
+  await page.evaluate(() => fetch("/rpc/settle").catch(() => undefined));
+}
 
 test("Categorias: a lista, o selo de estado com texto e a falta de código na tela", async ({
   page,
@@ -230,6 +238,7 @@ test("Categorias: criar deixa o cursor no campo, que se esvazia, e diz o resulta
 test("Categorias: criar com o 503 server_busy diz que pode ter sido salvo e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let created = 0;
   await openScreen(page, "/categories", "Categorias", {
     "category/create": (route) => {
@@ -246,7 +255,7 @@ test("Categorias: criar com o 503 server_busy diz que pode ter sido salvo e não
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(created).toBe(1);
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
 });
@@ -530,6 +539,7 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
 test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
   page,
 }) => {
+  await page.clock.install();
   let created = 0;
   await openScreen(page, "/customers", "Clientes", {
     "customer/create": (route) => {
@@ -552,7 +562,7 @@ test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, nã
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
   await expect(page.getByText("salvo neste aparelho")).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(created).toBe(1);
   await expect(page.getByLabel("Nome", { exact: true })).toHaveValue(
     "Bia Souza"
@@ -666,6 +676,7 @@ test("Clientes: a lista vazia é só a frase curta, e o único Novo cliente é o
   await expect(empty.getByText("Nenhum cliente ainda.")).toBeVisible();
   await expect(page.getByText("Cadastre o primeiro")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   await expect(empty.getByRole("button")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Novo cliente" })).toHaveCount(
     1
@@ -712,7 +723,9 @@ for (const viewport of FORM_VIEWPORTS) {
       }),
     };
 
-    await expect(page.getByText("Carregando clientes…")).toBeVisible();
+    await expect(
+      page.locator("[data-list-block][data-state=loading]")
+    ).toBeVisible();
     await expect(parts.button).toHaveCount(1);
     const reading = await placesOf(parts);
 
@@ -1091,4 +1104,27 @@ test("Catálogo público a 320 px: nada transborda com o endereço de teste long
   await page.getByRole("button", { name: "Salvar perfil" }).click();
   await expect(page.locator("#public-slug-error")).toBeVisible();
   await expectNoSidewaysScroll(page);
+});
+
+test("Catálogo público: o nome da seção pesa 600 e o rótulo do campo 500", async ({
+  page,
+}) => {
+  await openScreen(page, "/public-catalog", "Catálogo público", {
+    "product/list": reply({ products: [] }),
+    "publicCatalog/setup": reply(SETUP),
+  });
+  await expect(page.getByLabel("Nome público")).toBeVisible();
+  const weightOf = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((element) => getComputedStyle(element).fontWeight);
+  const sections = await Promise.all(
+    ["Como a loja aparece", "Contato"].map((name) =>
+      weightOf(
+        page.getByRole("group", { exact: true, name }).locator("> legend")
+      )
+    )
+  );
+  expect(sections).toEqual(["600", "600"]);
+  expect(
+    await weightOf(page.locator("label", { hasText: "Nome público" }))
+  ).toBe("500");
 });

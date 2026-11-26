@@ -23,6 +23,7 @@ const baseURL = "http://localhost";
 const hostileOrigin = "https://evil.example.invalid";
 const dayMilliseconds = 24 * 60 * 60 * 1000;
 const absoluteLifetimeMilliseconds = 30 * dayMilliseconds;
+const NOW = new Date("2026-03-01T12:00:00.000Z");
 const EXPIRED_COOKIE = /;\s*max-age=0/i;
 
 interface MemoryDatabase extends Record<string, Record<string, unknown>[]> {
@@ -369,6 +370,8 @@ describe("Better Auth as the Polaris uses it (characterization, t435)", () => {
     });
 
     it("replaces the answer when the after hook returns one, and keeps it when the hook returns nothing", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(NOW);
       const harness = createHarness();
       const { cookie, token } = await harness.login("after@example.invalid");
 
@@ -381,7 +384,7 @@ describe("Better Auth as the Polaris uses it (characterization, t435)", () => {
         throw new Error("the session of the test was not created");
       }
       row.createdAt = new Date(
-        Date.now() - absoluteLifetimeMilliseconds - 1000
+        NOW.getTime() - absoluteLifetimeMilliseconds - 1000
       );
       const replaced = await harness.getSession(cookie);
 

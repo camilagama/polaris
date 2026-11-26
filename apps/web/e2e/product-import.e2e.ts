@@ -25,7 +25,7 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
-const NOW = "2026-10-27T12:00:00.000Z";
+const NOW = new Date("2026-10-27T12:00:00.000Z");
 const IMPORT_DIALOG = "Importar planilha";
 const STOCK_TEXT = "Estoque de abertura lançado com a data de hoje.";
 const UUID =
@@ -94,14 +94,14 @@ interface BatchCall {
 const productOf = (name: string, id: string) => ({
   archivedAt: null,
   categoryId: null,
-  createdAt: NOW,
+  createdAt: NOW.toISOString(),
   deletedAt: null,
   description: null,
   id,
   name,
   organizationId: ORGANIZATION.id,
   status: "active",
-  updatedAt: NOW,
+  updatedAt: NOW.toISOString(),
   version: 1,
 });
 
@@ -113,6 +113,8 @@ interface ServerOptions {
   /** A row the server never answers: the call gets no answer each time, nothing created. */
   faultyRow?: string;
   existing?: readonly string[];
+  /** The test installs its own clock (`page.clock.install({ time: NOW })`) before opening the store. */
+  ownClock?: boolean;
   /** The variants of the store the plan holds; another tab may take some in the middle (`takeRoom`). */
   room?: number;
   used?: number;
@@ -126,10 +128,14 @@ async function openProducts(
     cutCalls,
     existing = [],
     faultyRow,
+    ownClock = false,
     room = 49,
     used = 1,
   }: ServerOptions = {}
 ) {
+  if (!ownClock) {
+    await page.clock.setFixedTime(NOW);
+  }
   const store = {
     batches: [] as BatchCall[],
     namesAsked: 0,
@@ -371,7 +377,10 @@ test("AC-3 e AC-14: prévia de 3 grupos não grava nada; a confirmação cria s�
 
   await tap(dialog.getByRole("button", { name: "Ver os produtos" }));
   await expect(dialog).toHaveCount(0);
-  const list = page.getByRole("list", { name: "Produtos" });
+  const list = page.getByRole("list", {
+    exact: true,
+    name: "Produtos cadastrados",
+  });
   await expect(list.getByText("Camiseta básica")).toBeVisible();
   await expect(list.getByText("Meia")).toBeVisible();
   // the page says what entered, and the focus goes to it, as after a product made by hand
@@ -594,6 +603,78 @@ test("o selo Não confirmada quebra em duas linhas a 320 px, sem ser cortado", a
   expect(fit).toEqual({ cut: false, lines: true, outside: false });
 });
 
+for (const viewport of [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+]) {
+  test(`AC-F1 e AC-F2: a barra de segmentos acompanha o passo e não move o cabeçalho a ${viewport.width} px`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize(viewport);
+    await openProducts(page);
+    await page.getByRole("button", { name: "Importar planilha" }).click();
+    const dialog = dialogOf(page);
+    const measure = () =>
+      dialog.evaluate((node) => {
+        const header = node.querySelector('[data-slot="dialog-header"]');
+        const bar = node.querySelector('[data-slot="import-step-bar"]');
+        const head = header?.getBoundingClientRect();
+        const box = bar?.getBoundingClientRect();
+        return {
+          barHeight: box?.height,
+          barTop: box && head ? box.top - head.top : null,
+          filled: node.querySelectorAll('[data-filled="true"]').length,
+          headerHeight: head?.height,
+          hidden: bar?.getAttribute("aria-hidden"),
+          segments: node.querySelectorAll("[data-filled]").length,
+        };
+      });
+    const settledScales = (filled: number) =>
+      expect
+        .poll(() =>
+          dialog.evaluate((node) =>
+            [...node.querySelectorAll("[data-filled]")].map(
+              (segment) => getComputedStyle(segment).scale
+            )
+          )
+        )
+        .toEqual(
+          Array.from({ length: 4 }, (_, i) => (i < filled ? "none" : "0 1"))
+        );
+    await expect(dialog.getByText("Passo 1 de 4 · Arquivo")).toBeVisible();
+    await settledScales(1);
+    const first = await measure();
+    const seen = [first];
+    await chooseFile(page, ["Nome", "Alfa"]);
+    await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+    await expect(dialog.getByText("Passo 2 de 4 · Prévia")).toBeVisible();
+    await settledScales(2);
+    seen.push(await measure());
+    await dialog.getByRole("button", { name: "Importar 1 produto" }).click();
+    await expect(dialog.getByText("Passo 4 de 4 · Resultado")).toBeVisible({
+      timeout: 30_000,
+    });
+    await settledScales(4);
+    seen.push(await measure());
+
+    expect(seen.map((one) => one.filled)).toEqual([1, 2, 4]);
+    for (const one of seen) {
+      expect(one.segments).toBe(4);
+      expect(one.hidden).toBe("true");
+      expect(one.barHeight).toBe(4);
+    }
+    for (const one of seen) {
+      expect(
+        Math.abs((one.headerHeight ?? 0) - (first.headerHeight ?? 0))
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs((one.barTop ?? 0) - (first.barTop ?? 0))
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+}
+
 test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (Léo, VC1)", async ({
   page,
 }) => {
@@ -648,8 +729,11 @@ test("o corte da plataforma pausa a importação, diz a hora em que ela continua
   page,
 }) => {
   test.setTimeout(120_000);
-  await page.clock.install();
-  const store = await openProducts(page, { cutCalls: new Set([2]) });
+  await page.clock.install({ time: NOW });
+  const store = await openProducts(page, {
+    cutCalls: new Set([2]),
+    ownClock: true,
+  });
   await page.getByRole("button", { name: "Importar planilha" }).click();
   const dialog = dialogOf(page);
   await chooseFile(page, ["Nome", "Alfa", "Beta", "Gama"]);

@@ -6,6 +6,7 @@ import {
 } from "@polaris/domain/inventory/inventory";
 import {
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
 import {
@@ -23,7 +24,10 @@ import {
   createPaymentProfile,
   updatePaymentProfile,
 } from "../src/payment-profile-repository";
-import { confirmSale } from "../src/sale-repository";
+import {
+  type ConfirmSaleRepositoryInput,
+  confirmSale,
+} from "../src/sale-repository";
 import {
   runSyncCommand,
   type SyncCommandOutcome,
@@ -87,6 +91,9 @@ const classify = (error: unknown): string | null => {
   }
   if (error instanceof SaleOccurredInFutureError) {
     return "sale_occurred_in_future";
+  }
+  if (error instanceof SalePaymentSplitMismatchError) {
+    return "sale_payment_split_mismatch";
   }
   if (error instanceof PaymentProfileVersionConflictError) {
     return "payment_profile_changed";
@@ -173,6 +180,7 @@ async function run() {
       options: {
         occurredAt?: string;
         paymentProfile?: { expectedVersion: number; id: string };
+        payments?: NonNullable<ConfirmSaleRepositoryInput["payments"]>;
         recordedAt?: string;
       } = {}
     ): Promise<SyncCommandOutcome> =>
@@ -205,8 +213,12 @@ async function run() {
                 variantId: line.variantId,
               })),
               occurredAt,
-              payment: { anticipationRequested: false, method: "pix" },
-              paymentProfile: options.paymentProfile ?? null,
+              ...(options.payments === undefined
+                ? {
+                    payment: { anticipationRequested: false, method: "pix" },
+                    paymentProfile: options.paymentProfile ?? null,
+                  }
+                : { payments: options.payments }),
               recordedAt: options.recordedAt ?? recentInstant(1),
               requestId: id,
             });
@@ -472,6 +484,104 @@ async function run() {
       "a sale whose profile version is no longer current, or whose profile was archived or never existed, is refused with its own stable code and leaves no sale, payment or stock movement; sent again without the profile as a new command it is confirmed"
     );
 
+    // ---- 1d'. a sale paid in two parts, each with its own profile
+    const splitProfile = await asManager((transaction, identity) =>
+      createPaymentProfile(transaction, identity, {
+        name: "Pix das partes",
+        rules: [profileRule],
+      })
+    );
+    const skirt = await createSellableProduct(gateRuntime, tenantA, "saia", {
+      cost: "4.00",
+      quantity: 3,
+    });
+    const splitPart = (
+      amount: string,
+      method: "cash" | "pix",
+      paymentProfile: { expectedVersion: number; id: string } | null
+    ) => ({
+      amount,
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method,
+      paymentProfile,
+    });
+    const splitSelection = {
+      expectedVersion: splitProfile.version,
+      id: splitProfile.id,
+    };
+    const splitCommandId = randomUUID();
+    const splitAccepted = await pushSale(
+      splitCommandId,
+      [{ quantity: 1, variantId: skirt.variantId }],
+      {
+        payments: [
+          splitPart("10.00", "cash", null),
+          splitPart("9.90", "pix", splitSelection),
+        ],
+      }
+    );
+    assert.equal(splitAccepted.status, "accepted");
+    const splitRows = await admin.pool.query<{
+      method: string;
+      payment_count: number;
+      position: number;
+      profile: string | null;
+    }>(
+      "SELECT p.position, p.method, p.payment_profile_id AS profile, s.payment_count FROM public.sale_payments p JOIN public.sales s ON s.id = p.sale_id AND s.organization_id = p.organization_id WHERE s.organization_id = $1 AND s.command_id = $2 ORDER BY p.position",
+      [tenantA.organizationId, splitCommandId]
+    );
+    assert.deepEqual(splitRows.rows, [
+      { method: "cash", payment_count: 2, position: 0, profile: null },
+      {
+        method: "pix",
+        payment_count: 2,
+        position: 1,
+        profile: splitProfile.id,
+      },
+    ]);
+    const afterSplit = await balance(skirt.variantId);
+    const mismatchCommandId = randomUUID();
+    const mismatch = await pushSale(
+      mismatchCommandId,
+      [{ quantity: 1, variantId: skirt.variantId }],
+      {
+        payments: [
+          splitPart("10.00", "cash", null),
+          splitPart("9.89", "pix", splitSelection),
+        ],
+      }
+    );
+    assert.equal(mismatch.status, "rejected");
+    assert.equal(mismatch.code, "sale_payment_split_mismatch");
+    assert.equal(await salesOf(mismatchCommandId), 0);
+    const staleSplitCommandId = randomUUID();
+    const staleSplit = await pushSale(
+      staleSplitCommandId,
+      [{ quantity: 1, variantId: skirt.variantId }],
+      {
+        payments: [
+          splitPart("10.00", "cash", null),
+          splitPart("9.90", "pix", {
+            expectedVersion: splitProfile.version + 1,
+            id: splitProfile.id,
+          }),
+        ],
+      }
+    );
+    assert.equal(staleSplit.status, "rejected");
+    assert.equal(staleSplit.code, "payment_profile_changed");
+    assert.equal(await salesOf(staleSplitCommandId), 0);
+    assert.deepEqual(
+      await balance(skirt.variantId),
+      afterSplit,
+      "a refused split sale takes no stock"
+    );
+    tests.push(
+      "a sale from the device paid in two parts is confirmed with both parts at their positions; parts that do not add up are refused as sale_payment_split_mismatch and a stale profile on the second part as payment_profile_changed, each leaving no sale and no stock movement"
+    );
+
     // ---- 1e. the same profile sale sent directly first, then kept on the device
     const profile2 = await asManager((transaction, identity) =>
       createPaymentProfile(transaction, identity, {
@@ -704,7 +814,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

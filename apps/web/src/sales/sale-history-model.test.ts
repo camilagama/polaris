@@ -14,8 +14,10 @@ import {
   historyListRequest,
   historyLoaded,
   historyLoadFailed,
+  historyListCount,
   historyLoading,
   historyRows,
+  historyTotal,
   historyView,
   initialHistoryState,
   loadMoreStarted,
@@ -27,6 +29,7 @@ import {
   saleDetailHref,
   saleDetailView,
   saleTimelineEvents,
+  statusFromState,
 } from "./sale-history-model";
 
 const organizationId = "org_1";
@@ -62,42 +65,51 @@ function entry(
   };
 }
 
+const KEY = "filtro-a";
+
 function loaded(
   sales: SaleListEntryReadModel[],
   hasMore = false
 ): HistoryState {
-  return historyLoaded(initialHistoryState(), { hasMore, sales });
+  return historyLoaded(initialHistoryState(), { hasMore, sales }, KEY);
 }
 
 describe("list load states", () => {
   it("starts loading", () => {
-    expect(historyView(initialHistoryState())).toEqual({
-      kind: "loading",
-      message: "Carregando vendas…",
-    });
+    expect(historyView(initialHistoryState())).toEqual({ kind: "loading" });
   });
 
   it("explains an empty history and links to the new sale screen", () => {
     const view = historyView(loaded([]));
     expect(view).toMatchObject({ href: "/sales", kind: "empty" });
-    expect("message" in view && view.message).toContain("Nenhuma venda ainda");
+    expect(view).toMatchObject({
+      clearFilters: false,
+      message: "Nenhuma venda ainda.",
+      support: "Registre a primeira venda para vê-la aqui.",
+    });
   });
 
   it("reports an error, with the generic forbidden message", () => {
-    const state = historyLoadFailed(initialHistoryState(), {
-      code: "FORBIDDEN",
-    });
+    const state = historyLoadFailed(
+      initialHistoryState(),
+      { code: "FORBIDDEN" },
+      KEY
+    );
     expect(historyView(state)).toEqual({
       kind: "error",
       message: "Sua conta não tem acesso a esta loja ou a esta ação.",
     });
   });
 
-  it("keeps a showing list when a refresh fails", () => {
-    const state = historyLoadFailed(loaded([entry(1)]), new TypeError("x"));
-    expect(historyView(state).kind).toBe("ready");
-    expect(state.moreError).toContain("Não foi possível carregar");
-    expect(historyLoading(state).moreError).toBeNull();
+  it("re-reading the first page drops a load-more in flight and keeps the list", () => {
+    const busy = loadMoreStarted(loaded([entry(2), entry(1)], true), KEY);
+    expect(busy.loadingMore).toBe(true);
+    const state = historyLoading(busy);
+    expect(state.loadingMore).toBe(false);
+    expect(state.list).toBe("ready");
+    expect(state.hasMore).toBe(true);
+    expect(state.sales.map((sale) => sale.id)).toEqual([id(2), id(1)]);
+    expect(canLoadMore(state, KEY)).toBe(false);
   });
 
   it("keeps the list in the server order, newest first", () => {
@@ -106,34 +118,96 @@ describe("list load states", () => {
   });
 });
 
+describe("the list is read for one filter", () => {
+  const OTHER = "filtro-b";
+
+  it("hides the button, not disables it, once the filter in force is another one", () => {
+    const state = loaded([entry(1)], true);
+    expect(canLoadMore(state, OTHER)).toBe(false);
+    expect(loadMoreView(state, OTHER).visible).toBe(false);
+    expect(loadMoreStarted(state, OTHER)).toBe(state);
+  });
+
+  it("hides the button while the first page is read again, and says so", () => {
+    const state = historyLoading(loaded([entry(1)], true));
+    expect(state.sales).toHaveLength(1);
+    expect(canLoadMore(state, KEY)).toBe(false);
+    expect(loadMoreView(state, KEY)).toMatchObject({
+      refreshFailed: false,
+      refreshing: true,
+      visible: false,
+    });
+  });
+
+  it("a first page for another filter replaces rows, key and offset together", () => {
+    const state = historyLoaded(
+      historyLoading(loaded([entry(1), entry(2)], true)),
+      { hasMore: true, sales: [entry(9)] },
+      OTHER
+    );
+    expect(state.sales.map((sale) => sale.id)).toEqual([id(9)]);
+    expect(nextOffset(state)).toBe(1);
+    expect(canLoadMore(state, KEY)).toBe(false);
+    expect(canLoadMore(state, OTHER)).toBe(true);
+  });
+
+  it("a failed read for another filter drops the old rows and shows the list error", () => {
+    const state = historyLoadFailed(
+      historyLoading(loaded([entry(1)], true)),
+      new TypeError("x"),
+      OTHER
+    );
+    expect(state.sales).toEqual([]);
+    expect(historyView(state).kind).toBe("error");
+    expect(loadMoreView(state, OTHER).visible).toBe(false);
+  });
+
+  it("a failed read for the same filter keeps the rows, hides the button and flags them as possibly old", () => {
+    const state = historyLoadFailed(
+      historyLoading(loaded([entry(1)], true)),
+      new TypeError("x"),
+      KEY
+    );
+    expect(historyView(state).kind).toBe("ready");
+    expect(loadMoreView(state, KEY)).toMatchObject({
+      error: null,
+      refreshFailed: true,
+      refreshing: false,
+      visible: false,
+    });
+    expect(canLoadMore(state, KEY)).toBe(false);
+    expect(historyLoading(state).refresh).toBe("loading");
+  });
+});
+
 describe("pagination", () => {
   it("offers more only when the server says so and nothing is loading", () => {
     const state = loaded([entry(1), entry(2)], true);
-    expect(canLoadMore(state)).toBe(true);
+    expect(canLoadMore(state, KEY)).toBe(true);
     expect(nextOffset(state)).toBe(2);
-    expect(loadMoreView(state)).toMatchObject({
+    expect(loadMoreView(state, KEY)).toMatchObject({
       busy: false,
       label: "Carregar mais",
       visible: true,
     });
-    expect(canLoadMore(loaded([entry(1)], false))).toBe(false);
-    expect(loadMoreView(loaded([entry(1)], false)).visible).toBe(false);
-    expect(canLoadMore(initialHistoryState())).toBe(false);
+    expect(canLoadMore(loaded([entry(1)], false), KEY)).toBe(false);
+    expect(loadMoreView(loaded([entry(1)], false), KEY).visible).toBe(false);
+    expect(canLoadMore(initialHistoryState(), KEY)).toBe(false);
   });
 
   it("guards against a second load while one is running", () => {
-    const first = loadMoreStarted(loaded([entry(1)], true));
+    const first = loadMoreStarted(loaded([entry(1)], true), KEY);
     expect(first.loadingMore).toBe(true);
-    expect(canLoadMore(first)).toBe(false);
-    expect(loadMoreStarted(first)).toBe(first);
-    expect(loadMoreView(first)).toMatchObject({
+    expect(canLoadMore(first, KEY)).toBe(false);
+    expect(loadMoreStarted(first, KEY)).toBe(first);
+    expect(loadMoreView(first, KEY)).toMatchObject({
       busy: true,
       label: "Carregando…",
     });
   });
 
   it("appends the next page, skipping sales already shown", () => {
-    const first = loadMoreStarted(loaded([entry(3), entry(2)], true));
+    const first = loadMoreStarted(loaded([entry(3), entry(2)], true), KEY);
     const next = moreLoaded(first, {
       hasMore: false,
       sales: [entry(2), entry(1)],
@@ -144,20 +218,24 @@ describe("pagination", () => {
   });
 
   it("keeps the list and shows an error when loading more fails", () => {
-    const state = moreLoadFailed(loadMoreStarted(loaded([entry(1)], true)), {
-      code: "SERVICE_UNAVAILABLE",
-    });
+    const state = moreLoadFailed(
+      loadMoreStarted(loaded([entry(1)], true), KEY),
+      {
+        code: "SERVICE_UNAVAILABLE",
+      }
+    );
     expect(state.sales).toHaveLength(1);
     expect(state.loadingMore).toBe(false);
-    expect(loadMoreView(state).error).toContain("mais vendas");
-    expect(canLoadMore(state)).toBe(true);
+    expect(loadMoreView(state, KEY).error).toContain("mais vendas");
+    expect(canLoadMore(state, KEY)).toBe(true);
   });
 
   it("replaces the list when the first page is reloaded", () => {
-    const state = historyLoaded(loaded([entry(1), entry(2)], true), {
-      hasMore: false,
-      sales: [entry(9)],
-    });
+    const state = historyLoaded(
+      loaded([entry(1), entry(2)], true),
+      { hasMore: false, sales: [entry(9)] },
+      KEY
+    );
     expect(state.sales.map((sale) => sale.id)).toEqual([id(9)]);
   });
 });
@@ -212,6 +290,42 @@ describe("rows", () => {
       "Transferência",
       "Outro",
     ]);
+  });
+
+  it("joins the methods of a sale paid in two parts by position, equal methods included", () => {
+    const rows = historyRows(
+      loaded([
+        entry(1, {
+          paymentMethod: "pix",
+          paymentMethods: ["pix", "credit_card"],
+        }),
+        entry(2, {
+          paymentMethod: "pix",
+          paymentMethods: ["pix", "pix"],
+        }),
+        entry(3, {
+          paymentMethod: "bank_transfer",
+          paymentMethods: ["bank_transfer", "other"],
+        }),
+      ])
+    );
+    expect(rows.map((row) => row.methodText)).toEqual([
+      "Pix + Crédito",
+      "Pix + Pix",
+      "Transferência + Outro",
+    ]);
+    expect(rows.map((row) => row.splitPayment)).toEqual([true, true, true]);
+  });
+
+  it("keeps the method alone for a sale of one part, with or without the list of methods", () => {
+    const rows = historyRows(
+      loaded([
+        entry(1, { paymentMethod: "cash", paymentMethods: ["cash"] }),
+        entry(2, { paymentMethod: "cash" }),
+      ])
+    );
+    expect(rows.map((row) => row.methodText)).toEqual(["Dinheiro", "Dinheiro"]);
+    expect(rows.map((row) => row.splitPayment)).toEqual([false, false]);
   });
 
   it("badges a sale that has returns, keeping its status", () => {
@@ -378,6 +492,61 @@ describe("filters", () => {
   });
 });
 
+describe("the count beside the title of the list", () => {
+  const countOf = (sales: SaleListEntryReadModel[], hasMore = false) =>
+    historyListCount(historyView(loaded(sales, hasMore)), hasMore);
+
+  it("counts the rows on the screen, the cancelled ones included", () => {
+    const sales = [
+      ...Array.from({ length: 7 }, (_, n) => entry(n + 1)),
+      entry(8, {
+        cancelledAt: "2026-05-02T12:00:00.000Z",
+        status: "cancelled",
+      }),
+    ];
+    expect(countOf(sales)).toBe("8 vendas");
+    expect(historyTotal(sales).countText).toBe("7 vendas");
+  });
+
+  it("is a list of cancelled ones only: the rows, not the zero of the sum", () => {
+    const cancelled = [1, 2].map((n) =>
+      entry(n, { cancelledAt: "2026-05-02T12:00:00.000Z", status: "cancelled" })
+    );
+    expect(countOf(cancelled)).toBe("2 vendas");
+    expect(historyTotal(cancelled).countText).toBe("0 vendas");
+  });
+
+  it("says the singular, and 'há mais' while another page is pending", () => {
+    expect(countOf([entry(1)])).toBe("1 venda");
+    expect(countOf([entry(1), entry(2), entry(3), entry(4)], true)).toBe(
+      "4 vendas · há mais"
+    );
+  });
+
+  it("is empty while the list loads or failed, and zero for a list with no result", () => {
+    expect(historyListCount(historyView(initialHistoryState()), false)).toBe(
+      ""
+    );
+    expect(
+      historyListCount(
+        historyView(
+          historyLoadFailed(initialHistoryState(), { code: "FORBIDDEN" }, KEY)
+        ),
+        false
+      )
+    ).toBe("");
+    expect(
+      historyListCount(
+        historyView(loaded([]), {
+          ...emptyHistoryFilters,
+          status: "cancelled",
+        }),
+        false
+      )
+    ).toBe("0 vendas");
+  });
+});
+
 describe("sale detail", () => {
   const detail = (
     cancellation: SaleDetailReadModel["cancellation"],
@@ -536,6 +705,9 @@ describe("sale detail", () => {
     ]);
     expect(view.cancellation?.rows[1]?.value).toBe("Outro");
     expect(view.cancellation?.rows[2]?.value).toBe("Troca de loja");
+    expect(view.cancellation?.rows[3]?.value).toBe(
+      "Voltou item a item, pelo custo registrado em cada item, exceto item de produto removido."
+    );
     expect(view.sale.items).toHaveLength(1);
     expect(view.sale.totals.at(-1)?.value).toBe("R$ 88,82");
   });
@@ -855,5 +1027,26 @@ describe("sale detail", () => {
       expect(registered?.timeText).toMatch(SAME_YEAR_TEXT);
       expect(sale?.timeText).toMatch(JUNE_TEXT);
     });
+  });
+});
+
+describe("the situation that travels in the navigation state", () => {
+  it("takes a situation that narrows the list and ignores anything else", () => {
+    for (const [value] of HISTORY_STATUS_FILTERS) {
+      expect(statusFromState(value)).toBe(value);
+    }
+    for (const value of [
+      undefined,
+      null,
+      "",
+      "Confirmed",
+      "paid",
+      " confirmed",
+      1,
+      {},
+      ["confirmed"],
+    ]) {
+      expect(statusFromState(value), JSON.stringify(value)).toBe("");
+    }
   });
 });

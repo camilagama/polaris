@@ -185,6 +185,7 @@ class Fixture {
         capability: "report:read",
         isolationLevel: "repeatable read",
         requestedOrganizationId: tenant.organizationId,
+        requireLegalAcceptance: false,
       },
       async (tx, identity) => {
         const facts = await readPeriodFacts(tx, identity, period);
@@ -917,7 +918,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

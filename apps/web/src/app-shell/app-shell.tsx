@@ -39,6 +39,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/ui/sidebar";
+import { TextLink } from "@/ui/text-link";
 import { MediaThumbnailScope } from "../catalog/media-thumbnail-scope";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
@@ -70,10 +71,14 @@ import { SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { ClosedStoreNotice, useClosedStoreHere } from "./closed-store-notice";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
 import { FirstAccess } from "./first-access";
-import { trialChargeDay } from "../subscription/plan-notice";
+import {
+  type PlanCardView,
+  planCardFor,
+  trialChargeDay,
+} from "../subscription/plan-notice";
 import { GraceNoticeSlot, usePlanNoticeFacts } from "./grace-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
-import { MenuProgress, useFirstSteps } from "./menu-progress";
+import { MenuProgress, PlanCard, useFirstSteps } from "./menu-progress";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
@@ -123,7 +128,7 @@ function attentionCountText(count: number): string {
   return count === 1 ? "1 registro recusado" : `${count} registros recusados`;
 }
 
-/** A destination of the menu: the current one has `aria-current="page"` and the emerald dot, Pendências its count. */
+/** A destination of the menu: the current one has `aria-current="page"` and the brand dot, Pendências its count. */
 function NavLink({
   count,
   current,
@@ -173,32 +178,28 @@ function NavLink({
 
 /** The two legal pages at the foot of "Mais", small: they open in another tab, so nothing open in the app is lost. */
 function SheetLegalLinks() {
-  const link =
-    "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
   return (
     <ul
       className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 px-2 py-1 text-muted-foreground text-xs"
       data-sheet-legal=""
     >
       <li>
-        <a
-          className={link}
+        <TextLink
           href={LEGAL_PATHS.terms}
           rel="noopener noreferrer"
           target="_blank"
         >
           Termos de Uso
-        </a>
+        </TextLink>
       </li>
       <li>
-        <a
-          className={link}
+        <TextLink
           href={LEGAL_PATHS.privacy}
           rel="noopener noreferrer"
           target="_blank"
         >
           Política de Privacidade
-        </a>
+        </TextLink>
       </li>
     </ul>
   );
@@ -211,6 +212,8 @@ interface AppSidebarProps {
   chargeDay: string | null;
   /** The first steps done, for the foot of the menu; null once the store sold or while not known. */
   firstSteps: number | null;
+  /** The card of the Free plan, for the foot of the menu; null where it is not shown. */
+  planCard: PlanCardView | null;
   navId: NavId | null;
   /** The screen works only with a connection: the state says so while offline (U-54). */
   onlineOnly: boolean;
@@ -229,12 +232,16 @@ function AppSidebar({
   firstSteps,
   navId,
   onlineOnly,
+  planCard,
 }: AppSidebarProps) {
   const { isMobile } = useSidebar();
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
   const items = menuItemsOf({ attention: rejected > 0, expenses }).filter(
     (item) => !(isMobile && inBottomBar(item.id))
   );
+  // an empty foot is not drawn: its padding would grow with the lines that enter, and the box itself shifts then
+  const hasFoot =
+    isMobile || firstSteps !== null || chargeDay !== null || planCard !== null;
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
       {isMobile ? (
@@ -274,10 +281,11 @@ function AppSidebar({
           ))}
         </nav>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className={hasFoot ? undefined : "hidden"}>
         {/* 12 px around and between, as in the design: the footer itself has 8 */}
         <div className="grid gap-3 p-1 group-data-[collapsible=icon]:p-0">
           <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
+          {planCard === null ? null : <PlanCard view={planCard} />}
           {isMobile ? <SheetLegalLinks /> : null}
         </div>
       </SidebarFooter>
@@ -532,9 +540,13 @@ function ShellNotices({
   );
 }
 
+/** Where the card of the plan is not drawn: the sale, which never meets the plan, the Assinatura itself and the 404 (no route). */
+const NO_PLAN_CARD: readonly RouteId[] = ["sale", "subscription"];
+
 /**
- * What the shell shows of the plan and of the first steps. The plan is read once for the notice of grace and the trial
- * at the foot of the menu, only for whom manages the billing; nothing of either once the session is over.
+ * What the shell shows of the plan and of the first steps. The plan is read once for the notice of grace, the trial and
+ * the card of the Free plan at the foot of the menu, only for whom manages the billing; nothing of either once the
+ * session is over.
  */
 function useShellProgress(
   current: CurrentOrganization | null,
@@ -544,7 +556,7 @@ function useShellProgress(
   const organization = sessionOver ? null : current;
   const online = useConnectionOnline();
   const now = useNow(60_000);
-  const planFacts = usePlanNoticeFacts(
+  const { facts: planFacts, pending: planPending } = usePlanNoticeFacts(
     organization?.organizationId ?? "",
     organization !== null &&
       canManageBilling(
@@ -553,13 +565,18 @@ function useShellProgress(
       ),
     routeId !== "subscription"
   );
+  const firstStepsRead = useFirstSteps(organization?.organizationId ?? null);
   return {
     // the Assinatura shows nothing of the plan offline (AS-8): the foot of its menu neither
     chargeDay:
       planFacts === null || (routeId === "subscription" && !online)
         ? null
         : trialChargeDay(planFacts, saoPauloDateOf(now)),
-    firstSteps: useFirstSteps(organization?.organizationId ?? null),
+    firstSteps: planPending ? null : firstStepsRead,
+    planCard:
+      routeId === undefined || NO_PLAN_CARD.includes(routeId)
+        ? null
+        : planCardFor(planFacts),
     planFacts,
   };
 }
@@ -670,7 +687,7 @@ export function AppShell({
           select,
         }
       : null;
-  const { chargeDay, firstSteps, planFacts } = useShellProgress(
+  const { chargeDay, firstSteps, planCard, planFacts } = useShellProgress(
     organization,
     sessionOver,
     routeId
@@ -719,6 +736,7 @@ export function AppShell({
           firstSteps={firstSteps}
           navId={navId}
           onlineOnly={onlineOnly}
+          planCard={planCard}
         />
         <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
           {/* the panel of the content, in the frame of the sidebar and the header: from 760 px its top left corner is

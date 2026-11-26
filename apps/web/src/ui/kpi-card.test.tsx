@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { formatBrlAmount } from "@/lib/format";
 import {
   DeltaChip,
   HeroPercent,
@@ -9,6 +10,7 @@ import {
   KpiTile,
   KpiTileSkeleton,
 } from "./kpi-card";
+import { splitAmountWidthEm } from "./money";
 
 /**
  * The geometry of a KPI tile does not depend on what it says now: the support line is always there, and the number, the dash and "R$ ••••" share
@@ -17,7 +19,9 @@ import {
 
 const CLASS_ATTRIBUTE = /class="([^"]*)"/;
 const CURRENCY_SPAN = /<span class="([^"]*)" data-money-currency/;
+const FIT_IN_CQW_XL = /min\(var\(--text-value-xl\), ([\d.]+)cqw\)/;
 const FIT_IN_CQW = /min\(var\(--text-value-lg\), ([\d.]+)cqw\)/;
+const CHIP_NUMBER_MONO = /class="font-mono" data-kpi-delta-text/;
 const TEXT_IN_REM = /text-\[[\d.]+rem\]/;
 
 const TILE_CHIP_THEN_NOTE =
@@ -83,7 +87,6 @@ describe("KpiTile", () => {
       warningDetail: "5 de 23 dias sem custo",
     });
     expect(warned).toContain('data-kpi-warning=""');
-    expect(warned).not.toContain("data-kpi-notice");
     expect(warned.match(/data-kpi-note-row/g)).toHaveLength(1);
     expect(warned).toContain("h-5 flex-nowrap overflow-hidden");
     expect(warned.indexOf("Incompleta")).toBeLessThan(
@@ -94,16 +97,20 @@ describe("KpiTile", () => {
     );
   });
 
-  it("puts a notice on a row of its own under the support line, free to wrap and to grow the tile", () => {
-    const noticed = tile({ notice: "estimativa incompleta", note: "2 vendas" });
-    expect(noticed.match(/data-kpi-note-row/g)).toHaveLength(1);
-    expect(noticed).toContain('data-kpi-notice=""');
-    expect(noticed).not.toContain("data-kpi-warning=");
-    expect(noticed).not.toContain("flex-nowrap");
-    expect(noticed.indexOf("2 vendas")).toBeLessThan(
-      noticed.indexOf("estimativa incompleta")
+  it("keeps the support line one line with a cover and a count that is shown whole or not at all", () => {
+    const covered = tile({
+      cover: <button data-cover="" type="button" />,
+      note: null,
+      oneLine: true,
+      warningDetail: "2 vendas",
+    });
+    expect(covered.match(/data-kpi-note-row/g)).toHaveLength(1);
+    expect(covered).toContain("h-5 flex-nowrap overflow-hidden");
+    expect(covered).toContain("data-kpi-warning-detail");
+    expect(covered).not.toContain("data-kpi-warning=");
+    expect(covered.indexOf("data-cover")).toBeLessThan(
+      covered.indexOf("data-kpi-note-row")
     );
-    expect(noticed).not.toContain("data-kpi-warning-detail");
   });
 });
 
@@ -128,6 +135,63 @@ describe("HeroValue of a tile", () => {
     expect(
       renderToStaticMarkup(<HeroValue amount={null} tile />)
     ).not.toContain("cqw");
+  });
+});
+
+describe("the display of a tile in Geist Mono", () => {
+  const AREA_PX = 150;
+  const FLOOR_PX = 17.5;
+  const LARGE_PX = 32.5;
+  const sizeAt = (amount: string) => {
+    const fit = Number(
+      FIT_IN_CQW.exec(
+        renderToStaticMarkup(<HeroValue amount={amount} tile />)
+      )?.[1]
+    );
+    return Math.max(FLOOR_PX, Math.min(LARGE_PX, (fit / 100) * AREA_PX));
+  };
+  const widthAt = (amount: string) =>
+    splitAmountWidthEm(formatBrlAmount(amount)) * sizeAt(amount);
+
+  it("fits the longest amounts in an area of 150 px with the letter at 20 px, above the floor of 14 px", () => {
+    for (const amount of ["1234567.89", "-99640.35"]) {
+      expect(widthAt(amount)).toBeLessThanOrEqual(AREA_PX);
+      expect(sizeAt(amount)).toBeLessThan(LARGE_PX);
+    }
+  });
+
+  it("keeps the token of the scale for a short amount", () => {
+    expect(sizeAt("129.90")).toBe(LARGE_PX);
+  });
+
+  it("is in the mono face with no tracking in the amount, the dash and the percent", () => {
+    for (const markup of [
+      renderToStaticMarkup(<HeroValue amount="129.90" />),
+      renderToStaticMarkup(<HeroValue amount={null} />),
+      renderToStaticMarkup(<HeroPercent text="41,2%" />),
+    ]) {
+      expect(markup).toContain("font-mono");
+      expect(markup).not.toContain("tracking-[");
+    }
+  });
+
+  it("writes the words of an empty figure in Geist, not in the mono face", () => {
+    const markup = renderToStaticMarkup(
+      <HeroValue amount={null} emptyText="sem custo neste dia" />
+    );
+    expect(markup).toContain("font-sans");
+  });
+
+  it("sets the number of a percent chip in the mono face and an amount chip in Geist", () => {
+    const base = { spoken: "subiu", trend: "up" } as const;
+    const percent = renderToStaticMarkup(
+      <DeltaChip delta={{ ...base, money: false, text: "+12%" }} />
+    );
+    const reais = renderToStaticMarkup(
+      <DeltaChip delta={{ ...base, money: true, text: "+R$ 12,00" }} />
+    );
+    expect(percent).toMatch(CHIP_NUMBER_MONO);
+    expect(reais).not.toMatch(CHIP_NUMBER_MONO);
   });
 });
 
@@ -204,6 +268,68 @@ describe("HeroValue sizes", () => {
     const skeleton = renderToStaticMarkup(<KpiTileSkeleton />);
     expect(skeleton).toContain("h-(--text-value-lg--line-height)");
     expect(skeleton).not.toContain("text-value-xl");
+  });
+});
+
+describe("HeroValue of the hero (xl)", () => {
+  const hero = (amount: string | null) =>
+    renderToStaticMarkup(<HeroValue amount={amount} size="xl" tile />);
+  const fit = (markup: string) => Number(FIT_IN_CQW_XL.exec(markup)?.[1]);
+
+  it("writes every amount in the xl box, with the line of xl, and the R$ and the cents a step smaller as in lg", () => {
+    for (const amount of ["129.90", "-99640.35", null]) {
+      const markup = hero(amount);
+      expect(markup).toContain("text-value-xl");
+      expect(markup).toContain("h-(--text-value-xl--line-height)");
+      expect(markup).not.toContain("text-value-lg");
+    }
+    expect(hero("129.90")).toContain("text-[0.56em]");
+    expect(hero("129.90")).toContain("text-[0.72em]");
+  });
+
+  it("steps down for a nine-digit amount, as the tile does, and never under the floor", () => {
+    const short = fit(hero("129.90"));
+    const nine = fit(hero("1234567.89"));
+    expect(nine).toBeLessThan(short);
+    expect(hero("1234567.89")).toContain(
+      "max(0.875rem, min(var(--text-value-xl)"
+    );
+    expect(fit(hero("-99640.35"))).toBeGreaterThan(nine);
+  });
+
+  it("is the same box for the hidden value, the missing one and the empty text", () => {
+    const empty = renderToStaticMarkup(
+      <HeroValue amount={null} emptyText="Sem números de hoje" size="xl" />
+    );
+    expect(empty).toContain("h-(--text-value-xl--line-height)");
+    expect(empty).toContain("Sem números de hoje");
+  });
+
+  it("is a tile of its own: the hero marks it, and the skeleton of the hero has the xl box", () => {
+    expect(tile({ hero: true })).toContain('data-kpi-hero=""');
+    expect(tile({})).not.toContain("data-kpi-hero");
+    const skeleton = renderToStaticMarkup(<KpiTileSkeleton hero />);
+    expect(skeleton).toContain("h-(--text-value-xl--line-height)");
+    expect(renderToStaticMarkup(<KpiTileSkeleton />)).toContain(
+      "h-(--text-value-lg--line-height)"
+    );
+  });
+});
+
+describe("the title of a tile", () => {
+  it("is a polite live region only when it follows a reading", () => {
+    expect(tile({ titleLive: true })).toContain('aria-live="polite"');
+    expect(tile({})).not.toContain("aria-live");
+  });
+});
+
+describe("the strip of the tiles", () => {
+  it("makes its cells and its skeletons give up the card only from 1280 px", () => {
+    const skeleton = renderToStaticMarkup(<KpiTileSkeleton strip />);
+    expect(skeleton).toContain("xl:ring-0");
+    expect(renderToStaticMarkup(<KpiTileSkeleton />)).not.toContain(
+      "xl:ring-0"
+    );
   });
 });
 

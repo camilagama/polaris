@@ -15,10 +15,11 @@ import {
   ActionFeedback,
   LoadErrorNotice,
 } from "../catalog/products-page-parts";
-import { countLineShown, shownListCount } from "../catalog/list-page-model";
-import { ListCountLine, StatusNav } from "../catalog/screen-parts";
+import { shownListCount } from "../catalog/list-page-model";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { useStoreToday } from "../lib/use-store-today";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import { useHoldSwap } from "../lib/unsent-work";
@@ -83,7 +84,8 @@ async function keepLocalRow(
 }
 
 export function CustomersPage() {
-  const { organizationId } = useCurrentOrganization();
+  const { organization, organizationId } = useCurrentOrganization();
+  const today = useStoreToday(organization.timezone);
   const workspace = useLocalWorkspace(organizationId);
   const [syncStates, setSyncStates] = useState<
     ReadonlyMap<string, PendingCustomer>
@@ -645,28 +647,29 @@ export function CustomersPage() {
         onUseExisting={handleUseExisting}
         open={formOpen}
       />
-      <CustomerSearch onChange={setQuery} value={query} />
-      <StatusNav
-        disabled={pendingAction !== null}
-        label="Estado dos clientes"
-        onSelect={handleStatus}
-        options={STATUS_OPTIONS}
-        value={status}
-      />
-      <ListCountLine
-        shown={countLineShown(isLoading, listIsShown, customers.length)}
-        text={shownListCount(
-          listIsShown,
-          foundCustomers.length,
-          customers.length,
-          query,
-          CUSTOMER_NOUN
-        )}
-      />
+      <div className="grid gap-4 md:flex md:items-center md:justify-between">
+        <CustomerSearch onChange={setQuery} value={query} />
+        <SegmentedFilter
+          disabled={pendingAction !== null}
+          label="Estado dos clientes"
+          onSelect={handleStatus}
+          options={STATUS_OPTIONS}
+          value={status}
+        />
+      </div>
       {loadError ? (
         <LoadErrorNotice message={loadError} onRetry={handleRetry} />
       ) : (
         <CustomerList
+          count={
+            shownListCount(
+              listIsShown,
+              foundCustomers.length,
+              customers.length,
+              query,
+              CUSTOMER_NOUN
+            ) ?? ""
+          }
           customers={foundCustomers}
           isLoading={isLoading}
           isOffline={isOffline}
@@ -678,6 +681,7 @@ export function CustomersPage() {
           query={query}
           status={status}
           syncStates={syncStates}
+          today={today}
           total={customers.length}
           updateStates={updateStates}
         />

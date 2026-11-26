@@ -1,0 +1,293 @@
+name: Deploy production
+
+# Production (ADR 0097, release checklist docs/runbooks/release-checklist.md): by hand only. Someone dispatches it on
+# main, the `production` Environment asks for its reviewers, and then the database is migrated and polaris-web,
+# polaris-catalog and polaris-admin are published, each version checked against the commit.
+#
+# OFF: every job runs only when the repository variable PRODUCTION_DEPLOY_ENABLED is "true", which does not exist
+# until the responsible creates the production account, resources, secrets and the protected Environment. Never on
+# push or pull request, and no trigger that a pull request can start. The shape follows the deploy of the fixed preview environment;
+# scripts/verify-production-workflow.mjs fails when the steps both share drift apart, when this file names the other
+# environment, and when the order below changes.
+#
+# Secrets and variables, by name only, all of the `production` Environment and with names that exist nowhere else, so
+# a missing one never falls back to a value of the repository: secrets PRODUCTION_MIGRATOR_DATABASE_URL and
+# PRODUCTION_CLOUDFLARE_API_TOKEN, variable PRODUCTION_CLOUDFLARE_ACCOUNT_ID. The job fails closed without any of them.
+on:
+  workflow_dispatch:
+    inputs:
+      urgent:
+        description: "Revert or security fix: skip the 2 h settling of the new build on the devices (ADR 0041)"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  # Before any checkout or install: main, the tip, and the CI of this very commit green.
+  decide:
+    name: Decide
+    if: >-
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ github.sha }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: The commit is the tip of main
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$REPOSITORY/branches/main" --jq .commit.sha)
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            echo "::error::main moved on since the dispatch; dispatch again to deploy the new tip"
+            exit 1
+          fi
+      # the newest successful CI run of a push of this commit to main, and in it the two jobs that are never skipped
+      # (release checklist, item 2)
+      - name: The required CI jobs succeeded
+        run: |
+          set -euo pipefail
+          RUN_ID=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA&event=push&branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::no successful CI run of a push to main for $HEAD_SHA"
+            exit 1
+          fi
+          jobs=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | "\(.name)\t\(.conclusion)"')
+          for required in "Checks (lint, types, knip, build, tests)" "PostgreSQL 18 gates"; do
+            if ! grep -Fxq "$required"$'\t'"success" <<< "$jobs"; then
+              echo "::error::CI job \"$required\" did not succeed on $HEAD_SHA"
+              exit 1
+            fi
+          done
+      # what the reviewers of the Environment see before approving: the build below already carries the choice
+      - name: Urgent swap choice
+        env:
+          URGENT: ${{ inputs.urgent }}
+        run: |
+          set -euo pipefail
+          if [ "$URGENT" = "true" ]; then
+            echo "**Urgent swap: yes.** This build skips the 2 h settling on the devices (ADR 0041)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Urgent swap: no." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # The build runs the repository's code and dependencies: no Environment and no secret here.
+  build:
+    name: Build production
+    needs: decide
+    if: >-
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Build the production Workers
+        env:
+          # with a named environment the legal guard refuses a build that still has a marker or lacks a company datum
+          # (ADR 0100, release checklist item 20)
+          CLOUDFLARE_ENV: production
+          # the company data of the legal texts (ADR 0100): public repository variables
+          VITE_LEGAL_RAZAO_SOCIAL: ${{ vars.LEGAL_RAZAO_SOCIAL }}
+          VITE_LEGAL_ENDERECO: ${{ vars.LEGAL_ENDERECO }}
+          VITE_LEGAL_CONTATO_EMAIL: ${{ vars.LEGAL_CONTATO_EMAIL }}
+          VITE_LEGAL_DPO_EMAIL: ${{ vars.LEGAL_DPO_EMAIL }}
+          VITE_LEGAL_SUPORTE_QUEM_LE_RESPOSTAS: ${{ vars.LEGAL_SUPORTE_QUEM_LE_RESPOSTAS }}
+          # no VITE_OFFLINE_RUNTIME_ENABLED (ADR 0043) and no VITE_CLIENT_ERRORS_ENABLED (ADR 0098): both stay off here
+          VITE_RELEASE: ${{ github.sha }}
+          # "1" only when the person who dispatched marked the run urgent (ADR 0041)
+          POLARIS_SWAP_URGENT: ${{ inputs.urgent && '1' || '0' }}
+        run: |
+          bun run --filter @polaris/web build
+          bun run --filter @polaris/catalog build
+          # the Admin is bundled by `wrangler deploy --env production` from its source; only its page script and sheet
+          # are built here (embedded as text, no Assets binding)
+          bun run --filter @polaris/admin build:ui
+      # what the deploy follows: refuses placeholders, a name or resource of another environment and other bindings
+      - name: Production build (generated config)
+        run: node scripts/verify-production-build.mjs
+      # what is published must not carry the offline labs or the UI gallery
+      - name: No offline lab in the build
+        run: node scripts/verify-no-lab-in-build.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: production-build
+          # .wrangler/deploy/config.json points the deploy at the generated wrangler.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            apps/web/dist
+            apps/web/.wrangler/deploy/config.json
+            apps/catalog/dist
+            apps/catalog/.wrangler/deploy/config.json
+            apps/admin/src/ui/generated/admin.js.txt
+            apps/admin/src/ui/generated/admin.css.txt
+
+  deploy:
+    name: Migrate and deploy
+    needs: [decide, build]
+    if: >-
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    # protected: required reviewers and only the main branch, set on the Environment by the responsible
+    environment: production
+    permissions:
+      contents: read
+    # One deploy at a time and never cancelled: stopping a migration halfway is worse than waiting.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      HEAD_SHA: ${{ github.sha }}
+      REPOSITORY: ${{ github.repository }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      # names only, never a value: without any of them nothing below runs
+      - name: The production secrets and variables are set
+        env:
+          PRODUCTION_MIGRATOR_DATABASE_URL: ${{ secrets.PRODUCTION_MIGRATOR_DATABASE_URL }}
+          PRODUCTION_CLOUDFLARE_API_TOKEN: ${{ secrets.PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          PRODUCTION_CLOUDFLARE_ACCOUNT_ID: ${{ vars.PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in PRODUCTION_MIGRATOR_DATABASE_URL PRODUCTION_CLOUDFLARE_API_TOKEN PRODUCTION_CLOUDFLARE_ACCOUNT_ID; do
+            value="${!name}"
+            if [ -z "${value//[[:space:]]/}" ]; then
+              echo "::error::$name is not set in the production Environment"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      # checked again after the approval and the concurrency group: main may have moved meanwhile
+      - name: The commit is still the tip of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$REPOSITORY/branches/main" --jq .commit.sha)
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            echo "::error::main moved on since the dispatch; dispatch again to deploy the new tip"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      # The artifact comes from a job that ran dependencies: it is downloaded outside the tree and only the
+      # build output is copied in, so it can never replace a binary or a package the next steps run.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: production-build
+          path: ${{ runner.temp }}/production-build
+      - name: Take only the build output from the artifact
+        env:
+          ARTIFACT: ${{ runner.temp }}/production-build
+        run: |
+          set -euo pipefail
+          if [ -n "$(find "$ARTIFACT" -type l)" ]; then
+            echo "::error::the build artifact contains a symbolic link"
+            exit 1
+          fi
+          for entry in "$ARTIFACT"/* "$ARTIFACT"/.[!.]*; do
+            [ -e "$entry" ] || continue
+            case "$(basename "$entry")" in
+              web | catalog | admin) ;;
+              *) echo "::error::unexpected entry in the build artifact"; exit 1 ;;
+            esac
+          done
+          # the Admin brings exactly its two generated files, regular, and nothing else
+          generated="$ARTIFACT/admin/src/ui/generated"
+          admin_files=$(cd "$ARTIFACT/admin" 2>/dev/null && find . -mindepth 1 -not -type d | sort || true)
+          if [ "$admin_files" != $'./src/ui/generated/admin.css.txt\n./src/ui/generated/admin.js.txt' ]; then
+            echo "::error::unexpected Admin files in the build artifact"
+            exit 1
+          fi
+          rm -rf apps/admin/src/ui/generated
+          mkdir -p apps/admin/src/ui/generated
+          cp "$generated/admin.js.txt" "$generated/admin.css.txt" apps/admin/src/ui/generated/
+          for app in web catalog; do
+            redirect="$ARTIFACT/$app/.wrangler/deploy/config.json"
+            config_path=$(jq -r .configPath "$redirect")
+            if ! [[ "$config_path" =~ ^\.\./\.\./dist/[a-z0-9_-]+/wrangler\.json$ ]]; then
+              echo "::error::unexpected configPath in the $app deploy redirect"
+              exit 1
+            fi
+            rm -rf "apps/$app/dist" "apps/$app/.wrangler/deploy"
+            mkdir -p "apps/$app/.wrangler/deploy"
+            cp -R "$ARTIFACT/$app/dist" "apps/$app/dist"
+            cp "$redirect" "apps/$app/.wrangler/deploy/config.json"
+          done
+      # again on what was copied in, now against the account of the Environment
+      - name: Production build (generated config)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/verify-production-build.mjs
+      # The owner's URL exists only in this step. The marker polaris.environment=production and the owner first, then
+      # the migrations, then the read-only part of the definer-hardening gate and the runtime logins (ADR 0097).
+      # A failure here stops before the deploy: the Worker on the air is the previous one.
+      - name: Migrate the production database
+        env:
+          PRODUCTION_MIGRATOR_DATABASE_URL: ${{ secrets.PRODUCTION_MIGRATOR_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          bun run --filter @polaris/db production:verify-database before-migrate
+          DATABASE_URL="$PRODUCTION_MIGRATOR_DATABASE_URL" bun run --filter @polaris/db db:migrate
+          bun run --filter @polaris/db production:verify-database after-migrate
+      # The Cloudflare token exists only in this step. If it fails, the database is already migrated, which the
+      # previous Worker supports (ADR 0096).
+      - name: Deploy the production Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          # the support box of the billing e-mails, one source with the legal texts (release checklist, item 20)
+          BILLING_SUPPORT_EMAIL: ${{ vars.LEGAL_CONTATO_EMAIL }}
+        run: |
+          set -euo pipefail
+          # no --env: the generated wrangler.json is already the production one (the build check proved it);
+          # --no-install: only the wrangler of the lockfile, never a download
+          # empty variable: no --var, and the Worker keeps the empty value of its config
+          support=()
+          if [ -n "$BILLING_SUPPORT_EMAIL" ]; then
+            support=(--var "BILLING_SUPPORT_EMAIL:$BILLING_SUPPORT_EMAIL")
+          fi
+          (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA" "${support[@]}")
+          (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
+          node scripts/verify-deployed-sha.mjs --env production
+          # the Admin last, from its source block (the build check proved env.production has no placeholder); a
+          # failure here leaves the web and the catalog already published and confirmed
+          (cd apps/admin && bunx --no-install wrangler deploy --env production --message "$HEAD_SHA")
+      # The smoke of production is not wired yet: its script already takes `--env production` with the hosts from
+      # variables, but its file name names the other environment, which this workflow may not, and the hosts wait for
+      # the choice of the domain (release checklist, decision 4). Until then the run ends at the version check above.

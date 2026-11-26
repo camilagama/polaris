@@ -13,6 +13,8 @@ import {
   transitionCustomerLifecycle,
 } from "./customer";
 
+const AT = new Date("2026-11-19T15:00:00.000Z");
+
 describe("normalizeCustomerProfile", () => {
   it("requires a name and at least one contact method", () => {
     expect(() =>
@@ -84,9 +86,11 @@ describe("customer lifecycle", () => {
       changed: true,
       lifecycle: "archived",
     });
-    expect(
-      transitionCustomerLifecycle(archivedAt, "archive", new Date())
-    ).toEqual({ archivedAt, changed: false, lifecycle: "archived" });
+    expect(transitionCustomerLifecycle(archivedAt, "archive", AT)).toEqual({
+      archivedAt,
+      changed: false,
+      lifecycle: "archived",
+    });
     expect(transitionCustomerLifecycle(archivedAt, "restore")).toEqual({
       archivedAt: null,
       changed: true,

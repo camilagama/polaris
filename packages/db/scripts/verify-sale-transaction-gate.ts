@@ -8,6 +8,7 @@ import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
   UnsupportedConfirmSaleCommandVersionError,
 } from "@polaris/domain/sales/confirm-sale";
@@ -18,7 +19,7 @@ import {
 } from "@polaris/domain/sales/payment-profile";
 import { SaleDiscountExceedsSubtotalError } from "@polaris/domain/sales/sale-adjustments";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { createDatabase } from "../src/client";
 import {
   getInventoryBalance,
@@ -45,6 +46,7 @@ import {
   rejections,
 } from "./concurrency-support";
 import { runClock, shiftDay, storeDay } from "./gate-clock";
+import { inRolledBackTransaction } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -66,6 +68,8 @@ const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 /** A commercial day two days back in the organization's calendar: inside the retroactive window whenever the gate runs. */
 const saleDay = storeDay(runClock, -2);
 const injectedFailureMessage = "pr43 gate injected failure";
+/** A profile id or an amount: neither belongs in a refusal's message. */
+const profileOrAmountPattern = /[0-9a-f]{8}-|\d+\.\d{2}/;
 
 type RuntimeDatabase = ReturnType<typeof createDatabase>;
 
@@ -76,6 +80,234 @@ interface Effects {
   movements: number;
   payments: number;
   sales: number;
+}
+
+/** The payment rows of a sale written directly: the parts with their positions, or one payment without a position. */
+async function insertPayments(
+  execute: (query: SQL) => Promise<unknown>,
+  org: string,
+  saleId: string,
+  options: {
+    parts?: { amount: string; position: number }[];
+    payment?: string | null;
+  }
+) {
+  if (options.parts) {
+    for (const part of options.parts) {
+      // biome-ignore lint/performance/noAwaitInLoops: the parts go in one after the other, as a Worker writes them
+      await execute(
+        sql`INSERT INTO public.sale_payments (organization_id, sale_id, method, amount, position) VALUES (${org}, ${saleId}, 'cash', ${part.amount}, ${part.position})`
+      );
+    }
+  } else if (options.payment !== null) {
+    await execute(
+      sql`INSERT INTO public.sale_payments (organization_id, sale_id, method, amount) VALUES (${org}, ${saleId}, 'cash', ${options.payment ?? "10.00"})`
+    );
+  }
+}
+
+/** Every sale whose payment parts break the rule the confirmation trigger checks. */
+const BROKEN_SALES = `SELECT sale.id
+       FROM public.sales AS sale
+       LEFT JOIN LATERAL (
+         SELECT count(*) AS parts, max(payment.position) AS last_position, COALESCE(sum(payment.amount), 0) AS paid,
+                count(*) FILTER (WHERE payment.amount <= 0) AS not_positive
+           FROM public.sale_payments AS payment
+          WHERE payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
+       ) AS payment ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(item.charged_unit_price * item.quantity), 0) AS subtotal
+           FROM public.sale_items AS item
+          WHERE item.organization_id = sale.organization_id AND item.sale_id = sale.id
+       ) AS item ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind = 'discount'), 0) AS discounts,
+                COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind <> 'discount'), 0) AS additions
+           FROM public.sale_adjustments AS adjustment
+          WHERE adjustment.organization_id = sale.organization_id AND adjustment.sale_id = sale.id
+       ) AS adjustment ON true
+      WHERE payment.parts <> sale.payment_count
+         OR payment.last_position IS DISTINCT FROM sale.payment_count - 1
+         OR payment.paid <> item.subtotal - adjustment.discounts + adjustment.additions
+         OR (sale.payment_count > 1 AND payment.not_positive > 0)`;
+
+interface PartsGraph {
+  parts?: { amount: string; position: number }[];
+  paymentCount?: number;
+  price?: string;
+  appendTo?: { saleId: string };
+}
+
+/**
+ * The payment check of the confirmation trigger with parts. Every case is written directly, outside the sale command,
+ * and committed: what passes stays in the database, what fails is refused when the transaction commits.
+ */
+async function assertPaymentParts(
+  admin: ReturnType<typeof createDatabase>["pool"],
+  write: (options: PartsGraph) => Promise<string | undefined>
+) {
+  const parts = (...amounts: [string, number][]) =>
+    amounts.map(([amount, position]) => ({ amount, position }));
+  const refused = (label: string, options: PartsGraph) =>
+    expectSqlState(
+      () => write(options),
+      "23514",
+      label,
+      "sales_confirmation_payment_complete"
+    );
+  const stored = async (saleId: string | undefined) => {
+    assert.ok(saleId);
+    const rows = await admin.query<{
+      amount: string;
+      payment_count: number;
+      position: number;
+    }>(
+      "SELECT payment.amount::text AS amount, payment.position, sale.payment_count FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = $1 ORDER BY payment.position",
+      [saleId]
+    );
+    return rows.rows;
+  };
+
+  assert.deepEqual(
+    await stored(
+      await write({ parts: parts(["6.00", 0], ["4.00", 1]), paymentCount: 2 })
+    ),
+    [
+      { amount: "6.00", payment_count: 2, position: 0 },
+      { amount: "4.00", payment_count: 2, position: 1 },
+    ],
+    "two parts adding up to the total commit"
+  );
+  const threeParts = await write({
+    parts: parts(["0.01", 2], ["3.33", 0], ["6.66", 1]),
+    paymentCount: 3,
+  });
+  assert.deepEqual(
+    (await stored(threeParts)).map((row) => row.position),
+    [0, 1, 2],
+    "three parts commit, whatever order they were inserted in"
+  );
+  const onePart = await write({});
+  assert.deepEqual(
+    await stored(onePart),
+    [{ amount: "10.00", payment_count: 1, position: 0 }],
+    "the previous Worker's form (no position, no count) commits as one part at position 0"
+  );
+  assert.deepEqual(
+    await stored(
+      await write({ parts: parts(["0.00", 0]), paymentCount: 1, price: "0.00" })
+    ),
+    [{ amount: "0.00", payment_count: 1, position: 0 }],
+    "a sale of total zero commits with one part of zero"
+  );
+
+  await refused("two parts with a wrong sum", {
+    parts: parts(["6.00", 0], ["3.99", 1]),
+    paymentCount: 2,
+  });
+  await refused("two parts above the total", {
+    parts: parts(["6.00", 0], ["4.01", 1]),
+    paymentCount: 2,
+  });
+  await refused("a part of zero beside another part", {
+    parts: parts(["10.00", 0], ["0.00", 1]),
+    paymentCount: 2,
+  });
+  await refused("two parts of zero in a sale of total zero", {
+    parts: parts(["0.00", 0], ["0.00", 1]),
+    paymentCount: 2,
+    price: "0.00",
+  });
+  await refused("a gap in the positions (0 and 2)", {
+    parts: parts(["6.00", 0], ["4.00", 2]),
+    paymentCount: 2,
+  });
+  await refused("positions that do not start at 0 (1 and 2)", {
+    parts: parts(["6.00", 1], ["4.00", 2]),
+    paymentCount: 2,
+  });
+  await refused("a header counting two parts with one written", {
+    parts: parts(["10.00", 0]),
+    paymentCount: 2,
+  });
+  await refused("a header counting one part with two written", {
+    parts: parts(["6.00", 0], ["4.00", 1]),
+    paymentCount: 1,
+  });
+  await refused("a header counting three parts with positions 0 and 2", {
+    parts: parts(["6.00", 0], ["4.00", 2]),
+    paymentCount: 3,
+  });
+  await refused("a header counting three parts with two written", {
+    parts: parts(["6.00", 0], ["4.00", 1]),
+    paymentCount: 3,
+  });
+  await refused("a part appended to a confirmed sale of one part", {
+    appendTo: { saleId: onePart as string },
+    parts: parts(["0.00", 1]),
+  });
+  await expectSqlState(
+    () =>
+      write({
+        parts: parts(["4.00", 0], ["2.00", 1], ["2.00", 2], ["2.00", 3]),
+        paymentCount: 3,
+      }),
+    "23514",
+    "a fourth part (position 3)",
+    "sale_payments_position_allowed"
+  );
+  await expectSqlState(
+    () =>
+      write({
+        parts: parts(["4.00", 0], ["2.00", 1], ["2.00", 2], ["2.00", 3]),
+        paymentCount: 4,
+      }),
+    "23514",
+    "a header counting four parts",
+    "sales_payment_count_allowed"
+  );
+  await expectSqlState(
+    () => write({ parts: parts(["6.00", 0], ["4.00", 0]), paymentCount: 2 }),
+    "23505",
+    "two parts at the same position",
+    "sale_payments_organization_sale_position_unique"
+  );
+
+  const sweep = async (reader: { query: typeof admin.query }) =>
+    (await reader.query<{ id: string }>(BROKEN_SALES)).rows.map(
+      (row) => row.id
+    );
+  // the sweep finds a sale that breaks the rule: one planted and never committed (the trigger is deferred)
+  const client = await admin.connect();
+  let discard = true;
+  try {
+    const planted = await inRolledBackTransaction(client, async () => {
+      const header = await client.query<{ id: string }>(
+        "INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count, payment_count) SELECT organization_id, gen_random_uuid(), occurred_at, occurred_on, 1, 0, 2 FROM public.sales LIMIT 1 RETURNING id"
+      );
+      const id = header.rows[0]?.id;
+      assert.ok(id, "a sale to borrow the organization from");
+      assert.deepEqual(
+        await sweep(client),
+        [id],
+        "the sweep finds the planted sale"
+      );
+      return id;
+    });
+    assert.ok(planted);
+    discard = false;
+  } finally {
+    client.release(discard);
+  }
+  const counted = await admin.query<{ count: number }>(
+    "SELECT count(*)::int AS count FROM public.sales"
+  );
+  assert.ok((counted.rows[0]?.count ?? 0) > 0, "the sweep has sales to read");
+  assert.deepEqual(
+    await sweep(admin),
+    [],
+    "every sale in the database keeps the rule"
+  );
 }
 
 async function run() {
@@ -280,6 +512,22 @@ async function run() {
         requestId: randomUUID(),
         ...overrides,
       };
+    }
+
+    type SalePart = NonNullable<ConfirmSaleRepositoryInput["payments"]>[number];
+
+    /** The same sale as `command`, paid in parts, each with its own profile choice. */
+    function splitCommand(
+      variantId: string,
+      payments: SalePart[],
+      overrides: Partial<ConfirmSaleRepositoryInput> = {}
+    ): ConfirmSaleRepositoryInput {
+      const {
+        payment: _payment,
+        paymentProfile: _paymentProfile,
+        ...base
+      } = command(variantId, overrides);
+      return { ...base, payments };
     }
 
     /** Runs a rejected command and proves nothing of it (or its audit) persisted. */
@@ -846,6 +1094,436 @@ async function run() {
       "archived, unknown, and cross-organization profiles are rejected with no partial writes"
     );
 
+    // ------------------------------------------ 4b. a sale paid in two parts
+    // a function of its own keeps run() under the complexity limit
+    async function splitPaymentCases() {
+      const currentProfile = await admin.pool.query<{ version: number }>(
+        "SELECT version FROM public.payment_profiles WHERE id = $1",
+        [profile.id]
+      );
+      const cardSelection = {
+        expectedVersion: Number(currentProfile.rows[0]?.version),
+        id: profile.id,
+      };
+      const pixProfile = await withTenantAs(
+        runtimeDatabase.db,
+        tenantA,
+        "organization:manage",
+        (transaction, identity) =>
+          createPaymentProfile(transaction, identity, {
+            name: "Pix do banco sintético",
+            rules: [
+              {
+                anticipationFee: { mode: "none" },
+                expectedSettlementDays: 0,
+                method: "pix",
+                processingFee: {
+                  fixedAmount: "0.50",
+                  mode: "fixed_and_percentage",
+                  percentage: "1.000000",
+                },
+              },
+            ],
+          })
+      );
+      const pixSelection = {
+        expectedVersion: pixProfile.version,
+        id: pixProfile.id,
+      };
+      const pixPart = (
+        amount: string,
+        paymentProfile: SalePart["paymentProfile"] = pixSelection
+      ): SalePart => ({
+        amount,
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        paymentProfile,
+      });
+      const cardPart = (
+        amount: string,
+        paymentProfile: SalePart["paymentProfile"] = cardSelection
+      ): SalePart => ({
+        amount,
+        anticipationRequested: false,
+        installmentPlan: "issuer",
+        installments: 3,
+        method: "credit_card",
+        paymentProfile,
+      });
+      const storedParts = async (saleId: string) =>
+        (
+          await admin.pool.query<{
+            amount: string;
+            method: string;
+            payment_count: number;
+            position: number;
+            processing_fee: string | null;
+            processing_mode: string;
+            profile_id: string | null;
+            profile_version: number | null;
+          }>(
+            "SELECT payment.position, payment.method, payment.amount::text AS amount, payment.processing_fee_amount_snapshot::text AS processing_fee, payment.processing_fee_mode_snapshot AS processing_mode, payment.payment_profile_id AS profile_id, payment.payment_profile_version_snapshot AS profile_version, sale.payment_count FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = $1 ORDER BY payment.position",
+            [saleId]
+          )
+        ).rows;
+
+      const splitInput = splitCommand(productA2.variantId, [
+        pixPart("40.00"),
+        cardPart("50.00"),
+      ]);
+      const split = await confirm(tenantA, splitInput);
+      assert.equal(split.replayed, false);
+      assert.equal(split.totals.totalDue, "90.00");
+      assert.deepEqual(
+        await storedParts(split.sale.id),
+        [
+          {
+            amount: "40.00",
+            method: "pix",
+            payment_count: 2,
+            position: 0,
+            processing_fee: "0.90",
+            processing_mode: "fixed_and_percentage",
+            profile_id: pixProfile.id,
+            profile_version: pixProfile.version,
+          },
+          {
+            amount: "50.00",
+            method: "credit_card",
+            payment_count: 2,
+            position: 1,
+            processing_fee: "2.60",
+            processing_mode: "fixed_and_percentage",
+            profile_id: profile.id,
+            profile_version: cardSelection.expectedVersion,
+          },
+        ],
+        "two rows at positions 0 and 1, payment_count 2, each part priced by its own profile on its own amount (5% + 0.10 of 50.00 is 2.60; of the 90.00 total it would be 4.60)"
+      );
+      assert.deepEqual(
+        split.payments.map((part) => [part.position, part.method, part.amount]),
+        [
+          [0, "pix", "40.00"],
+          [1, "credit_card", "50.00"],
+        ]
+      );
+      const { position: _splitPosition, ...splitFirst } = split.payments[0] ?? {
+        position: -1,
+      };
+      assert.deepEqual(
+        split.payment,
+        splitFirst,
+        "payment is the part at position 0"
+      );
+      const splitEffects = await effects(
+        tenantA,
+        splitInput.commandId,
+        splitInput.requestId ?? ""
+      );
+      assert.deepEqual(splitEffects, {
+        adjustments: 0,
+        audit: 2,
+        items: 1,
+        movements: 1,
+        payments: 2,
+        sales: 1,
+      });
+      tests.push(
+        "a sale of two parts commits two payment rows at positions 0 and 1 with payment_count 2, adding up to the total, each with the fees of its own profile computed on its own amount; payment is the part at position 0"
+      );
+
+      await expectRejectedWithoutEffects(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          cardPart("49.99"),
+        ]),
+        SalePaymentSplitMismatchError,
+        "parts adding up to less than the total are refused before anything is written",
+        [productA2.variantId]
+      );
+      await expectRejectedWithoutEffects(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          cardPart("50.01"),
+        ]),
+        SalePaymentSplitMismatchError,
+        "parts adding up to more than the total are refused before anything is written",
+        [productA2.variantId]
+      );
+      tests.push(
+        "parts that do not add up to the total the server computes are refused with sale_payment_split_mismatch, leaving no header, item, payment, movement, balance change or audit"
+      );
+
+      const splitReplay = await confirm(tenantA, splitInput);
+      assert.equal(splitReplay.replayed, true);
+      assert.equal(splitReplay.sale.id, split.sale.id);
+      assert.deepEqual(
+        await effects(
+          tenantA,
+          splitInput.commandId,
+          splitInput.requestId ?? ""
+        ),
+        splitEffects,
+        "a replay writes nothing"
+      );
+      const splitConflicts: [string, ConfirmSaleRepositoryInput][] = [
+        [
+          "the same parts in the other order",
+          { ...splitInput, payments: [cardPart("50.00"), pixPart("40.00")] },
+        ],
+        [
+          "another split of the same total",
+          { ...splitInput, payments: [pixPart("41.00"), cardPart("49.00")] },
+        ],
+        [
+          "another profile on the second part",
+          {
+            ...splitInput,
+            payments: [pixPart("40.00"), cardPart("50.00", null)],
+          },
+        ],
+        ["one part only", { ...splitInput, payments: [pixPart("90.00")] }],
+        [
+          "the single-payment form",
+          command(productA2.variantId, {
+            commandId: splitInput.commandId,
+            payment: { anticipationRequested: false, method: "pix" },
+            paymentProfile: pixSelection,
+            requestId: splitInput.requestId ?? null,
+          }),
+        ],
+      ];
+      for (const [label, input] of splitConflicts) {
+        // biome-ignore lint/performance/noAwaitInLoops: each conflict is checked against the same stored sale, one at a time
+        await assert.rejects(
+          () => confirm(tenantA, input),
+          SaleCommandConflictError,
+          label
+        );
+      }
+      assert.deepEqual(
+        await effects(
+          tenantA,
+          splitInput.commandId,
+          splitInput.requestId ?? ""
+        ),
+        splitEffects,
+        "a conflict writes nothing"
+      );
+      tests.push(
+        "the same command ID with the same parts replays without a new row; the parts in another order, another split, another profile, fewer parts or the single-payment form are a sale_command_conflict"
+      );
+
+      const racedProduct = await createSellableProduct(
+        tenantA,
+        "partes em corrida",
+        {
+          cost: "2.00",
+          quantity: 10,
+        }
+      );
+      const racedCommand = splitCommand(racedProduct.variantId, [
+        pixPart("30.00"),
+        cardPart("60.00"),
+      ]);
+      const { results: racedResults } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("products", "id", racedProduct.productId)],
+        label: "four deliveries of one split sale",
+        racers: Array.from(
+          { length: 4 },
+          () => () => confirm(tenantA, racedCommand, concurrentDatabase)
+        ),
+      });
+      assert.deepEqual(rejections(racedResults), [], "no delivery fails");
+      const raced = fulfilled(racedResults);
+      assert.equal(raced.filter((result) => !result.replayed).length, 1);
+      assert.equal(new Set(raced.map((result) => result.sale.id)).size, 1);
+      assert.deepEqual(
+        await effects(
+          tenantA,
+          racedCommand.commandId,
+          racedCommand.requestId ?? ""
+        ),
+        { ...splitEffects },
+        "one sale, two payment rows, one movement"
+      );
+      assert.equal(
+        (await balanceOf(tenantA, racedProduct.variantId)).quantity,
+        9
+      );
+      tests.push(
+        "four concurrent deliveries of one split sale create one sale with its two parts; the rest replay"
+      );
+
+      const partRefusals: [
+        string,
+        SalePart[],
+        abstract new (...args: never[]) => Error & { part: number | null },
+      ][] = [
+        [
+          "a stale profile version on the second part",
+          [
+            pixPart("40.00"),
+            cardPart("50.00", {
+              expectedVersion: cardSelection.expectedVersion - 1,
+              id: profile.id,
+            }),
+          ],
+          PaymentProfileVersionConflictError,
+        ],
+        [
+          "an unknown profile on the second part",
+          [
+            pixPart("40.00"),
+            cardPart("50.00", { expectedVersion: 1, id: randomUUID() }),
+          ],
+          PaymentProfileNotFoundError,
+        ],
+        [
+          "another organization's profile on the second part",
+          [
+            pixPart("40.00"),
+            cardPart("50.00", {
+              expectedVersion: tenantBProfile.version,
+              id: tenantBProfile.id,
+            }),
+          ],
+          PaymentProfileNotFoundError,
+        ],
+        [
+          "the same profile named at two versions",
+          [
+            pixPart("40.00", pixSelection),
+            pixPart("50.00", {
+              expectedVersion: pixSelection.expectedVersion + 1,
+              id: pixProfile.id,
+            }),
+          ],
+          PaymentProfileVersionConflictError,
+        ],
+      ];
+      for (const [label, payments, refusal] of partRefusals) {
+        const refused = splitCommand(productA2.variantId, payments);
+        // biome-ignore lint/performance/noAwaitInLoops: each refusal is proven without effects before the next one
+        await assert.rejects(
+          () => confirm(tenantA, refused),
+          (error: unknown) => {
+            assert.ok(error instanceof refusal, label);
+            assert.equal(error.part, 1, `${label}: names the second part`);
+            assert.doesNotMatch(
+              error.message,
+              profileOrAmountPattern,
+              `${label}: no profile id and no amount in the message`
+            );
+            return true;
+          },
+          label
+        );
+        assert.deepEqual(
+          await effects(tenantA, refused.commandId, refused.requestId ?? ""),
+          noEffects,
+          `${label}: the whole sale is refused`
+        );
+      }
+      const bothStale = splitCommand(productA2.variantId, [
+        pixPart("40.00", {
+          expectedVersion: pixSelection.expectedVersion + 1,
+          id: pixProfile.id,
+        }),
+        cardPart("50.00", { expectedVersion: 1, id: randomUUID() }),
+      ]);
+      await assert.rejects(
+        () => confirm(tenantA, bothStale),
+        (error: unknown) => {
+          assert.ok(error instanceof PaymentProfileVersionConflictError);
+          assert.equal(error.part, 0, "the first part that fails is named");
+          return true;
+        }
+      );
+      assert.deepEqual(
+        await effects(tenantA, bothStale.commandId, bothStale.requestId ?? ""),
+        noEffects
+      );
+      tests.push(
+        "a profile refused on one part (stale version, unknown, another organization's, one profile at two versions) refuses the whole sale with that part's position and writes nothing; with both parts refused, the first is named"
+      );
+
+      // two parts of the same method under two profiles: each part takes the rule of its own profile
+      const samePixTwoProfiles = await confirm(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          pixPart("50.00", cardSelection),
+        ])
+      );
+      assert.deepEqual(
+        (await storedParts(samePixTwoProfiles.sale.id)).map((row) => [
+          row.position,
+          row.profile_id,
+          row.processing_fee,
+        ]),
+        [
+          [0, pixProfile.id, "0.90"],
+          [1, profile.id, "0.75"],
+        ],
+        "1% + 0.50 of 40.00 under one profile, 1.5% of 50.00 under the other"
+      );
+      tests.push(
+        "two parts of the same method under two profiles each take the rule of their own profile"
+      );
+
+      const partWithoutProfile = await confirm(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          cardPart("50.00", null),
+        ])
+      );
+      const partWithoutRule = await confirm(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          {
+            amount: "50.00",
+            anticipationRequested: false,
+            installmentPlan: null,
+            installments: null,
+            method: "debit_card",
+            paymentProfile: pixSelection,
+          },
+        ])
+      );
+      for (const [label, sale] of [
+        ["a part without a profile", partWithoutProfile],
+        ["a part whose profile has no rule for its method", partWithoutRule],
+      ] as const) {
+        // biome-ignore lint/performance/noAwaitInLoops: two sales, read one after the other
+        const [first, second] = await storedParts(sale.sale.id);
+        assert.equal(
+          first?.processing_fee,
+          "0.90",
+          `${label}: the other part keeps its fees`
+        );
+        assert.equal(
+          second?.processing_fee,
+          null,
+          `${label}: the fee is unknown, never zero`
+        );
+        assert.equal(second?.processing_mode, "unknown", label);
+        assert.equal(sale.payments[1]?.processingFee.amount, null, label);
+        assert.equal(sale.payments[1]?.processingFee.mode, "unknown", label);
+      }
+      tests.push(
+        "a part without a profile, or whose profile has no rule for its method, keeps unknown fees (null, never zero) while the other part keeps its own"
+      );
+    }
+    await splitPaymentCases();
+
     // ------------------------------------------------------- 5. validation
     type ErrorClass = abstract new (...args: never[]) => Error;
     const invalidInputs: [string, ConfirmSaleRepositoryInput, ErrorClass][] = [
@@ -1377,6 +2055,11 @@ async function run() {
       movement?: boolean;
       movementOn?: string;
       payment?: string | null;
+      /** The parts written with their positions, in place of the one payment without a position. */
+      parts?: { amount: string; position: number }[];
+      /** The header's `payment_count`; left out, the header is written as before the parts existed. */
+      paymentCount?: number;
+      price?: string;
     }
     const writeGraph = (
       tenant: TenantFixture,
@@ -1392,7 +2075,14 @@ async function run() {
           const commandId = randomUUID();
           if (options.appendTo) {
             const { saleId } = options.appendTo;
-            if (options.appendTo.adjustment) {
+            if (options.parts) {
+              await insertPayments(
+                (query) => transaction.execute(query),
+                org,
+                saleId,
+                options
+              );
+            } else if (options.appendTo.adjustment) {
               await transaction.execute(
                 sql`INSERT INTO public.sale_adjustments (organization_id, sale_id, kind, value_type, amount, position) VALUES (${org}, ${saleId}, 'freight', 'fixed', '1.00', 9)`
               );
@@ -1404,18 +2094,22 @@ async function run() {
             return;
           }
           const header = await transaction.execute<{ id: string }>(
-            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count) VALUES (${org}, ${commandId}, now(), '2026-10-13', ${options.itemCount ?? 1}, 0) RETURNING id`
+            options.paymentCount === undefined
+              ? sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count) VALUES (${org}, ${commandId}, now(), '2026-10-13', ${options.itemCount ?? 1}, 0) RETURNING id`
+              : sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count, payment_count) VALUES (${org}, ${commandId}, now(), '2026-10-13', ${options.itemCount ?? 1}, 0, ${options.paymentCount}) RETURNING id`
           );
           const saleId = header.rows[0]?.id;
           assert.ok(saleId);
+          const price = options.price ?? "10.00";
           await transaction.execute(
-            sql`INSERT INTO public.sale_items (organization_id, sale_id, position, product_id, variant_id, product_label, quantity, listed_unit_price, charged_unit_price) VALUES (${org}, ${saleId}, 0, ${product.productId}, ${product.variantId}, 'x', 1, '10.00', '10.00')`
+            sql`INSERT INTO public.sale_items (organization_id, sale_id, position, product_id, variant_id, product_label, quantity, listed_unit_price, charged_unit_price) VALUES (${org}, ${saleId}, 0, ${product.productId}, ${product.variantId}, 'x', 1, ${price}, ${price})`
           );
-          if (options.payment !== null) {
-            await transaction.execute(
-              sql`INSERT INTO public.sale_payments (organization_id, sale_id, method, amount) VALUES (${org}, ${saleId}, 'cash', ${options.payment ?? "10.00"})`
-            );
-          }
+          await insertPayments(
+            (query) => transaction.execute(query),
+            org,
+            saleId,
+            options
+          );
           if (options.movement !== false) {
             // the product may hold no stock: a receipt keeps the ledger at the balance
             await transaction.execute(
@@ -1425,6 +2119,7 @@ async function run() {
               sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta) VALUES (${org}, ${commandId}, 0, 1, ${options.movementOn ?? "2026-10-13"}, 'sale', ${product.productId}, ${product.variantId}, -1)`
             );
           }
+          return saleId;
         }
       );
 
@@ -1514,6 +2209,13 @@ async function run() {
     await writeGraph(tenantA, productA2, {});
     tests.push(
       "PostgreSQL rejects header-only, payment-less, mismatched-total, ledger-less, appended-item, appended-adjustment, and orphan sale-movement commits (deferred completeness triggers)"
+    );
+
+    await assertPaymentParts(admin.pool, (options) =>
+      writeGraph(tenantA, productA2, options)
+    );
+    tests.push(
+      "a sale is paid in one to three parts at positions 0, 1, 2 adding up to the total due, written directly by the runtime and committed: two and three parts are accepted; a wrong sum, a part of zero beside another, a gap in the positions, a header counting more or fewer parts than were written and a part appended to a confirmed sale are refused at commit as sales_confirmation_payment_complete; a fourth part (position 3) or a count of 4 is refused by its CHECK, a repeated position by the unique index; the form of the previous Worker (one payment without a position, a header without a count) and a sale of total zero in one part of zero still commit, and every sale in the database keeps the rule"
     );
 
     await expectSqlState(
@@ -1614,7 +2316,6 @@ async function run() {
       await concurrent.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     await admin.pool.end();

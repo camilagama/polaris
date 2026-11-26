@@ -14,8 +14,9 @@ export interface OutboxPolicy {
   roles: string;
 }
 
+// TO PUBLIC is stored as oid 0, which pg_roles does not list: without the CASE it would read as no role at all
 export const OUTBOX_POLICIES_SQL =
-  "SELECT polname::text AS name, CASE polcmd WHEN 'r' THEN 'SELECT' WHEN 'a' THEN 'INSERT' WHEN 'w' THEN 'UPDATE' WHEN 'd' THEN 'DELETE' ELSE polcmd::text END AS cmd, CASE WHEN polpermissive THEN 'PERMISSIVE' ELSE 'RESTRICTIVE' END AS kind, ARRAY(SELECT rolname::text FROM pg_roles WHERE oid = ANY (polroles)) AS roles FROM pg_policy WHERE polrelid = 'public.event_outbox'::regclass";
+  "SELECT polname::text AS name, CASE polcmd WHEN 'r' THEN 'SELECT' WHEN 'a' THEN 'INSERT' WHEN 'w' THEN 'UPDATE' WHEN 'd' THEN 'DELETE' ELSE polcmd::text END AS cmd, CASE WHEN polpermissive THEN 'PERMISSIVE' ELSE 'RESTRICTIVE' END AS kind, ARRAY(SELECT rolname::text FROM pg_roles WHERE oid = ANY (polroles)) || CASE WHEN '0'::oid = ANY (polroles) THEN ARRAY['public'] ELSE ARRAY[]::text[] END AS roles FROM pg_policy WHERE polrelid = 'public.event_outbox'::regclass";
 
 const compareText = (left: string, right: string) => {
   if (left < right) {

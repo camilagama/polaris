@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  deviceKind,
+  FAMILY_BROWSERS,
+  KIND_BY_SYSTEM,
+} from "../offline/runtime/devices-model";
 import { DEVICE_FAMILY_LABELS, deviceFamilyLabel } from "./device-family-label";
 
 const UA = {
@@ -333,5 +338,59 @@ describe("deviceFamilyLabel", () => {
         expect(label).not.toMatch(CONTROL_CHARACTER);
       }
     });
+  });
+});
+
+describe("the table of the Aparelhos screen follows DEVICE_FAMILY_LABELS", () => {
+  const parts = [...DEVICE_FAMILY_LABELS]
+    .filter((label) => label.includes(" no "))
+    .map((label) => label.split(" no ") as [string, string]);
+
+  it("the browsers the screen accepts are exactly the browsers of the set", () => {
+    expect([...FAMILY_BROWSERS].sort()).toEqual(
+      [...new Set(parts.map(([browser]) => browser))].sort()
+    );
+  });
+
+  it("the systems the screen gives a kind to are exactly the systems of the set", () => {
+    expect(Object.keys(KIND_BY_SYSTEM).sort()).toEqual(
+      [...new Set(parts.map(([, system]) => system))].sort()
+    );
+  });
+
+  it("every name of the set with a system gives a kind to the row, and a bare browser gives none", () => {
+    for (const [browser, system] of parts) {
+      expect(deviceKind(`${browser} no ${system}`)).not.toBe("unknown");
+    }
+    const bare = [...DEVICE_FAMILY_LABELS].filter(
+      (label) => !label.includes(" no ")
+    );
+    expect(bare.length).toBeGreaterThan(0);
+    for (const label of bare) {
+      expect(deviceKind(label)).toBe("unknown");
+    }
+  });
+
+  it("each system of the set has the kind the screen draws for it", () => {
+    expect(KIND_BY_SYSTEM).toEqual({
+      Android: "phone",
+      ChromeOS: "computer",
+      iPad: "tablet",
+      iPhone: "phone",
+      Linux: "computer",
+      Mac: "computer",
+      Windows: "computer",
+    });
+  });
+
+  it("an iPad in desktop mode is named a Mac and gets the computer icon; the iPad that says so is a tablet", () => {
+    const desktopMode = deviceFamilyLabel(
+      headers({ "user-agent": UA.ipadDesktop })
+    );
+    const mobile = deviceFamilyLabel(headers({ "user-agent": UA.ipadMobile }));
+    expect(desktopMode).toBe("Safari no Mac");
+    expect(deviceKind(desktopMode)).toBe("computer");
+    expect(mobile).toBe("Safari no iPad");
+    expect(deviceKind(mobile)).toBe("tablet");
   });
 });

@@ -36,6 +36,8 @@ interface StockList {
   ) => void;
   /** What the inputs show now; the list follows after the search pauses. */
   filters: StockFilters;
+  /** The filter the list is being read for; the rows on screen are "load more"-able only when read for the same one. */
+  listKey: string;
   loadMore: () => void;
   reload: () => void;
   setFilters: (changes: Partial<StockFilters>) => void;
@@ -73,6 +75,11 @@ export function useStockList(
   const localWriter = local?.stores.writer;
   const localOutbox = local?.stores.outbox;
   const localVersion = local?.dataVersion ?? -1;
+  const offline = localWriter !== undefined && localVersion >= 0;
+  const listKey = useMemo(
+    () => JSON.stringify([organizationId, offline, withCover, effective]),
+    [effective, offline, organizationId, withCover]
+  );
 
   useEffect(() => {
     // A new search, filter, organization or explicit reload starts over.
@@ -94,12 +101,17 @@ export function useStockList(
                 stock: effective.stock,
               });
           setState((current) =>
-            stockLoaded(current, { entries, nextCursor: null })
+            stockLoaded(
+              current,
+              { entries, nextCursor: null },
+              listKey,
+              effective
+            )
           );
         })
         .catch((error: unknown) => {
           if (request === latest.current) {
-            setState((current) => stockLoadFailed(current, error));
+            setState((current) => stockLoadFailed(current, error, listKey));
           }
         });
       return () => {
@@ -115,12 +127,12 @@ export function useStockList(
     )
       .then((page) => {
         if (request === latest.current) {
-          setState((current) => stockLoaded(current, page));
+          setState((current) => stockLoaded(current, page, listKey, effective));
         }
       })
       .catch((error: unknown) => {
         if (request === latest.current) {
-          setState((current) => stockLoadFailed(current, error));
+          setState((current) => stockLoadFailed(current, error, listKey));
         }
       });
     return () => {
@@ -128,6 +140,7 @@ export function useStockList(
     };
   }, [
     effective,
+    listKey,
     localOutbox,
     localVersion,
     localWriter,
@@ -137,13 +150,13 @@ export function useStockList(
   ]);
 
   const loadMore = useCallback(() => {
-    if (!canLoadMoreStock(state) || state.nextCursor === null) {
+    if (!canLoadMoreStock(state, listKey) || state.nextCursor === null) {
       return;
     }
     const cursor = state.nextCursor;
     latest.current += 1;
     const request = latest.current;
-    setState(stockMoreStarted);
+    setState((current) => stockMoreStarted(current, listKey));
     readWithRetry(
       () =>
         orpcClient.inventory.listBalances(
@@ -161,7 +174,7 @@ export function useStockList(
           setState((current) => stockMoreFailed(current, error));
         }
       });
-  }, [effective, organizationId, state, withCover]);
+  }, [effective, listKey, organizationId, state, withCover]);
 
   const reload = useCallback(
     () => setReloadVersion((version) => version + 1),
@@ -178,5 +191,13 @@ export function useStockList(
     []
   );
 
-  return { applyBalance, filters, loadMore, reload, setFilters, state };
+  return {
+    applyBalance,
+    filters,
+    listKey,
+    loadMore,
+    reload,
+    setFilters,
+    state,
+  };
 }

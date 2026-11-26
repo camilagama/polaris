@@ -9,8 +9,10 @@ import GlobeIcon from "lucide-react/dist/esm/icons/globe";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type FormEvent, useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
+import { TextLink } from "@/ui/text-link";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { formatQuantity } from "../lib/format";
 import { listCountText } from "./list-page-model";
@@ -110,6 +112,7 @@ interface ProfileFormProps {
 }
 
 const SAVE_REASON_ID = "public-profile-save-reason";
+const PROFILE_TITLE_ID = "public-profile-title";
 
 export function ProfileForm(props: ProfileFormProps) {
   const { draft, onChange, onSlugEdited, problem, slugEdited } = props;
@@ -167,93 +170,96 @@ export function ProfileForm(props: ProfileFormProps) {
   );
 
   return (
-    <Card>
-      <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
-        <CardHeader>
-          <CardTitle aria-level={2} role="heading">
-            Perfil público
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
+    <Block aria-labelledby={PROFILE_TITLE_ID} className="min-w-0">
+      <BlockHeader id={PROFILE_TITLE_ID} title="Perfil público" />
+      <BlockPanel>
+        <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
           <p className="text-muted-foreground text-support">
             O que você digitar aqui é o que aparece. Nada é copiado do seu
             cadastro, do seu login ou do plano.
           </p>
-          <ProductTextField
-            error={problemOf("publicName", problem)}
-            id="public-name"
-            label="Nome público"
-            maxLength={MAX_PUBLIC_NAME}
-            onChange={handleName}
-            value={draft.publicName}
-          />
-          <ProductTextField
-            autoCapitalize="none"
-            className="[&_[data-slot=field-description]]:[overflow-wrap:anywhere]"
-            error={problemOf("slug", problem)}
-            hint={`${preview} · de 3 a 40 letras minúsculas, números e hífens, único entre todas as lojas.`}
-            id="public-slug"
-            label="Endereço"
-            maxLength={40}
-            onChange={handleSlug}
-            spellCheck={false}
-            value={draft.slug}
-          />
-          <ProductTextAreaField
-            error={problemOf("description", problem)}
-            hint={`${MAX_PUBLIC_DESCRIPTION - draft.description.length} caracteres restantes.`}
-            id="public-description"
-            label="Descrição"
-            maxLength={MAX_PUBLIC_DESCRIPTION}
-            onChange={handleDescription}
-            optional
-            value={draft.description}
-          />
-          <ProductTextField
-            error={problemOf("whatsapp", problem)}
-            id="public-whatsapp"
-            inputMode="tel"
-            label="WhatsApp"
-            onChange={handleWhatsapp}
-            optional
-            placeholder="11 91234-5678"
-            value={draft.whatsapp}
-          />
-          <ProductTextField
-            autoCapitalize="none"
-            error={problemOf("instagram", problem)}
-            id="public-instagram"
-            label="Instagram"
-            onChange={handleInstagram}
-            optional
-            placeholder="minhaloja"
-            spellCheck={false}
-            value={draft.instagram}
-          />
-        </CardContent>
-        <CardContent>
-          <div className="grid gap-2 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:gap-3">
-            <Button
-              aria-describedby={reasonId}
-              aria-disabled={reasonId !== undefined || undefined}
-              disabled={props.pending}
-              type="submit"
-            >
-              {props.pending ? "Salvando…" : "Salvar perfil"}
-            </Button>
-            {reasonId === SAVE_REASON_ID ? (
-              <p
-                className="text-muted-foreground text-support"
-                id={SAVE_REASON_ID}
+          <FieldSet>
+            <FieldLegend>Como a loja aparece</FieldLegend>
+            <ProductTextField
+              error={problemOf("publicName", problem)}
+              id="public-name"
+              label="Nome público"
+              maxLength={MAX_PUBLIC_NAME}
+              onChange={handleName}
+              value={draft.publicName}
+            />
+            <ProductTextField
+              autoCapitalize="none"
+              className="[&_[data-slot=field-description]]:[overflow-wrap:anywhere]"
+              error={problemOf("slug", problem)}
+              hint={`${preview} · de 3 a 40 letras minúsculas, números e hífens, único entre todas as lojas.`}
+              id="public-slug"
+              label="Endereço"
+              maxLength={40}
+              onChange={handleSlug}
+              spellCheck={false}
+              value={draft.slug}
+            />
+            <ProductTextAreaField
+              error={problemOf("description", problem)}
+              hint={`${MAX_PUBLIC_DESCRIPTION - draft.description.length} caracteres restantes.`}
+              id="public-description"
+              label="Descrição"
+              maxLength={MAX_PUBLIC_DESCRIPTION}
+              onChange={handleDescription}
+              optional
+              value={draft.description}
+            />
+          </FieldSet>
+          <FieldSeparator />
+          <FieldSet>
+            <FieldLegend>Contato</FieldLegend>
+            <ProductTextField
+              error={problemOf("whatsapp", problem)}
+              id="public-whatsapp"
+              inputMode="tel"
+              label="WhatsApp"
+              onChange={handleWhatsapp}
+              optional
+              placeholder="11 91234-5678"
+              value={draft.whatsapp}
+            />
+            <ProductTextField
+              autoCapitalize="none"
+              error={problemOf("instagram", problem)}
+              id="public-instagram"
+              label="Instagram"
+              onChange={handleInstagram}
+              optional
+              placeholder="minhaloja"
+              spellCheck={false}
+              value={draft.instagram}
+            />
+          </FieldSet>
+          <div>
+            <div className="grid gap-2 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:gap-3">
+              <Button
+                aria-describedby={reasonId}
+                aria-disabled={reasonId !== undefined || undefined}
+                disabled={props.pending}
+                type="submit"
               >
-                Nada mudou para salvar.
-              </p>
-            ) : null}
+                {props.pending ? "Salvando…" : "Salvar perfil"}
+              </Button>
+              {reasonId === SAVE_REASON_ID ? (
+                <p
+                  className="text-muted-foreground text-support"
+                  id={SAVE_REASON_ID}
+                >
+                  Nada mudou para salvar.
+                </p>
+              ) : null}
+            </div>
+            <ActionMessages {...props.feedback} />
           </div>
-          <ActionMessages {...props.feedback} />
-        </CardContent>
-      </form>
-    </Card>
+        </form>
+      </BlockPanel>
+    </Block>
   );
 }
 
@@ -296,13 +302,9 @@ export function SwitchCard(props: SwitchCardProps) {
   }, [onToggle, reasonId]);
 
   return (
-    <Card aria-labelledby="catalog-switch" role="region">
-      <CardHeader>
-        <CardTitle aria-level={2} id="catalog-switch" role="heading">
-          Catálogo
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+    <Block aria-labelledby="catalog-switch" className="min-w-0">
+      <BlockHeader id="catalog-switch" title="Catálogo" />
+      <BlockPanel>
         <p
           className={
             props.visibility === "waiting-plan"
@@ -343,21 +345,16 @@ export function SwitchCard(props: SwitchCardProps) {
         ) : null}
         {address && props.visibility === "live" ? (
           <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <a
-              className="focus-ring touch-hit rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
-              href={address}
-              rel="noopener"
-              target="_blank"
-            >
+            <TextLink href={address} rel="noopener" target="_blank">
               Abrir o catálogo
-            </a>
+            </TextLink>
             <span className="text-muted-foreground text-support [overflow-wrap:anywhere]">
               {address}
             </span>
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
 
@@ -445,39 +442,40 @@ export function ProductsCard(props: ProductsCardProps) {
   );
 
   return (
-    <Card aria-labelledby="catalog-products" role="region">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle aria-level={2} id="catalog-products" role="heading">
-          Produtos
-        </CardTitle>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            {...connectionControlProps(props.online)}
-            disabled={
-              props.pending ||
-              props.planBlocks ||
-              shownCount === products.length
-            }
-            onClick={handleShowAll}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Mostrar todos
-          </Button>
-          <Button
-            {...connectionControlProps(props.online)}
-            disabled={props.pending || shownCount === 0}
-            onClick={handleHideAll}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Tirar todos
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+    <Block aria-labelledby="catalog-products" className="min-w-0">
+      <BlockHeader
+        action={
+          <div className="flex flex-wrap gap-3">
+            <Button
+              {...connectionControlProps(props.online)}
+              disabled={
+                props.pending ||
+                props.planBlocks ||
+                shownCount === products.length
+              }
+              onClick={handleShowAll}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Mostrar todos
+            </Button>
+            <Button
+              {...connectionControlProps(props.online)}
+              disabled={props.pending || shownCount === 0}
+              onClick={handleHideAll}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Tirar todos
+            </Button>
+          </div>
+        }
+        id="catalog-products"
+        title="Produtos"
+      />
+      <BlockPanel>
         <div>
           <p className="text-muted-foreground text-support">
             {formatQuantity(shownCount)} de {formatQuantity(products.length)}{" "}
@@ -537,7 +535,7 @@ export function ProductsCard(props: ProductsCardProps) {
             shown={page.items.length}
           />
         ) : null}
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }

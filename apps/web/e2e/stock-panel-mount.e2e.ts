@@ -9,6 +9,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * and its panel come back, and the other rows go back off.
  */
 const PANEL_OPEN_REASON = "Feche o painel aberto para usar os botões.";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
 
 const SHIRT = {
   isDefaultVariant: false,
@@ -19,7 +20,7 @@ const SHIRT = {
   productStatus: "active",
   quantity: 5,
   sku: "CAM-AZ-M",
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: NOW.toISOString(),
   values: [{ optionName: "cor", optionValueName: "Azul" }],
   variantId: "0199c2d0-0000-7000-8000-0000000000b1",
   version: 1,
@@ -69,6 +70,7 @@ async function openStockLab(page: Page) {
     });
   });
   await serveLabWorker(page);
+  await page.clock.setFixedTime(NOW);
   await page.goto("/offline-screens-lab?screen=stock");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

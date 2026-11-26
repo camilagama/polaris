@@ -3,6 +3,7 @@ import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { tabHref } from "../app-shell/navigation-model";
 import { clockPartsInTimezone } from "../lib/dates";
 import { formatCalendarDate } from "../lib/format";
+import { subscribePlanUsageChanges } from "../lib/plan-usage-changes";
 
 /**
  * The part of the Assinatura the shell needs on every screen (the notice of grace at the top, AS-35, the trial at the
@@ -10,6 +11,9 @@ import { formatCalendarDate } from "../lib/format";
  * the checkouts opened before the return moved to the Assinatura): the days of the plan, São Paulo's, as the server's.
  * Kept apart from the screen's model, so the shell does not carry the screen.
  */
+
+/** A read of the plan with no deadline of its own stops holding the foot of the menu after this long. */
+export const PLAN_READ_WAIT_MS = 3000;
 
 export const DAY_MS = 86_400_000;
 
@@ -113,6 +117,35 @@ export function trialChargeDay(
   return month && day ? `${day}/${month}` : null;
 }
 
+// ---- the card of the plan at the foot of the menu ----------------------------------------------------------------
+
+export interface PlanCardView {
+  /** The variants used of the plan's limit, or null when the read did not carry both numbers: the line goes, the card stays. */
+  usage: { max: number; used: number } | null;
+}
+
+/**
+ * The card of the Free plan at the foot of the menu: always, for the owner of a store in `free` or `free_over_limit`
+ * (`facts` is null for whom does not manage the billing and while nothing was read). Never in the trial, which has no
+ * count to show (the trial line says the charge), nor in `active` or `grace`. No threshold, no way to close it.
+ */
+export function planCardFor(
+  facts: PlanNoticeFacts | null
+): PlanCardView | null {
+  if (
+    facts === null ||
+    !(facts.state === "free" || facts.state === "free_over_limit")
+  ) {
+    return null;
+  }
+  return {
+    usage:
+      facts.variants === null
+        ? null
+        : { max: facts.variants.max, used: facts.variants.used },
+  };
+}
+
 // ---- what the notice remembers between the screens of this tab ------------------------------------------------
 
 /**
@@ -127,7 +160,7 @@ export const PLAN_NOTICE_FOR_MS = 5 * 60_000;
 /** What a read of the plan gives the shell. */
 export type PlanNoticeRead = Pick<
   BillingPlanView,
-  "accessEndsAt" | "nextCharge" | "state"
+  "accessEndsAt" | "limits" | "nextCharge" | "state" | "usage"
 >;
 
 export interface RememberedNotice
@@ -136,6 +169,8 @@ export interface RememberedNotice
   nextChargeOn: string | null;
   organizationId: string;
   readAt: number;
+  /** The active variants and the plan's limit for them, for the card of the Free plan; null when the read had no limit. */
+  variants: { max: number; used: number } | null;
 }
 
 /** What the shell shows of the plan: what this tab read of it. */
@@ -182,6 +217,10 @@ export function rememberPlanNotice(
     organizationId,
     readAt: now,
     state: plan.state,
+    variants:
+      plan.limits.variants === null
+        ? null
+        : { max: plan.limits.variants, used: plan.usage.variants },
   };
   inMemory = JSON.stringify(value);
   try {
@@ -198,6 +237,22 @@ function storedText(store: SessionStore | null): string | null {
   } catch {
     return inMemory;
   }
+}
+
+/** The kept count of variants when it is two whole numbers with a limit above zero; null otherwise (an older copy has none). */
+function rememberedVariants(value: unknown): RememberedNotice["variants"] {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const { max, used } = value as { max?: unknown; used?: unknown };
+  return typeof max === "number" &&
+    typeof used === "number" &&
+    Number.isSafeInteger(max) &&
+    Number.isSafeInteger(used) &&
+    max > 0 &&
+    used >= 0
+    ? { max, used }
+    : null;
 }
 
 /** What this tab read of the store's plan, and when; null for another store or a value that is not one. */
@@ -232,6 +287,7 @@ export function rememberedPlanNotice(
       organizationId,
       readAt: value.readAt,
       state: value.state,
+      variants: rememberedVariants(value.variants),
     };
   } catch {
     return null;
@@ -342,6 +398,31 @@ export function planNoticeIsOld(
     now < remembered.readAt
   );
 }
+
+/**
+ * A write that changes what the plan counts (or the plan) leaves the kept use behind the server's: the line of use goes
+ * from the card until the next read of the plan puts the new number, so the menu never says a count the screen's own
+ * warning contradicts. The state, the dates and the card itself stay, and no read starts because of it.
+ */
+function forgetKeptUse(): void {
+  const store = sessionStore();
+  try {
+    const kept = JSON.parse(storedText(store) ?? "null") as Record<
+      string,
+      unknown
+    > | null;
+    if (kept === null || typeof kept !== "object" || kept.variants === null) {
+      return;
+    }
+    inMemory = JSON.stringify({ ...kept, variants: null });
+    store?.setItem(PLAN_NOTICE_KEY, inMemory);
+  } catch {
+    // the page's memory still has what it had
+  }
+  tell();
+}
+
+subscribePlanUsageChanges(forgetKeptUse);
 
 /** The session is over: what the notice kept of the plan goes with it. */
 export function clearPlanNotice(

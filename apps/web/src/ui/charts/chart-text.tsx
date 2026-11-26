@@ -1,5 +1,6 @@
 /* Polaris adaptation of the Bklit UI area chart (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
 import { cn } from "@/lib/utils";
+import { Money } from "../money";
 import type { ChartColor, ChartPoint } from "./chart-data";
 
 /** A second series in the box of the chart: a dashed line with no fill, on the scale of the main one. */
@@ -65,26 +66,26 @@ export function Reading({
       {secondary && point.rawSecondary !== undefined ? (
         <>
           <span>{`· ${name}`}</span>{" "}
-          <span className="font-medium text-foreground tabular-nums">
-            {formatValue(point.raw)}
+          <span className="font-medium text-foreground">
+            <Money text={formatValue(point.raw)} />
           </span>{" "}
           <SecondaryReading
             formatValue={formatValue}
             secondary={secondary}
             value={point.rawSecondary}
           />
-          {note ? (
-            <>
-              {" "}
-              <span>{`· ${note}`}</span>
-            </>
-          ) : null}
         </>
       ) : (
-        <span className="font-medium text-foreground tabular-nums">
-          {formatValue(point.raw)}
+        <span className="font-medium text-foreground">
+          <Money text={formatValue(point.raw)} />
         </span>
       )}
+      {note ? (
+        <>
+          {" "}
+          <span>{`· ${note}`}</span>
+        </>
+      ) : null}
     </p>
   );
 }
@@ -106,11 +107,11 @@ function SecondaryReading({
         className={
           reading.unknown
             ? "font-medium text-warning italic"
-            : "font-medium text-foreground tabular-nums"
+            : "font-medium text-foreground"
         }
         data-chart-unknown={reading.unknown ? "" : undefined}
       >
-        {reading.text}
+        {reading.unknown ? reading.text : <Money text={reading.text} />}
       </span>
     </>
   );
@@ -128,7 +129,8 @@ export function spokenValue({
     return "";
   }
   if (!secondary || point.rawSecondary === undefined) {
-    return `${point.label}: ${formatValue(point.raw)}`;
+    const plain = `${point.label}: ${formatValue(point.raw)}`;
+    return note ? `${plain}, ${note}` : plain;
   }
   const second = secondaryText(secondary, point.rawSecondary, formatValue);
   const both = `${point.label}: ${name} ${formatValue(point.raw)}, ${secondary.name}${second.separator} ${second.text}`;
@@ -255,7 +257,7 @@ function Line({
         />
       ) : null}
       <span className="text-chart-tooltip-muted">{name}</span>
-      <span className="ml-auto pl-2 font-medium text-chart-tooltip-foreground tabular-nums">
+      <span className="ml-auto pl-2 font-medium font-mono text-chart-tooltip-foreground tabular-nums">
         {value}
       </span>
     </div>

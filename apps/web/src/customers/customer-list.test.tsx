@@ -33,6 +33,8 @@ const customer = (
 
 const ROW_BUTTON_ANA =
   /<button[^>]*data-row-open=""[^>]*>(?:(?!<\/button>).)*<span class="sr-only">Editar <\/span>Ana Lima<\/span>/s;
+const LAST_PURCHASE_LINE =
+  /<span[^>]*data-last-purchase=""[^>]*>([^<]*)<\/span>/;
 const ROW_BUTTON_TAG = /<button[^>]*data-row-open=""[^>]*>/;
 /** A button that opens before the one before it closed. */
 const BUTTON_IN_BUTTON = /<button(?:(?!<\/button>).)*<button/s;
@@ -40,6 +42,7 @@ const BUTTON_IN_BUTTON = /<button(?:(?!<\/button>).)*<button/s;
 const noop = () => undefined;
 type Props = ComponentProps<typeof CustomerList>;
 const base: Props = {
+  count: "1 cliente",
   customers: [customer(1, "Ana Lima")],
   isLoading: false,
   isOffline: false,
@@ -51,6 +54,7 @@ const base: Props = {
   query: "",
   status: "active",
   syncStates: new Map(),
+  today: "2026-11-21",
   total: 1,
   updateStates: new Map(),
 };
@@ -83,8 +87,23 @@ function menuTrigger(markup: string, name: string): string {
 describe("the list of customers", () => {
   it("says it is loading, and shows no row", () => {
     const html = render({ isLoading: true });
-    expect(html).toContain("Carregando clientes…");
+    expect(html).toContain("Clientes cadastrados");
+    expect(html).toContain('data-state="loading"');
+    expect(html).toContain("Carregando…");
+    expect(html).toContain('data-slot="skeleton"');
     expect(html).not.toContain("Ana Lima");
+  });
+
+  it("frames the rows with the title and the count, and the true empty list has no frame", () => {
+    const rows = render({ count: "2 de 5 clientes" });
+    expect(rows).toContain('data-list-block=""');
+    expect(rows).toContain('data-state="rows"');
+    expect(rows).toContain("Clientes cadastrados");
+    expect(rows).toContain("2 de 5 clientes");
+    expect(rows).toContain('data-customer-id="');
+    expect(render({ customers: [], count: "", total: 0 })).not.toContain(
+      "data-list-block"
+    );
   });
 
   it("says only what is missing in the empty list (no button), and that the archived one is empty", () => {
@@ -107,6 +126,7 @@ describe("the list of customers", () => {
   it("says what was searched when no customer matches, instead of saying there are none", () => {
     const html = render({ customers: [], query: " bia ", total: 3 });
     expect(html).toContain("Nenhum cliente com “bia”.");
+    expect(html).toContain('data-state="filtered-empty"');
     expect(html).not.toContain("Nenhum cliente ainda");
     expect(html).not.toContain("Novo cliente</button>");
   });
@@ -140,7 +160,7 @@ describe("the list of customers", () => {
     expect(gone).not.toContain("data-row-open");
   });
 
-  it("describes the row button by its state badge and its contacts, both drawn with those ids", () => {
+  it("describes the row button by its contacts and then its state badge, both drawn with those ids", () => {
     const bia = customer(2, "Bia Souza", {
       archivedAt: "2026-10-14T12:00:00.000Z",
       email: "bia@exemplo.com",
@@ -149,8 +169,13 @@ describe("the list of customers", () => {
     const html = render({ customers: [bia], status: "archived" });
     const tag = ROW_BUTTON_TAG.exec(html)?.[0] ?? "missing";
     expect(tag).toContain(
-      `aria-describedby="customer-state-${bia.id} customer-support-${bia.id}"`
+      `aria-describedby="customer-support-${bia.id} customer-state-${bia.id}"`
     );
+    expect(DESCRIBED_BY.exec(tag)?.[1]?.split(" ")).toEqual([
+      `customer-support-${bia.id}`,
+      `customer-state-${bia.id}`,
+    ]);
+    expect(describedByText(html, tag).at(-1)).toBe("Arquivado");
     expect(html).toContain(`id="customer-state-${bia.id}"`);
     expect(html).toContain(`id="customer-support-${bia.id}"`);
   });
@@ -281,6 +306,94 @@ describe("the list of customers", () => {
     });
     expect(ROW_BUTTON_TAG.exec(both)?.[0]).toContain(
       `aria-describedby="customer-support-${ana.id} customer-locked-${ana.id} customer-pending-${ana.id}"`
+    );
+  });
+
+  it("tells the last purchase on the right of the row, small and muted, and describes the button by it", () => {
+    const ana = customer(1, "Ana Lima", { lastPurchaseOn: "2026-11-18" });
+    const html = render({ customers: [ana], total: 1 });
+    const line = LAST_PURCHASE_LINE.exec(html);
+    expect(line?.[1]).toBe("Última compra há 3 dias");
+    expect(line?.[0]).toContain("text-muted-foreground");
+    expect(line?.[0]).toContain("text-support");
+    expect(line?.[0]).toContain(`id="customer-purchase-${ana.id}"`);
+    expect(line?.[0]).toContain('aria-hidden="true"');
+    expect(ROW_BUTTON_TAG.exec(html)?.[0]).toContain(
+      `customer-purchase-${ana.id}`
+    );
+  });
+
+  it("goes under the contacts in a narrow window and at the right corner from 40 rem", () => {
+    const html = render({
+      customers: [customer(1, "Ana Lima", { lastPurchaseOn: "2026-11-18" })],
+      total: 1,
+    });
+    expect(html).toContain("min-[40rem]:items-end");
+  });
+
+  it("says Sem compras for a customer with none, and nothing where the purchases are not known", () => {
+    const none = render({
+      customers: [customer(1, "Ana Lima", { lastPurchaseOn: null })],
+      total: 1,
+    });
+    expect(none).toContain(">Sem compras<");
+    const unknown = render({
+      customers: [customer(1, "Ana Lima")],
+      total: 1,
+    });
+    expect(unknown).not.toContain("data-last-purchase");
+    expect(unknown).not.toContain("Sem compras");
+  });
+
+  it("counts the days from the store's today it was given", () => {
+    const html = render({
+      customers: [customer(1, "Ana Lima", { lastPurchaseOn: "2026-10-01" })],
+      today: "2026-11-21",
+      total: 1,
+    });
+    expect(html).toContain("Última compra em 01/10");
+  });
+});
+
+const ANONYMIZED_BADGE = /data-slot="badge"[^>]*>Anonimizado</;
+
+describe("the state badge of a customer row", () => {
+  const archived = () =>
+    render({
+      customers: [customer(1, "Ana Lima", { status: "archived" })],
+      status: "archived",
+    });
+
+  it("reads name, contacts, state and then the menu, the badge being the last part of the row button", () => {
+    const html = archived();
+    const name = html.indexOf("Ana Lima");
+    const phone = html.indexOf("(11)");
+    const badge = html.indexOf(">Arquivado<");
+    const menu = html.indexOf("Mais ações para Ana Lima");
+    expect(name).toBeGreaterThan(-1);
+    expect([name, phone, badge, menu]).toEqual(
+      [name, phone, badge, menu].sort((a, b) => a - b)
+    );
+    expect(html.indexOf("</button>", badge)).toBeLessThan(menu);
+  });
+
+  it("keeps the initials circle a circle", () => {
+    expect(archived()).toContain("rounded-full bg-muted");
+    expect(archived()).not.toContain("data-row-tile");
+  });
+
+  it("keeps the badge where the others are when the row has no menu: a spacer takes the menu's place", () => {
+    const html = render({
+      customers: [
+        customer(1, "Cliente anonimizado", {
+          anonymizedAt: "2026-10-15T12:00:00.000Z",
+          phone: null,
+        }),
+      ],
+    });
+    expect(html).toMatch(ANONYMIZED_BADGE);
+    expect(html).toContain(
+      '<span aria-hidden="true" class="size-ctl-md shrink-0">'
     );
   });
 });

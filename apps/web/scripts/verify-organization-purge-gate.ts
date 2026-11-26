@@ -43,7 +43,10 @@ import {
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
   OrganizationPurgeRefusedError,
 } from "@polaris/domain/privacy/organization-purge";
-import { withGateRole } from "../../../packages/db/scripts/gate-roles";
+import {
+  rollbackAndRelease,
+  withGateRole,
+} from "../../../packages/db/scripts/gate-roles";
 import {
   confirmPlainSale,
   createProductFixture,
@@ -235,8 +238,7 @@ async function expectGrantWrittenDuringPurgeLosesText(
       "a grant written during the purge ends up with the fixed text"
     );
   } finally {
-    await purging.query("ROLLBACK").catch(() => undefined);
-    purging.release();
+    await rollbackAndRelease(purging);
   }
 }
 
@@ -362,7 +364,7 @@ async function queryAs(
         statement: string,
         values?: unknown[]
       ) => Promise<{ rows: { reason?: string }[] }>;
-      release: () => void;
+      release: (destroy?: boolean) => void;
     }>;
   },
   role: string,
@@ -376,8 +378,7 @@ async function queryAs(
       client.query(statement, values)
     );
   } finally {
-    await client.query("ROLLBACK").catch(() => undefined);
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 
@@ -411,7 +412,7 @@ async function makeHoldOverdue(
 async function expectCancellationsAppendOnly(pool: {
   connect: () => Promise<{
     query: (statement: string) => Promise<unknown>;
-    release: () => void;
+    release: (destroy?: boolean) => void;
   }>;
   query: (statement: string) => Promise<unknown>;
 }) {
@@ -443,8 +444,7 @@ async function expectCancellationsAppendOnly(pool: {
         )
       );
     } finally {
-      await client.query("ROLLBACK").catch(() => undefined);
-      client.release();
+      await rollbackAndRelease(client);
     }
   }
 }
@@ -458,7 +458,7 @@ async function raceCancellationAgainstMark(
   pool: {
     connect: () => Promise<{
       query: (statement: string, values?: unknown[]) => Promise<unknown>;
-      release: () => void;
+      release: (destroy?: boolean) => void;
     }>;
   },
   organizationId: string,
@@ -495,11 +495,10 @@ async function raceCancellationAgainstMark(
     );
     await marker.query("COMMIT");
   } catch (error) {
-    await marker.query("ROLLBACK").catch(() => undefined);
+    await rollbackAndRelease(marker);
     throw error;
-  } finally {
-    marker.release();
   }
+  marker.release();
   return await outcome;
 }
 
@@ -513,7 +512,7 @@ async function raceMarkAgainstCancellation(
   pool: {
     connect: () => Promise<{
       query: (statement: string, values?: unknown[]) => Promise<unknown>;
-      release: () => void;
+      release: (destroy?: boolean) => void;
     }>;
   },
   cancellation: {
@@ -563,11 +562,10 @@ async function raceMarkAgainstCancellation(
     );
     await canceller.query("COMMIT");
   } catch (error) {
-    await canceller.query("ROLLBACK").catch(() => undefined);
+    await rollbackAndRelease(canceller);
     throw error;
-  } finally {
-    canceller.release();
   }
+  canceller.release();
   return await outcome;
 }
 
@@ -671,7 +669,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let privacy: ReturnType<typeof createPrivacyMaintenanceClient> | undefined;
@@ -713,7 +711,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const tenantUrl = await login(runtimeRole, "polaris_purge_tenant");
@@ -1010,11 +1008,10 @@ async function run() {
         );
         await client.query("COMMIT");
       } catch (error) {
-        await client.query("ROLLBACK");
+        await rollbackAndRelease(client);
         throw error;
-      } finally {
-        client.release();
       }
+      client.release();
       // a removed product keeps its links frozen (tombstone guard), the purge still takes them
       await owner.pool.query(
         "UPDATE public.products SET deleted_at = now(), version = version + 1 WHERE organization_id = $1 AND id = $2",
@@ -2294,8 +2291,7 @@ async function run() {
           client.query(statement, values)
         );
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
-        client.release();
+        await rollbackAndRelease(client);
       }
     };
     const insertAudit = (eventType: string, organizationId: string) =>
@@ -2344,8 +2340,7 @@ async function run() {
           client.query(statement, values)
         );
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
-        client.release();
+        await rollbackAndRelease(client);
       }
     };
     await expectSqlState(
@@ -2905,11 +2900,10 @@ async function run() {
       );
       await restoreClient.query("COMMIT");
     } catch (error) {
-      await restoreClient.query("ROLLBACK");
+      await rollbackAndRelease(restoreClient);
       throw error;
-    } finally {
-      restoreClient.release();
     }
+    restoreClient.release();
     // the storage went with the purge that left the tombstone: the reapplied one cannot be cancelled either
     await assert.rejects(
       () => cancel(privacyCase.id, "Depois do restore"),
@@ -3069,11 +3063,8 @@ async function run() {
     await concurrentPrivacy?.close().catch(() => undefined);
     await adminDatabase?.pool.end().catch(() => undefined);
     await runtime?.pool.end().catch(() => undefined);
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: each login is dropped after its sessions end.
-      await owner.pool
-        .query(`REVOKE "${group}" FROM "${role}"`)
-        .catch(() => undefined);
       await owner.pool
         .query(`DROP ROLE IF EXISTS "${role}"`)
         .catch(() => undefined);

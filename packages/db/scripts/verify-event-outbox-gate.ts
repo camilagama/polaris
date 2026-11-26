@@ -11,6 +11,7 @@ import {
   type OutboxPolicyRow,
   sortedOutboxPolicies,
 } from "./event-outbox-policies";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -84,7 +85,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
 
@@ -114,7 +115,7 @@ async function run() {
       `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
     );
     await owner.pool.query(`GRANT "${runtimeRole}" TO "${role}"`);
-    logins.push([role, runtimeRole]);
+    logins.push(role);
     const tenantUrl = temporaryRuntimeUrl(adminUrl, role, password);
     runtime = createDatabase(tenantUrl, { maxConnections: 2 });
     const { db } = runtime;
@@ -557,12 +558,46 @@ async function run() {
       sortedOutboxPolicies(expectedOutboxPolicies(runtimeRole)),
       "the tenant only inserts (and the privacy owner, for a closed organization's copy); reads and updates are the owners' (dispatcher and re-arm), through their functions; only the purge owner deletes (ADR 0081)"
     );
+    const toPublic = await owner.pool.connect();
+    try {
+      await toPublic.query("BEGIN");
+      await toPublic.query("SET LOCAL lock_timeout = '10s'");
+      await toPublic.query(
+        "CREATE POLICY event_outbox_gate_to_public ON public.event_outbox FOR SELECT TO PUBLIC USING (false)"
+      );
+      const planted =
+        await toPublic.query<OutboxPolicyRow>(OUTBOX_POLICIES_SQL);
+      const everyone = planted.rows.find(
+        (row) => row.name === "event_outbox_gate_to_public"
+      );
+      assert.deepEqual(
+        everyone?.roles,
+        ["public"],
+        "a policy TO PUBLIC reads as the role public, not as an empty list"
+      );
+      assert.notDeepEqual(
+        sortedOutboxPolicies(planted.rows),
+        sortedOutboxPolicies(expectedOutboxPolicies(runtimeRole)),
+        "a policy TO PUBLIC fails the comparison with the expected list"
+      );
+    } finally {
+      await rollbackAndRelease(toPublic);
+    }
+    const afterRollback =
+      await owner.pool.query<OutboxPolicyRow>(OUTBOX_POLICIES_SQL);
+    assert.equal(
+      afterRollback.rows.some(
+        (row) => row.name === "event_outbox_gate_to_public"
+      ),
+      false,
+      "the planted policy was rolled back"
+    );
     const forced = await owner.pool.query<{ relforcerowsecurity: boolean }>(
       "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.event_outbox'::regclass"
     );
     assert.equal(forced.rows[0]?.relforcerowsecurity, true);
     tests.push(
-      "the tenant runtime cannot read, update, delete or truncate the outbox and can insert only the five columns of an event (not the status, attempts, times or ID), only in its own organization and only for a type the policy lists; only for an export that the same user asked for in the same organization, with the key the type and that export's ID and no body key beyond the type's (an extra key with a valid ID is refused); a duplicate key is refused by the unique index; no other runtime holds any privilege, only the dispatcher's and the privacy owners have read and update policies, only the purge owner deletes (and reads, for an organization whose purge was scheduled), and row level security is forced"
+      "the tenant runtime cannot read, update, delete or truncate the outbox and can insert only the five columns of an event (not the status, attempts, times or ID), only in its own organization and only for a type the policy lists; only for an export that the same user asked for in the same organization, with the key the type and that export's ID and no body key beyond the type's (an extra key with a valid ID is refused); a duplicate key is refused by the unique index; no other runtime holds any privilege, only the dispatcher's and the privacy owners have read and update policies, only the purge owner deletes (and reads, for an organization whose purge was scheduled), a policy TO PUBLIC planted in a rolled back transaction reads as public and fails the list, and row level security is forced"
     );
 
     // ------------------------------------------------- 5. the database refuses a body that could hold a person's data
@@ -660,9 +695,8 @@ async function run() {
     );
   } finally {
     await runtime?.pool.end().catch(() => undefined);
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

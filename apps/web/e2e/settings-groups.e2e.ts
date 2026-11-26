@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   assertNoPageScroll,
   assertNothingClipped,
@@ -13,9 +13,9 @@ import {
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * The tabs of Configurações in two named rows from 760 px: "Da loja" and "Da conta". What a person sees does not
- * change (a row with no tab to show is not drawn, nor its name), the addresses open the same tab, and below 760 px
- * there is no strip: a list of the same rows, each opening its tab, with a way back to the list.
+ * Configurações da loja: one strip of tabs from 760 px (Formas de receber, Catálogo público, and Assinatura and Seus
+ * dados by condition), with no group names; below 760 px no strip, a list of the same rows with no group titles, each
+ * opening its tab, with a way back to the list. Senha and Aparelhos are Minha conta: their old addresses end there.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -29,6 +29,10 @@ const rpc = (json: unknown) => ({
 });
 
 const LIST_ADDRESS = /\/configuracoes$/;
+const AT_ACCOUNT = /\/conta$/;
+const AT_ACCOUNT_DEVICES = /\/conta\?aba=aparelhos$/;
+const ACCOUNT_WITH_QUERY = /\/conta\?(x=1&aba=aparelhos|aba=aparelhos&x=1)$/;
+const TITLE = "Configurações da loja";
 const HEALTH_ADDRESS = /\/health$/;
 const PHONE_WIDTH = 760;
 const PHONE = { height: 740, width: 360 };
@@ -41,9 +45,8 @@ interface Options {
   size?: { height: number; width: number };
 }
 
-async function openSettings(
+async function serveSettings(
   page: Page,
-  path: string,
   {
     billingSelfService = true,
     passwordOn = true,
@@ -85,24 +88,26 @@ async function openSettings(
     }
     return route.abort("internetdisconnected");
   });
+}
+
+async function openSettings(page: Page, path: string, options: Options = {}) {
+  const { size = { height: 800, width: 1280 } } = options;
+  await serveSettings(page, options);
   await page.goto(path);
   if (size.width < PHONE_WIDTH) {
     await expect(
-      page.getByRole("heading", { level: 1, name: "Configurações" })
+      page.getByRole("heading", { level: 1, name: TITLE })
     ).toBeVisible();
     return;
   }
-  await expect(
-    page.getByRole("tablist", { name: "Configurações" })
-  ).toBeVisible();
+  await expect(page.getByRole("tablist", { name: TITLE })).toBeVisible();
 }
 
-const list = (page: Page) =>
-  page.getByRole("tablist", { name: "Configurações" });
+const list = (page: Page) => page.getByRole("tablist", { name: TITLE });
 const tab = (page: Page, name: string) =>
   list(page).getByRole("tab", { exact: true, name });
-const label = (page: Page, name: string) =>
-  page.locator(`[data-tabs-group="${name}"]`);
+const GROUP_LABEL = /^(Da loja|Da conta)$/;
+const GROUP_LABEL_IN_TREE = /Da loja|Da conta/;
 
 const voltar = (page: Page) =>
   page.getByRole("link", { name: "Voltar para Configurações" });
@@ -116,35 +121,30 @@ async function tabNames(page: Page) {
   return await list(page).getByRole("tab").allTextContents();
 }
 
-test("o dono vê as duas linhas, cada aba na sua, na ordem de antes", async ({
+test("o dono vê uma faixa só, sem nomes de grupo, na ordem de antes e sem Senha nem Aparelhos", async ({
   page,
 }) => {
   await openSettings(page, "/configuracoes");
-  await expect(label(page, "Da loja")).toBeVisible();
-  await expect(label(page, "Da conta")).toBeVisible();
   expect(await tabNames(page)).toEqual([
     "Formas de receber",
     "Catálogo público",
-    "Aparelhos",
     "Assinatura",
-    "Senha",
     "Seus dados",
   ]);
-  const [shop, account] = await Promise.all([
-    tab(page, "Catálogo público").boundingBox(),
-    tab(page, "Aparelhos").boundingBox(),
-  ]);
-  expect(account?.y).toBeGreaterThan((shop?.y ?? 0) + (shop?.height ?? 0) - 1);
-  const [shopLabel, accountLabel] = await Promise.all([
-    label(page, "Da loja").boundingBox(),
-    label(page, "Da conta").boundingBox(),
-  ]);
-  expect(accountLabel?.y).toBeGreaterThan(shopLabel?.y ?? 0);
-  expect(accountLabel?.x).toBe(shopLabel?.x);
-  await expect(list(page).locator("[role=none]")).not.toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(TITLE);
+  await expect(page.locator("[data-tabs-group]")).toHaveCount(0);
+  await expect(list(page).locator("[role=none]")).toHaveCount(0);
+  await expect(page.getByText(GROUP_LABEL)).toHaveCount(0);
+  const boxes = await Promise.all(
+    ["Formas de receber", "Catálogo público", "Assinatura", "Seus dados"].map(
+      (name) => tab(page, name).boundingBox()
+    )
+  );
+  const tops = new Set(boxes.map((box) => Math.round(box?.y ?? -1)));
+  expect(tops.size).toBe(1);
 });
 
-test("sem capacidade, sem autosserviço e com a senha desligada, a linha da conta só tem Aparelhos (o runtime offline está ligado neste build)", async ({
+test("sem capacidade e sem autosserviço a faixa só tem Formas de receber e Catálogo público", async ({
   page,
 }) => {
   await openSettings(page, "/configuracoes", {
@@ -152,16 +152,13 @@ test("sem capacidade, sem autosserviço e com a senha desligada, a linha da cont
     passwordOn: false,
     role: "staff",
   });
-  await expect(label(page, "Da loja")).toBeVisible();
-  await expect(label(page, "Da conta")).toBeVisible();
   expect(await tabNames(page)).toEqual([
     "Formas de receber",
     "Catálogo público",
-    "Aparelhos",
   ]);
 });
 
-test("as capacidades escondem o que escondiam: Assinatura só com billing:manage e autosserviço, Seus dados só com organization:export, Senha só com a senha ligada", async ({
+test("as capacidades escondem o que escondiam: Assinatura só com billing:manage e autosserviço, Seus dados só com organization:export; a senha ligada não põe Senha aqui", async ({
   page,
 }) => {
   await openSettings(page, "/configuracoes", {
@@ -171,47 +168,90 @@ test("as capacidades escondem o que escondiam: Assinatura só com billing:manage
   expect(await tabNames(page)).toEqual([
     "Formas de receber",
     "Catálogo público",
-    "Aparelhos",
-    "Senha",
     "Seus dados",
   ]);
-  await expect(label(page, "Da conta")).toBeVisible();
 });
 
 for (const [address, name] of [
   ["/configuracoes", "Formas de receber"],
   ["/configuracoes?aba=catalogo-publico", "Catálogo público"],
   ["/configuracoes?aba=assinatura", "Assinatura"],
-  ["/configuracoes?aba=senha", "Senha"],
   ["/configuracoes?aba=seus-dados", "Seus dados"],
   ["/subscription", "Assinatura"],
   ["/public-catalog", "Catálogo público"],
   ["/payment-profiles", "Formas de receber"],
 ] as const) {
-  test(`${address} abre a aba ${name}, nas linhas`, async ({ page }) => {
+  test(`${address} abre a aba ${name}, na faixa`, async ({ page }) => {
     await openSettings(page, address);
     await expect(tab(page, name)).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator("[data-tabs-group]")).toHaveCount(2);
+    await expect(page.locator("[data-tabs-group]")).toHaveCount(0);
   });
 }
 
-test("as setas andam pela lista toda, de uma linha à outra, e Enter abre", async ({
+for (const [address, final] of [
+  ["/configuracoes?aba=senha", AT_ACCOUNT],
+  ["/configuracoes?aba=aparelhos", AT_ACCOUNT_DEVICES],
+  ["/devices", AT_ACCOUNT_DEVICES],
+  ["/conta/seguranca", AT_ACCOUNT],
+] as const) {
+  for (const [where, size] of [
+    ["1280 px", { height: 800, width: 1280 }],
+    ["360 px", PHONE],
+  ] as const) {
+    test(`${address} a ${where} termina em Minha conta`, async ({ page }) => {
+      await serveSettings(page, { size });
+      await page.goto(address);
+      await expect(page).toHaveURL(final);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Minha conta" })
+      ).toBeVisible();
+    });
+  }
+}
+
+test("o resto da consulta vai junto quando Senha ou Aparelhos mudam de tela", async ({
   page,
 }) => {
+  await serveSettings(page);
+  await page.goto("/configuracoes?aba=aparelhos&x=1");
+  await expect(page).toHaveURL(ACCOUNT_WITH_QUERY);
+});
+
+for (const retorno of ["concluida", "cancelada", "expirada"]) {
+  test(`?aba=assinatura&retorno=${retorno} fica em Configurações da loja, na Assinatura`, async ({
+    page,
+  }) => {
+    await openSettings(
+      page,
+      `/configuracoes?aba=assinatura&retorno=${retorno}`
+    );
+    await expect(tab(page, "Assinatura")).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(new URL(page.url()).pathname).toBe("/configuracoes");
+    expect(page.url()).toContain(`retorno=${retorno}`);
+  });
+}
+
+test("as setas andam pela faixa toda e Enter abre", async ({ page }) => {
   await openSettings(page, "/configuracoes?aba=catalogo-publico");
   await tab(page, "Catálogo público").focus();
   await page.keyboard.press("ArrowRight");
-  await expect(tab(page, "Aparelhos")).toBeFocused();
-  await expect(tab(page, "Aparelhos")).toHaveAttribute("tabindex", "0");
+  await expect(tab(page, "Assinatura")).toBeFocused();
+  await expect(tab(page, "Assinatura")).toHaveAttribute("tabindex", "0");
   await expect(tab(page, "Catálogo público")).toHaveAttribute("tabindex", "-1");
   await page.keyboard.press("Enter");
-  await expect(tab(page, "Aparelhos")).toHaveAttribute("aria-selected", "true");
+  await expect(tab(page, "Assinatura")).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
   await page.keyboard.press("ArrowLeft");
   await expect(tab(page, "Catálogo público")).toBeFocused();
 });
 
 for (const width of [760, 1280]) {
-  test(`a lista de abas nas linhas não tem violação de axe nem rola de lado a ${width} px`, async ({
+  test(`a faixa de abas não tem violação de axe a ${width} px, e só rola de lado com a sombra que avisa`, async ({
     page,
   }) => {
     await openSettings(page, "/configuracoes", {
@@ -222,26 +262,30 @@ for (const width of [760, 1280]) {
       const scroller = element.parentElement as HTMLElement;
       return scroller.scrollWidth > scroller.clientWidth + 1;
     });
-    expect(sideways).toBe(false);
+    if (width >= 1280) {
+      expect(sideways).toBe(false);
+    }
+    await expect(page.locator('[data-tabs-edge="end"]')).toHaveCount(
+      sideways ? 1 : 0
+    );
   });
 }
 
-test("abaixo de 760 px não há faixa nem nomes de linha de aba: há a lista, e a 760 px voltam as linhas", async ({
+test("abaixo de 760 px não há faixa: há a lista, e a 760 px volta a faixa", async ({
   page,
 }) => {
   await openSettings(page, "/configuracoes", { size: PHONE });
-  await expect(page.locator("[data-tabs-group]")).toHaveCount(0);
   await expect(page.getByRole("tablist")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Seus dados" })).toBeVisible();
   await page.setViewportSize({ height: 800, width: 760 });
-  await expect(page.locator("[data-tabs-group]")).toHaveCount(2);
+  await expect(list(page)).toBeVisible();
   await expect(tab(page, "Formas de receber")).toHaveAttribute(
     "aria-selected",
     "true"
   );
   await page.setViewportSize({ height: 800, width: 759 });
-  await expect(page.locator("[data-tabs-group]")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Da loja" })).toBeVisible();
+  await expect(page.getByRole("tablist")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Seus dados" })).toBeVisible();
 });
 
 test("trocar de 1280 para 400 px e voltar mantém a aba aberta, o endereço e o que foi digitado", async ({
@@ -255,12 +299,10 @@ test("trocar de 1280 para 400 px e voltar mantém a aba aberta, o endereço e o 
   await tab(page, "Catálogo público").click();
 
   await page.setViewportSize({ height: 800, width: 400 });
-  await expect(page.locator("[data-tabs-group]")).toHaveCount(0);
   await expect(page.getByRole("tablist")).toHaveCount(0);
   await expect(voltar(page)).toBeVisible();
   expect(page.url()).toContain("aba=catalogo-publico");
   await page.setViewportSize({ height: 800, width: 1280 });
-  await expect(page.locator("[data-tabs-group]")).toHaveCount(2);
   await expect(tab(page, "Catálogo público")).toHaveAttribute(
     "aria-selected",
     "true"
@@ -274,53 +316,37 @@ test("trocar de 1280 para 400 px e voltar mantém a aba aberta, o endereço e o 
   );
 });
 
-test("o nome da linha é lido e cada aba é anunciada dentro do seu grupo, na lista única", async ({
+test("a página tem um título só, uma faixa só e nenhum título de grupo", async ({
   page,
 }) => {
   await openSettings(page, "/configuracoes");
-  expect(await label(page, "Da loja").getAttribute("aria-hidden")).toBeNull();
-  const tree = await list(page).ariaSnapshot();
-  expect(tree).toContain("Da loja");
-  expect(tree).toContain("Da conta");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(TITLE);
   await expect(page.getByRole("tablist")).toHaveCount(1);
-  await expect(page.getByRole("heading", { name: "Da loja" })).toHaveCount(0);
-  const inGroup = {
-    "Da loja": ["Formas de receber", "Catálogo público"],
-    "Da conta": ["Aparelhos", "Assinatura", "Senha", "Seus dados"],
-  };
-  await Promise.all(
-    Object.entries(inGroup).flatMap(([group, names]) =>
-      names.map((name) =>
-        expect(tab(page, name)).toHaveAccessibleDescription(group)
-      )
-    )
-  );
+  await expect(page.getByRole("heading", { name: GROUP_LABEL })).toHaveCount(0);
+  const tree = await list(page).ariaSnapshot();
+  expect(tree).not.toMatch(GROUP_LABEL_IN_TREE);
 });
 
-const SIX = [
+const FOUR = [
   "Formas de receber",
   "Catálogo público",
-  "Aparelhos",
   "Assinatura",
-  "Senha",
   "Seus dados",
 ];
 
 test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => {
-  test("o dono vê as seis linhas em dois grupos com h2, numa lista, sem faixa e sem rolar de lado", async ({
+  test("o dono vê as quatro linhas numa lista só, sem títulos de grupo, sem faixa e sem rolar de lado", async ({
     page,
   }) => {
     await openSettings(page, "/configuracoes", { size: PHONE });
-    await expect(page.getByRole("heading", { level: 2 })).toHaveText([
-      "Da loja",
-      "Da conta",
-    ]);
-    expect(await rowNames(page)).toEqual(SIX);
-    await expect(page.getByRole("list", { name: "Da loja" })).toBeVisible();
-    await expect(page.getByRole("list", { name: "Da conta" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2 })).toHaveCount(0);
+    expect(await rowNames(page)).toEqual(FOUR);
+    await expect(page.getByRole("list")).toHaveCount(1);
+    await expect(page.getByRole("list", { name: TITLE })).toBeVisible();
     await expect(
-      page.getByRole("list", { name: "Da loja" }).getByRole("listitem")
-    ).toHaveCount(2);
+      page.getByRole("list", { name: TITLE }).getByRole("listitem")
+    ).toHaveCount(4);
+    await expect(page.getByText(GROUP_LABEL)).toHaveCount(0);
     await expect(page.getByRole("tablist")).toHaveCount(0);
     await expect(page.locator("[data-tabs-edge]")).toHaveCount(0);
     expect(
@@ -334,7 +360,7 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     );
   });
 
-  for (const name of SIX) {
+  for (const name of FOUR) {
     test(`${name} abre em um toque a partir da lista, com o voltar visível, e o voltar devolve o foco à linha`, async ({
       page,
     }) => {
@@ -347,13 +373,13 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
       expect(page.url()).toContain("aba=");
       await expect(page.getByRole("tablist")).toHaveCount(0);
       await voltar(page).click();
-      await expect(rows(page)).toHaveCount(6);
+      await expect(rows(page)).toHaveCount(4);
       expect(new URL(page.url()).search).toBe("");
       await expect(row).toBeFocused();
     });
   }
 
-  for (const name of SIX) {
+  for (const name of FOUR) {
     test(`${name}: o voltar do navegador, na tela da aba, leva à lista com o foco na linha`, async ({
       page,
     }) => {
@@ -362,7 +388,7 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
       await row.click();
       await expect(voltar(page)).toBeFocused();
       await page.goBack();
-      await expect(rows(page)).toHaveCount(6);
+      await expect(rows(page)).toHaveCount(4);
       await expect(page).toHaveURL(LIST_ADDRESS);
       await expect(row).toBeFocused();
       await page.goForward();
@@ -382,7 +408,7 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     await page.goForward();
     await expect(voltar(page)).toBeVisible();
     await page.goBack();
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(4);
     await expect(row).toBeFocused();
   });
 
@@ -396,7 +422,7 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     await page.reload();
     await expect(voltar(page)).toBeVisible();
     await page.goBack();
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(4);
     await expect(page).toHaveURL(LIST_ADDRESS);
     await expect(row).toBeFocused();
   });
@@ -407,10 +433,10 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     await openSettings(page, "/configuracoes", { size: PHONE });
     await page.goto("/health");
     await page.goto("/configuracoes");
-    await expect(rows(page)).toHaveCount(6);
-    await page.getByRole("link", { exact: true, name: "Senha" }).click();
+    await expect(rows(page)).toHaveCount(4);
+    await page.getByRole("link", { exact: true, name: "Seus dados" }).click();
     await voltar(page).click();
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(4);
     await expect(page).toHaveURL(LIST_ADDRESS);
     await page.goBack();
     await expect(page).toHaveURL(HEALTH_ADDRESS);
@@ -419,9 +445,9 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
   test("uma aba aberta direto pelo endereço não tem lista antes: o voltar do navegador sai de Configurações", async ({
     page,
   }) => {
-    await openSettings(page, "/configuracoes?aba=senha", { size: PHONE });
+    await openSettings(page, "/configuracoes?aba=seus-dados", { size: PHONE });
     await page.goto("/health");
-    await page.goto("/configuracoes?aba=senha");
+    await page.goto("/configuracoes?aba=seus-dados");
     await expect(voltar(page)).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL(HEALTH_ADDRESS);
@@ -430,14 +456,14 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
   test("uma aba aberta direto pelo endereço: o Voltar da tela abre a lista no lugar, sem gastar o passo anterior", async ({
     page,
   }) => {
-    await openSettings(page, "/configuracoes?aba=senha", { size: PHONE });
+    await openSettings(page, "/configuracoes?aba=seus-dados", { size: PHONE });
     await page.goto("/health");
-    await page.goto("/configuracoes?aba=senha");
+    await page.goto("/configuracoes?aba=seus-dados");
     await voltar(page).click();
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(4);
     await expect(page).toHaveURL(LIST_ADDRESS);
     await expect(
-      page.getByRole("link", { exact: true, name: "Senha" })
+      page.getByRole("link", { exact: true, name: "Seus dados" })
     ).toBeFocused();
     await page.goBack();
     await expect(page).toHaveURL(HEALTH_ADDRESS);
@@ -447,7 +473,6 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     ["/configuracoes?aba=formas-de-receber", "Formas de receber"],
     ["/configuracoes?aba=catalogo-publico", "Catálogo público"],
     ["/configuracoes?aba=assinatura", "Assinatura"],
-    ["/configuracoes?aba=senha", "Senha"],
     ["/configuracoes?aba=seus-dados", "Seus dados"],
     ["/subscription", "Assinatura"],
     ["/public-catalog", "Catálogo público"],
@@ -461,7 +486,7 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
       await expect(rows(page)).toHaveCount(0);
       await expect(page.getByRole("heading", { name })).toBeVisible();
       await voltar(page).click();
-      await expect(rows(page)).toHaveCount(6);
+      await expect(rows(page)).toHaveCount(4);
     });
   }
 
@@ -469,7 +494,7 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     page,
   }) => {
     await openSettings(page, "/configuracoes?aba=nenhuma", { size: PHONE });
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(4);
     expect(page.url()).toContain("aba=nenhuma");
   });
 
@@ -498,7 +523,7 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     );
   });
 
-  test("quem vê o quê não muda: sem capacidade e com a senha desligada, a lista só tem o que a pessoa tem (o runtime offline está ligado neste build, então Aparelhos fica e a linha Da conta não some)", async ({
+  test("quem vê o quê não muda: sem capacidade, a lista só tem o que a pessoa tem", async ({
     page,
   }) => {
     await openSettings(page, "/configuracoes", {
@@ -507,16 +532,12 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
       role: "staff",
       size: PHONE,
     });
-    await expect(rows(page)).toHaveCount(3);
+    await expect(rows(page)).toHaveCount(2);
     expect(await rowNames(page)).toEqual([
       "Formas de receber",
       "Catálogo público",
-      "Aparelhos",
     ]);
-    await expect(page.getByRole("heading", { level: 2 })).toHaveText([
-      "Da loja",
-      "Da conta",
-    ]);
+    await expect(page.getByRole("heading", { level: 2 })).toHaveCount(0);
   });
 
   test("a lista e uma tela aberta com o voltar não têm violação de axe", async ({
@@ -536,8 +557,8 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
   }) => {
     await openSettings(page, "/configuracoes", { size: PHONE });
     await expect(
-      page.getByRole("link", { exact: true, name: "Senha" })
-    ).toHaveAttribute("href", "/configuracoes?aba=senha");
+      page.getByRole("link", { exact: true, name: "Seus dados" })
+    ).toHaveAttribute("href", "/configuracoes?aba=seus-dados");
     await expect(
       page.getByRole("link", { exact: true, name: "Formas de receber" })
     ).toHaveAttribute("href", "/configuracoes?aba=formas-de-receber");
@@ -558,14 +579,16 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
             },
             { once: true }
           );
-          document.querySelector('[data-settings-row="senha"]')?.dispatchEvent(
-            new MouseEvent("click", {
-              bubbles: true,
-              button: 0,
-              cancelable: true,
-              ctrlKey: true,
-            })
-          );
+          document
+            .querySelector('[data-settings-row="seus-dados"]')
+            ?.dispatchEvent(
+              new MouseEvent("click", {
+                bubbles: true,
+                button: 0,
+                cancelable: true,
+                ctrlKey: true,
+              })
+            );
         })
     );
     expect(prevented).toBe(false);
@@ -579,14 +602,14 @@ skipOutsideChromium();
 
 for (const fontPixels of [20, 24]) {
   reflowTest(
-    `a lista de Configurações a 320 px com letra de ${fontPixels} px não corta nada nem rola de lado`,
+    `a lista de Configurações da loja a 320 px com letra de ${fontPixels} px não corta nada nem rola de lado`,
     async ({ page }) => {
       await openReflowViewport(page, { fontPixels });
       await openSettings(page, "/configuracoes", {
         size: { height: 740, width: 320 },
       });
       await expectReflowFont(page, fontPixels);
-      await expect(rows(page)).toHaveCount(6);
+      await expect(rows(page)).toHaveCount(4);
       await assertNothingClipped(page.locator("main"));
       await assertNoPageScroll(page);
     }

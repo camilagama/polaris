@@ -1,5 +1,6 @@
 import type { CategoryReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -9,7 +10,6 @@ import {
 } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,8 +17,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { EmptyState } from "@/ui/empty-state";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { ListBlock } from "@/ui/list-block";
+import { Skeleton } from "@/ui/skeleton";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { focusLater } from "../lib/focus";
 import {
@@ -28,7 +31,7 @@ import {
   EMPTY_TEXT,
   STATUS_LABELS,
 } from "./categories-model";
-import { formatDate, ListNotice } from "./screen-parts";
+import { formatDate } from "./screen-parts";
 
 const BADGE_VARIANT = {
   active: "outline",
@@ -306,7 +309,7 @@ function CategoryRow({
   const pending = pendingAction?.endsWith(category.id) ?? false;
   if (mode === "rename") {
     return (
-      <li className="flex px-3 py-2.5 md:px-4" data-category-id={category.id}>
+      <ListBlock.Row className="py-2.5" data-category-id={category.id}>
         <RenameForm
           category={category}
           isPending={pending}
@@ -316,12 +319,12 @@ function CategoryRow({
           online={online}
           value={renameValue}
         />
-      </li>
+      </ListBlock.Row>
     );
   }
   if (mode === "delete") {
     return (
-      <li className="flex px-3 py-2.5 md:px-4" data-category-id={category.id}>
+      <ListBlock.Row className="py-2.5" data-category-id={category.id}>
         <DeleteConfirm
           category={category}
           isPending={pending}
@@ -329,14 +332,11 @@ function CategoryRow({
           onConfirm={actions.onDelete}
           online={online}
         />
-      </li>
+      </ListBlock.Row>
     );
   }
   return (
-    <li
-      className="flex items-center gap-3 px-3 py-2.5 md:px-4"
-      data-category-id={category.id}
-    >
+    <ListBlock.Row className="py-2.5" data-category-id={category.id}>
       <div className="grid min-w-0 flex-1 gap-1">
         <p className="font-medium [overflow-wrap:anywhere]">{category.name}</p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -369,7 +369,19 @@ function CategoryRow({
           pending={pending}
         />
       )}
-    </li>
+    </ListBlock.Row>
+  );
+}
+
+const CATEGORY_LIST_TITLE = "Categorias cadastradas";
+
+/** The shape of a row while the list loads: the name and the status line under it. */
+function CategoryRowShape() {
+  return (
+    <div className="grid gap-1.5">
+      <Skeleton className="h-3.5 w-1/3" />
+      <Skeleton className="h-3 w-1/2" />
+    </div>
   );
 }
 
@@ -397,19 +409,16 @@ export function CategoryList({
 }: CategoryListProps) {
   if (isLoading) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Carregando categorias…
-        </p>
-      </ListNotice>
+      <ListBlock
+        count=""
+        skeleton={<CategoryRowShape />}
+        state="loading"
+        title={CATEGORY_LIST_TITLE}
+      />
     );
   }
   if (categories.length === 0) {
-    return (
-      <ListNotice>
-        <p className="text-muted-foreground">{EMPTY_TEXT[status]}</p>
-      </ListNotice>
-    );
+    return <EmptyState afterRead icon={TagIcon} {...EMPTY_TEXT[status]} />;
   }
   const modeOf = (id: string): RowMode => {
     if (renamingCategoryId === id) {
@@ -418,20 +427,18 @@ export function CategoryList({
     return pendingDeleteId === id ? "delete" : null;
   };
   return (
-    <Card className="gap-0 py-0">
-      <ul aria-label="Categorias" className="divide-y divide-border">
-        {categories.map((category) => (
-          <CategoryRow
-            {...actions}
-            category={category}
-            key={category.id}
-            mode={modeOf(category.id)}
-            online={online}
-            pendingAction={pendingAction}
-            renameValue={renameValue}
-          />
-        ))}
-      </ul>
-    </Card>
+    <ListBlock state="rows" title={CATEGORY_LIST_TITLE}>
+      {categories.map((category) => (
+        <CategoryRow
+          {...actions}
+          category={category}
+          key={category.id}
+          mode={modeOf(category.id)}
+          online={online}
+          pendingAction={pendingAction}
+          renameValue={renameValue}
+        />
+      ))}
+    </ListBlock>
   );
 }

@@ -2,9 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { KpiCards, KpiCardsSkeleton, NoFiguresCards } from "./home-kpi-cards";
-import { THIS_MONTH } from "./home-period";
-import { HomePeriodRow } from "./home-period-row";
-import { PeriodControlProvider } from "./period-control";
+import { HomePeriodNotes } from "./home-period-row";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -14,6 +12,7 @@ import type { HomeFigures } from "./use-home";
  */
 
 const TODAY = "2026-10-23";
+const TRUNCATED_DETAIL = /truncate[^>]*data-kpi-warning-detail/;
 
 interface Day {
   costs: string | null;
@@ -127,11 +126,58 @@ function words(markup: string): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-describe("a coluna e os quatro cartões", () => {
-  it("é uma coluna até 759 px, duas a partir de 760 e quatro a partir de 1280", () => {
-    expect(render(figures())).toContain(
-      "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-4"
+describe("a grade dos quatro cartões", () => {
+  it("são quatro cartões iguais numa grade só: uma coluna até 759 px, duas a partir de 760 e uma faixa de quatro a partir de 1280", () => {
+    const markup = render(figures());
+    const open = markup.lastIndexOf("<div", markup.indexOf("data-kpi-row"));
+    const classes = CLASS_ATTRIBUTE.exec(markup.slice(open))?.[1] ?? "";
+    expect(classes).toContain("grid-cols-1");
+    expect(classes).toContain("md:grid-cols-2");
+    expect(classes).toContain("xl:grid-cols-4");
+    expect(classes).toContain("xl:divide-x");
+    expect(markup.match(/data-kpi=/g)).toHaveLength(4);
+    expect(markup).not.toContain("data-kpi-month");
+    expect(markup).not.toContain("flex-col gap-3 xl:gap-4");
+  });
+
+  it("a ordem do DOM é Hoje, Vendas, Resultado e Ticket", () => {
+    const markup = render(figures());
+    const order = FOUR.map((id) => markup.indexOf(`id="${id}"`));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(order.every((at) => at > -1)).toBe(true);
+  });
+
+  it("nenhum cartão é herói: todos entram na faixa e têm a caixa do número em lg, com valor, sem os números de hoje, sem conexão e carregando", () => {
+    const stale = render(figures(), false);
+    const offline = renderToStaticMarkup(<NoFiguresCards today={TODAY} />);
+    const loading = renderToStaticMarkup(<KpiCardsSkeleton />);
+    for (const markup of [render(figures()), stale, offline, loading]) {
+      expect(markup).not.toContain("data-kpi-hero");
+      expect(markup).not.toContain("text-value-xl");
+      expect(markup).not.toContain("text-value-xl--line-height");
+    }
+    for (const markup of [stale, offline]) {
+      expect(markup.match(/xl:ring-0/g)).toHaveLength(4);
+      for (const id of FOUR) {
+        expect(card(markup, id)).toContain("h-(--text-value-lg--line-height)");
+      }
+    }
+    expect(loading.match(/h-\(--text-value-lg--line-height\)/g)).toHaveLength(
+      4
     );
+    expect(loading.match(/data-kpi-skeleton/g)).toHaveLength(4);
+  });
+
+  it("Vendas hoje tem a ajuda (i) com valor, sem os números de hoje e sem conexão: o texto dela é provado no e2e", () => {
+    for (const markup of [
+      render(figures()),
+      render(figures(), false),
+      renderToStaticMarkup(<NoFiguresCards today={TODAY} />),
+    ]) {
+      expect(card(markup, "home-today")).toContain(
+        'aria-label="Sobre Vendas hoje"'
+      );
+    }
   });
 
   it("não tem linha de grupo nem data própria em repouso: o mês está no nome e o período no (i)", () => {
@@ -161,7 +207,6 @@ describe("a coluna e os quatro cartões", () => {
 });
 
 const CLASS_ATTRIBUTE = /class="([^"]*)"/;
-const REORDERING_CLASS = /[\s"](?:[\w-]+:)*order-(?:first|last|\d)/;
 
 /** The classes of the element that carries `attribute` in a card: the number box, or the R$ inside it. */
 function classesWith(markup: string, attribute: string): string {
@@ -173,8 +218,8 @@ function classesWith(markup: string, attribute: string): string {
 
 const FOUR = ["home-today", "home-month", "home-result", "home-ticket"];
 
-describe("o R$ e o valor têm um padrão só nos quatro cartões", () => {
-  it("o valor de Vendas hoje tem as mesmas classes de tamanho dos outros três", () => {
+describe("o R$ e o valor: os quatro cartões em lg", () => {
+  it("o valor dos quatro cartões é lg, com as mesmas classes entre si", () => {
     const rendered = render(figures());
     const sizes = FOUR.map((id) =>
       classesWith(card(rendered, id), "data-kpi-value")
@@ -290,7 +335,8 @@ describe("o cartão do Resultado estimado", () => {
     expect(result).not.toContain("estimativa incompleta");
     expect(result.match(/data-kpi-note-row/g)).toHaveLength(1);
     expect(result).toContain("h-5 flex-nowrap overflow-hidden");
-    expect(result).toContain(`min-w-0 truncate" data-kpi-warning-detail`);
+    expect(result).toContain('data-kpi-warning-detail=""');
+    expect(result).not.toMatch(TRUNCATED_DETAIL);
     expect(result).not.toContain("data-kpi-delta=");
   });
 });
@@ -341,79 +387,27 @@ describe("the cards without a connection and without a copy", () => {
   });
 });
 
-describe("o seletor de período na linha acima dos cartões do mês", () => {
-  const control = <button type="button">Seletor</button>;
-  const withControl = (node: React.ReactNode) =>
-    renderToStaticMarkup(
-      <PeriodControlProvider value={control}>{node}</PeriodControlProvider>
-    );
-
-  it("fica no fim de uma linha só dele, sem o texto do mês", () => {
-    const markup = withControl(<KpiCards figures={figures()} />);
-    const line = markup.slice(markup.indexOf("data-kpi-group-line"));
-    expect(words(line.slice(0, line.indexOf("</div>")))).toBe(
-      'data-kpi-group-line=""Seletor'
-    );
-    expect(markup).toContain("min-h-9");
-    expect(markup).not.toContain("Outubro · 1 a 23/10");
-  });
-
-  it("o seletor vem entre Hoje e os cartões do mês no DOM, sem classe que mude a ordem visual", () => {
-    for (const markup of [
-      withControl(<KpiCards figures={figures()} />),
-      withControl(<KpiCardsSkeleton />),
-      withControl(<NoFiguresCards today={TODAY} />),
-    ]) {
-      expect(markup).not.toMatch(REORDERING_CLASS);
-    }
-    const markup = withControl(<KpiCards figures={figures()} />);
-    const picker = markup.indexOf("Seletor");
-    expect(markup.indexOf("Vendas hoje")).toBeLessThan(picker);
-    expect(picker).toBeLessThan(markup.indexOf("Vendas em outubro"));
-  });
-
-  it("o esqueleto e o sem conexão guardam a mesma linha, com o seletor no mesmo lugar", () => {
-    for (const markup of [
-      withControl(<KpiCardsSkeleton />),
-      withControl(<NoFiguresCards today={TODAY} />),
-    ]) {
-      expect(markup).toContain("Seletor");
-      expect(markup).toContain("min-h-9");
-      expect(markup.match(/Seletor/g)).toHaveLength(1);
-    }
-  });
-
-  it("sem o seletor não há linha: os cartões não pagam uma fileira vazia", () => {
-    const markup = render(figures());
-    expect(markup).not.toContain("Seletor");
-    expect(markup).not.toContain("data-kpi-group-line");
-  });
-});
-
 const SALES_IN_SEPTEMBER = /^Vendas em setembro/;
 const SALES_OF_PERIOD = /^Vendas do período/;
 const CARD_ID = /^id="[^"]*"/;
 const SENTENCE = /<p([^>]*)>Sem conexão: só este mês e o anterior\./;
-const noop = () => undefined;
 
 describe("o nome do cartão de Vendas em cada período", () => {
   const periodOf = (from: string, to: string) =>
     renderToStaticMarkup(
-      <PeriodControlProvider value={<button type="button">Seletor</button>}>
-        <KpiCards
-          figures={figures()}
-          month={{
+      <KpiCards
+        figures={figures()}
+        month={{
+          kind: "period",
+          source: {
+            comparison: null,
             kind: "period",
-            source: {
-              comparison: null,
-              kind: "period",
-              salesComparison: null,
-              summary: { ...figures().month, period: { from, to } },
-              today: TODAY,
-            },
-          }}
-        />
-      </PeriodControlProvider>
+            salesComparison: null,
+            summary: { ...figures().month, period: { from, to } },
+            today: TODAY,
+          },
+        }}
+      />
     );
   const sales = (markup: string) =>
     words(card(markup, "home-month")).replace(CARD_ID, "").slice(0, 40);
@@ -437,77 +431,39 @@ describe("o nome do cartão de Vendas em cada período", () => {
   });
 });
 
-describe("o seletor fica no mesmo lugar em cada estado dos cartões do mês", () => {
-  const control = <button type="button">Seletor</button>;
-  const states = [
-    { kind: "figures" },
-    { kind: "loading" },
-    { error: <p role="alert">Falhou</p>, kind: "error" },
-  ] as const;
-
-  it("há um seletor só, no fim da linha do grupo, no pronto, lendo e com erro", () => {
-    for (const month of states) {
-      const markup = renderToStaticMarkup(
-        <PeriodControlProvider value={control}>
-          <KpiCards figures={figures()} month={month} />
-        </PeriodControlProvider>
-      );
-      expect(markup.match(/Seletor/g)).toHaveLength(1);
-      const line = markup.slice(markup.indexOf("data-kpi-group-line"));
-      expect(line.indexOf("Seletor")).toBeGreaterThan(-1);
-      expect(line.slice(0, line.indexOf("Seletor"))).not.toContain('id="home-');
-    }
-  });
-
-  it("lendo, a linha guarda o lugar do texto; o aviso de leitura fica fora da linha", () => {
-    const markup = renderToStaticMarkup(
-      <PeriodControlProvider value={control}>
-        <KpiCards figures={figures()} month={{ kind: "loading" }} />
-      </PeriodControlProvider>
-    );
-    const line = markup.slice(markup.indexOf("data-kpi-group-line"));
-    expect(line.slice(0, line.indexOf("Seletor"))).not.toContain(
-      "Carregando o período"
-    );
-    expect(markup).toContain("Carregando o período");
-  });
-});
-
-describe("a frase de sem conexão ao lado do seletor", () => {
-  const row = (disabled: boolean, offline: boolean) =>
+describe("a frase de sem conexão e o aviso do período, sob as ações do título", () => {
+  const notes = (disabled: boolean, offline: boolean, note?: string) =>
     renderToStaticMarkup(
-      <HomePeriodRow
+      <HomePeriodNotes
         disabled={disabled}
-        note={null}
+        note={note ?? null}
         offline={offline}
-        onCustom={noop}
-        onPreset={noop}
-        period={{ from: "2026-10-01", to: "2026-10-31" }}
-        selection={THIS_MONTH}
-        today={TODAY}
       />
     );
   const attributes = (markup: string) => markup.match(SENTENCE)?.[1] ?? "";
 
   it("com o seletor ativo e sem conexão a frase é dita (leitor de tela e, de 640 px, a vista)", () => {
-    const attrs = attributes(row(false, true));
+    const markup = notes(false, true);
+    const attrs = attributes(markup);
     expect(attrs).not.toContain("aria-hidden");
     expect(attrs).toContain("max-sm:sr-only");
     expect(attrs).not.toContain("invisible");
+    expect(markup).toContain("data-home-period");
   });
 
-  it("com o seletor desligado e sem conexão a frase fica invisível e fora do leitor, com o lugar guardado", () => {
-    const attrs = attributes(row(true, true));
-    expect(attrs).toContain('aria-hidden="true"');
-    expect(attrs).toContain("invisible");
-    expect(attrs).not.toContain("sr-only");
-  });
-
-  it("com conexão a frase segue invisível, com o seletor ativo ou não", () => {
-    for (const disabled of [false, true]) {
-      const attrs = attributes(row(disabled, false));
-      expect(attrs).toContain('aria-hidden="true"');
-      expect(attrs).toContain("invisible");
+  it("com o seletor desligado ou com conexão não há frase nem bloco: a linha não existe", () => {
+    for (const [disabled, offline] of [
+      [true, true],
+      [true, false],
+      [false, false],
+    ] as const) {
+      expect(notes(disabled, offline)).toBe("");
     }
+  });
+
+  it("o aviso do período aparece sozinho, sem a frase, quando há conexão", () => {
+    const markup = notes(false, false, "Mostrando os números de 22/10");
+    expect(markup).toContain("Mostrando os números de 22/10");
+    expect(markup).not.toContain("Sem conexão: só este mês");
   });
 });

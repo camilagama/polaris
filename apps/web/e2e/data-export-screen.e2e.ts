@@ -127,6 +127,9 @@ async function openScreen(
         })
       );
     }
+    if (procedure === "account/emailPreference") {
+      return route.fulfill(rpc({ sent: 0, tips: true }));
+    }
     if (procedure === "dataExport/list") {
       const answer = lists[Math.min(calls.reads, lists.length - 1)];
       calls.reads += 1;
@@ -182,7 +185,7 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
   if (onPhone(page)) {
     await expect(backToList(page)).toBeVisible();
   } else {
-    const tabs = page.getByRole("tablist", { name: "Configurações" });
+    const tabs = page.getByRole("tablist", { name: "Configurações da loja" });
     await expect(tabs.getByRole("tab").last()).toHaveText("Seus dados");
     await expect(
       tabs.getByRole("tab", { exact: true, name: "Seus dados" })
@@ -520,7 +523,7 @@ test("quem não é dono não vê a aba; o endereço direto diz que só o dono pe
     onPhone(page)
       ? page.locator(`[data-settings-row="${value}"]`)
       : page
-          .getByRole("tablist", { name: "Configurações" })
+          .getByRole("tablist", { name: "Configurações da loja" })
           .getByRole("tab", { exact: true, name });
   await expect(entry("Catálogo público", "catalogo-publico")).toBeVisible();
   await expect(entry("Seus dados", "seus-dados")).toHaveCount(0);

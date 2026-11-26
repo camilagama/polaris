@@ -2,6 +2,7 @@ import type { ProductMediaAssetReadModel } from "@polaris/contracts";
 import { useCallback } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { InsetBlock } from "@/ui/inset-block";
 import { productMediaAssetUrl } from "../lib/media-upload";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import {
@@ -112,112 +113,111 @@ function ProductMediaItem({
   const confirmRunning = confirming !== null && running === confirming;
 
   return (
-    <li
-      aria-busy={running !== null}
-      className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 rounded-lg border border-border p-3"
-      data-asset-id={assetId}
-    >
-      <img
-        alt={`${productName}, imagem ${position}`}
-        className="size-18 rounded-md bg-muted object-cover"
-        height={asset.height}
-        loading="lazy"
-        src={productMediaAssetUrl(asset, organizationId, undefined, 320)}
-        width={asset.width}
-      />
-      <div className="grid min-w-0 gap-0.5 [overflow-wrap:anywhere]">
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
-          <span>
-            Imagem {position} de {count}
-          </span>
-          {showCover ? <Badge data-cover="">Capa</Badge> : null}
-        </p>
-        <span className="text-muted-foreground text-support">
-          {asset.width} × {asset.height} · {formatBytes(asset.byteSize)}
-        </span>
-        {variantCount > 0 ? (
-          <span className="text-muted-foreground text-support">
-            Associada a {variantCount}{" "}
-            {variantCount === 1 ? "variante" : "variantes"}
-          </span>
-        ) : null}
-      </div>
-      {confirming ? (
-        <div
-          aria-label={`Confirmar ${confirming === "remove" ? "remoção" : "substituição"} da imagem ${position}`}
-          className="col-span-full grid gap-3 rounded-md border border-destructive/30 p-3"
-          role="alertdialog"
-        >
-          <p className="text-support">
-            {confirming === "remove"
-              ? removeConfirmationText({ position, variantCount })
-              : replaceConfirmationText({ position, variantCount })}
+    <li aria-busy={running !== null} data-asset-id={assetId}>
+      <InsetBlock className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 p-3">
+        <img
+          alt={`${productName}, imagem ${position}`}
+          className="size-18 rounded-md bg-muted object-cover"
+          height={asset.height}
+          loading="lazy"
+          src={productMediaAssetUrl(asset, organizationId, undefined, 320)}
+          width={asset.width}
+        />
+        <div className="grid min-w-0 gap-0.5 [overflow-wrap:anywhere]">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+            <span>
+              Imagem {position} de {count}
+            </span>
+            {showCover ? <Badge data-cover="">Capa</Badge> : null}
           </p>
-          <div className="flex flex-wrap gap-3">
+          <span className="text-muted-foreground text-support">
+            {asset.width} × {asset.height} · {formatBytes(asset.byteSize)}
+          </span>
+          {variantCount > 0 ? (
+            <span className="text-muted-foreground text-support">
+              Associada a {variantCount}{" "}
+              {variantCount === 1 ? "variante" : "variantes"}
+            </span>
+          ) : null}
+        </div>
+        {confirming ? (
+          <InsetBlock
+            aria-label={`Confirmar ${confirming === "remove" ? "remoção" : "substituição"} da imagem ${position}`}
+            className="col-span-full grid gap-3 p-3"
+            role="alertdialog"
+            tone="destructive"
+          >
+            <p className="text-support">
+              {confirming === "remove"
+                ? removeConfirmationText({ position, variantCount })
+                : replaceConfirmationText({ position, variantCount })}
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                data-media-action="keep"
+                disabled={running !== null}
+                onClick={handleKeep}
+                type="button"
+                variant="outline"
+              >
+                Manter imagem
+              </Button>
+              <Button
+                disabled={running !== null}
+                onClick={handleConfirm}
+                type="button"
+                variant="destructive"
+              >
+                {confirmButtonLabel(confirming, confirmRunning)}
+              </Button>
+            </div>
+          </InsetBlock>
+        ) : (
+          <fieldset className="col-span-full flex min-w-0 flex-wrap gap-3">
+            <legend className="sr-only">Ações da imagem {position}</legend>
             <Button
-              data-media-action="keep"
-              disabled={running !== null}
-              onClick={handleKeep}
+              aria-label={imageActionLabel("moveEarlier", index)}
+              data-media-action="moveEarlier"
+              disabled={!availability.moveEarlier}
+              onClick={handleMoveEarlier}
               type="button"
               variant="outline"
             >
-              Manter imagem
+              Para antes
             </Button>
             <Button
-              disabled={running !== null}
-              onClick={handleConfirm}
+              aria-label={imageActionLabel("moveLater", index)}
+              data-media-action="moveLater"
+              disabled={!availability.moveLater}
+              onClick={handleMoveLater}
+              type="button"
+              variant="outline"
+            >
+              Para depois
+            </Button>
+            <Button
+              aria-label={imageActionLabel("replace", index)}
+              data-media-action="replace"
+              disabled={!availability.replace}
+              onClick={handleAskReplace}
+              type="button"
+              variant="outline"
+            >
+              Substituir
+            </Button>
+            <Button
+              aria-label={imageActionLabel("remove", index)}
+              data-media-action="remove"
+              disabled={!availability.remove}
+              onClick={handleAskRemove}
               type="button"
               variant="destructive"
             >
-              {confirmButtonLabel(confirming, confirmRunning)}
+              Remover
             </Button>
-          </div>
-        </div>
-      ) : (
-        <fieldset className="col-span-full flex min-w-0 flex-wrap gap-3">
-          <legend className="sr-only">Ações da imagem {position}</legend>
-          <Button
-            aria-label={imageActionLabel("moveEarlier", index)}
-            data-media-action="moveEarlier"
-            disabled={!availability.moveEarlier}
-            onClick={handleMoveEarlier}
-            type="button"
-            variant="outline"
-          >
-            Para antes
-          </Button>
-          <Button
-            aria-label={imageActionLabel("moveLater", index)}
-            data-media-action="moveLater"
-            disabled={!availability.moveLater}
-            onClick={handleMoveLater}
-            type="button"
-            variant="outline"
-          >
-            Para depois
-          </Button>
-          <Button
-            aria-label={imageActionLabel("replace", index)}
-            data-media-action="replace"
-            disabled={!availability.replace}
-            onClick={handleAskReplace}
-            type="button"
-            variant="outline"
-          >
-            Substituir
-          </Button>
-          <Button
-            aria-label={imageActionLabel("remove", index)}
-            data-media-action="remove"
-            disabled={!availability.remove}
-            onClick={handleAskRemove}
-            type="button"
-            variant="destructive"
-          >
-            Remover
-          </Button>
-        </fieldset>
-      )}
+          </fieldset>
+        )}
+      </InsetBlock>
     </li>
   );
 }

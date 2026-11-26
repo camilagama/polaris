@@ -1,7 +1,10 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { GoalBlock, OfflineGoalBlock } from "./home-goal";
+import { goalPace } from "../dashboard/goal-pace";
+import { helpTipTextProblem } from "../ui/help-tip-text";
+import { GoalBlock, goalHelpText, OfflineGoalBlock } from "./home-goal";
+import { HomeRoleProvider } from "./home-parts";
 
 const october: GoalReadModel = {
   achievedValue: "166619.00",
@@ -23,9 +26,21 @@ const october: GoalReadModel = {
 
 const noRetry = () => undefined;
 
+const RING_LABEL = /aria-label="([^"]*)"[^>]*data-goal-ring/;
+const PACE_SLOT = /<p class="[^"]*" data-pace="([^"]*)">/;
+const PACE_ICON = /<svg[^>]*class="[^"]*size-3[^"]*"[^>]*aria-hidden="true"/;
+const PACE_WORD = /Adiantada|No ritmo|Atrasada/;
+const HELP_ONLY_PACE = /^O traço marca/;
+const HELP_ONLY_PROJECTION = /^Estimativa/;
+
+const ORDER_UTILITY = /(?:^|[\s:"])order-/;
 const SENTENCE_CLASS = /<p class="([^"]*)">Defina quanto/;
 
-const NO_BREAK_AMOUNT = /<span class="whitespace-nowrap">([^<]*)<\/span>/g;
+const FONT_SIZE = /data-goal-ring[\s\S]*?style="font-size:([^"]*)"/;
+const RING_BOX = /class="[^"]*size-28[^"]*"[^>]*data-goal-ring/;
+
+const NO_BREAK_AMOUNT =
+  /<span class="whitespace-nowrap font-mono tabular-nums">([^<]*)<\/span>/g;
 
 const text = (html: string) =>
   html
@@ -50,7 +65,7 @@ describe("the goal block on the 2nd of the month after the goal's", () => {
   it("titles the month now, invites to set its goal, and keeps the past one in a line", () => {
     const html = render("2026-11-02");
     expect(text(html)).toBe(
-      "Meta de novembro Sem meta ainda Definir meta Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida)"
+      "Meta de novembro Sem meta ainda Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida) Definir meta"
     );
     expect(html).toContain('href="/dashboard?meta=nova"');
     expect(html).not.toContain("Não atingida");
@@ -81,7 +96,7 @@ describe("the goal block on the 2nd of the month after the goal's", () => {
   });
 });
 
-describe("a faixa fina da Meta (sem meta para o mês)", () => {
+describe("o cartão da Meta sem meta para o mês (faixa fina só abaixo de 960 px)", () => {
   const STRIP = 'data-goal-strip=""';
   const SENTENCE = "Defina quanto quer vender no mês e acompanhe aqui.";
   const active: GoalReadModel = {
@@ -110,18 +125,36 @@ describe("a faixa fina da Meta (sem meta para o mês)", () => {
       />
     );
 
-  it("sem meta é faixa: o título, a frase e Definir meta, com a marca que a grade lê", () => {
+  it("sem meta: o título, a frase e Definir meta, com a marca do cartão", () => {
     const html = view({ kind: "none" });
     expect(html).toContain(STRIP);
     expect(text(html)).toBe(`Meta ${SENTENCE} Definir meta`);
     expect(html).toContain('href="/dashboard?meta=nova"');
   });
 
-  it("a frase só aparece onde a faixa tem lugar (a partir de 960 px de conteúdo)", () => {
+  it("a frase só aparece onde o cartão tem lugar (a partir de 960 px de conteúdo)", () => {
     const sentence = view({ kind: "none" }).match(SENTENCE_CLASS);
     expect(sentence?.[1]?.split(" ")).toEqual(
       expect.arrayContaining(["hidden", "@min-[60rem]/home:block"])
     );
+  });
+
+  it("a 960 px de conteúdo ou mais o cartão é de par: sem as classes da linha única da faixa e sem order-*, com o corpo tomando a altura que o mapa deixa", () => {
+    const offline = (goal: Parameters<typeof OfflineGoalBlock>[0]["goal"]) =>
+      renderToStaticMarkup(<OfflineGoalBlock goal={goal} />);
+    for (const html of [
+      view({ kind: "none" }),
+      render("2026-11-02"),
+      offline({ kind: "online-only" }),
+      offline({ currentMonth: "Novembro", goal: october, kind: "settled" }),
+    ]) {
+      expect(html).not.toContain("@min-[60rem]/home:flex-row");
+      expect(html).not.toContain("@min-[60rem]/home:py-3");
+      expect(html).not.toContain("@min-[60rem]/home:ml-auto");
+      expect(html).not.toMatch(ORDER_UTILITY);
+      expect(html).toContain("@min-[60rem]/home:grow");
+      expect(html).toContain("@min-[60rem]/home:content-center");
+    }
   });
 
   it("o mês sem meta, lido logo depois da meta do anterior, também é faixa", () => {
@@ -147,8 +180,331 @@ describe("a faixa fina da Meta (sem meta para o mês)", () => {
     ).not.toContain(STRIP);
   });
 
-  it("a meta em andamento fica em pé quando está num par (o anel e os números no meio)", () => {
+  it("a meta em andamento fica deitada também no par: o anel e os números lado a lado, sem variante de par", () => {
     const html = view({ goal: active, kind: "active", others: 0 });
-    expect(html).toContain("group-data-[pair]/row:@min-[60rem]/home:flex-col");
+    expect(html).not.toContain("group-data-[pair]");
+    expect(html).toContain(
+      "flex min-w-0 flex-wrap items-center justify-center gap-4"
+    );
+  });
+});
+
+describe("o ritmo da Meta (o traço e a palavra)", () => {
+  const progress = (
+    percent: string,
+    over: Partial<GoalReadModel["progress"] & object> = {}
+  ) => ({
+    percent,
+    periodEnded: false,
+    reached: false,
+    value: "1500.00",
+    ...over,
+  });
+  const active: GoalReadModel = {
+    ...october,
+    achievedValue: null,
+    endsOn: "2026-11-30",
+    progress: progress("30.0"),
+    settledAt: null,
+    startsOn: "2026-11-01",
+    status: "active",
+    target: "5000.00",
+  };
+  const view = (goal: GoalReadModel, today: string | null) =>
+    renderToStaticMarkup(
+      <GoalBlock
+        block={{ data: [goal], status: "ready" }}
+        onRetry={noRetry}
+        projection={null}
+        today={today}
+        view={{ goal, kind: "active", others: 0 }}
+      />
+    );
+  const label = (html: string) => RING_LABEL.exec(html)?.[1];
+  const slot = (html: string) => PACE_SLOT.exec(html)?.[1];
+
+  it("diz o estado em palavras, no nome do anel e na linha sob o atingido", () => {
+    const html = view(active, "2026-11-19");
+    expect(slot(html)).toBe("behind");
+    expect(text(html)).toContain("Atrasada");
+    expect(label(html)).toBe(
+      "30,0% da meta: R$ 1.500,00 de R$ 5.000,00. Atrasada: o esperado até hoje era 60%."
+    );
+  });
+
+  it("escreve as três palavras", () => {
+    expect(
+      text(view({ ...active, progress: progress("80.0") }, "2026-11-19"))
+    ).toContain("Adiantada");
+    expect(
+      text(view({ ...active, progress: progress("58.0") }, "2026-11-19"))
+    ).toContain("No ritmo");
+  });
+
+  it("o ícone é enfeite: aria-hidden", () => {
+    const html = view(active, "2026-11-19");
+    expect(html).toMatch(PACE_ICON);
+  });
+
+  it.each([
+    ["no primeiro dia do período", active, "2026-11-01"],
+    ["antes do início", active, "2026-10-30"],
+    ["sem o dia da loja (sem conexão)", active, null],
+    ["com a meta pausada", { ...active, paused: true }, "2026-11-19"],
+    [
+      "com a meta atingida",
+      { ...active, progress: progress("100.0", { reached: true }) },
+      "2026-11-19",
+    ],
+    [
+      "com o período acabado",
+      { ...active, progress: progress("30.0", { periodEnded: true }) },
+      "2026-12-02",
+    ],
+    ["sem o progresso lido", { ...active, progress: null }, "2026-11-19"],
+  ])(
+    "não escreve palavra nem entra no nome do anel %s",
+    (_name, goal, today) => {
+      const html = view(goal, today);
+      expect(html).not.toMatch(PACE_WORD);
+      expect(html).not.toContain("o esperado até hoje");
+    }
+  );
+
+  it("a linha da palavra fica reservada com a meta medida, com ou sem palavra", () => {
+    expect(slot(view(active, "2026-11-01"))).toBe("");
+    expect(slot(view(active, null))).toBe("");
+    expect(slot(view(active, "2026-11-19"))).toBe("behind");
+    expect(
+      slot(view({ ...active, paused: true }, "2026-11-19"))
+    ).toBeUndefined();
+  });
+
+  it("o (i) explica o traço, dentro do limite de um texto de ajuda", () => {
+    const pace = goalPace(active, "2026-11-19");
+    const both = goalHelpText({ kind: "no_sales" }, pace);
+    expect(both).toContain(
+      "O traço marca onde a meta estaria hoje se as vendas fossem iguais todos os dias."
+    );
+    expect(both).toContain("Estimativa: a média dos últimos 7 dias");
+    expect(helpTipTextProblem(both ?? "")).toBeNull();
+    expect(goalHelpText(null, pace)).toMatch(HELP_ONLY_PACE);
+    expect(goalHelpText({ kind: "no_sales" }, null)).toMatch(
+      HELP_ONLY_PROJECTION
+    );
+    expect(goalHelpText(null, null)).toBeNull();
+  });
+});
+
+describe("o tamanho do percentual no furo do anel", () => {
+  const renderActive = (percent: string) =>
+    renderToStaticMarkup(
+      <GoalBlock
+        block={{ data: [], status: "ready" }}
+        onRetry={noRetry}
+        projection={null}
+        today="2026-11-19"
+        view={{
+          goal: {
+            ...october,
+            achievedValue: null,
+            endsOn: "2026-11-30",
+            progress: {
+              percent,
+              periodEnded: false,
+              reached: false,
+              value: "1500.00",
+            },
+            settledAt: null,
+            startsOn: "2026-11-01",
+            status: "active",
+          },
+          kind: "active",
+          others: 0,
+        }}
+      />
+    );
+
+  it("é o menor entre text-xl e o que o texto escrito pede do furo, com piso de 0,875 rem, em rem", () => {
+    expect(FONT_SIZE.exec(renderActive("100.0"))?.[1]).toBe(
+      "max(0.875rem, min(1.25rem, calc((4.75rem - 4px) / 3.6)))"
+    );
+    expect(FONT_SIZE.exec(renderActive("12500.0"))?.[1]).toContain("/ 4.8)");
+  });
+
+  it("a caixa do anel mede 7 rem e o desenho acompanha a caixa", () => {
+    const html = renderActive("53.4");
+    expect(html).toMatch(RING_BOX);
+    expect(html).toContain('style="height:7rem;width:7rem"');
+  });
+});
+
+const FOOTER_LINK =
+  /<a\b[^>]*data-slot="card-frame-link"[^>]*href="([^"]*)"[^>]*>([^<]*)</;
+const LINK = /<a\b/g;
+const BODY_LINK = "w-fit self-end justify-self-end md:hidden";
+const BODY_LINK_RE = /<a\b[^>]*md:hidden[^>]*href="([^"]*)"[^>]*>([^<]*)</;
+
+describe("a saída única do cartão da Meta", () => {
+  const active: GoalReadModel = {
+    ...october,
+    achievedValue: null,
+    endsOn: "2026-11-30",
+    progress: {
+      percent: "30.0",
+      periodEnded: false,
+      reached: false,
+      value: "1500.00",
+    },
+    settledAt: null,
+    startsOn: "2026-11-01",
+    status: "active",
+    target: "5000.00",
+  };
+  const REMOVED_LINK = ["Ver as", "outras"].join(" ");
+
+  const online = (others: number, role = "owner") =>
+    renderToStaticMarkup(
+      <HomeRoleProvider value={role}>
+        <GoalBlock
+          block={{ data: [active], status: "ready" }}
+          onRetry={noRetry}
+          projection={null}
+          today="2026-11-10"
+          view={{ goal: active, kind: "active", others }}
+        />
+      </HomeRoleProvider>
+    );
+
+  it("com uma meta o pé diz Ver as metas, e com três diz Ver as 3 metas, para o mesmo endereço", () => {
+    const one = FOOTER_LINK.exec(online(0));
+    const three = FOOTER_LINK.exec(online(2));
+    expect(one?.[1]).toBe("/dashboard?aba=metas");
+    expect(one?.[2]).toBe("Ver as metas");
+    expect(three?.[1]).toBe("/dashboard?aba=metas");
+    expect(three?.[2]).toBe("Ver as 3 metas");
+  });
+
+  it("com uma meta só o pé leva às metas; com várias o corpo repete o link só abaixo de 760 px", () => {
+    const one = online(0);
+    expect(one.match(LINK)).toHaveLength(1);
+    expect(one).not.toContain(BODY_LINK);
+    for (const others of [1, 2]) {
+      const html = online(others);
+      expect(html.match(LINK)).toHaveLength(2);
+      const body = BODY_LINK_RE.exec(html);
+      expect(body?.[1]).toBe("/dashboard?aba=metas");
+      expect(body?.[2]).toBe(`Ver as ${others + 1} metas`);
+      expect(html).not.toContain(REMOVED_LINK);
+      expect(html).not.toContain("meta=lista");
+    }
+  });
+
+  it("quem não gerencia metas não tem o pé", () => {
+    expect(online(2, "seller")).not.toContain("Ver as");
+    expect(online(2, "seller")).not.toContain("<a");
+  });
+
+  it("sem conexão o pé fica sem link, e o cartão não ganha o das outras", () => {
+    const html = renderToStaticMarkup(
+      <HomeRoleProvider value="owner">
+        <OfflineGoalBlock
+          goal={{ goal: active, kind: "active", ended: false }}
+        />
+      </HomeRoleProvider>
+    );
+    expect(html).not.toContain("<a");
+    expect(html).not.toContain("Ver as");
+  });
+});
+
+const PREVIOUS_DISABLED = /aria-disabled="true"[^>]*aria-label="Meta anterior"/;
+const NEXT_BUTTON = /aria-label="Próxima meta"/;
+const NEXT_DISABLED = /aria-disabled="true"[^>]*aria-label="Próxima meta"/;
+const EMPTY_ANNOUNCEMENT = /data-goal-announcement=""[^>]*><\/p>/;
+const POSITION = /\d de \d/;
+
+describe("o carrossel da Meta (AC-C2.1, AC-C2.3, AC-C2.5)", () => {
+  const base: GoalReadModel = {
+    ...october,
+    achievedValue: null,
+    endsOn: "2026-11-30",
+    progress: null,
+    settledAt: null,
+    status: "active",
+    target: "5000.00",
+  };
+  const withPercent = (n: number, name: string, percent: string) => ({
+    ...base,
+    id: `0199c2d0-0000-7000-8000-00000000020${n}`,
+    name,
+    progress: {
+      percent,
+      periodEnded: false,
+      reached: false,
+      value: "1500.00",
+    },
+  });
+  const goals = [
+    withPercent(1, "Vendas de novembro", "20.0"),
+    withPercent(2, "Meta da loja", "85.0"),
+    withPercent(3, "Pedidos", "60.0"),
+  ];
+  const html = (list: GoalReadModel[]) =>
+    renderToStaticMarkup(
+      <HomeRoleProvider value="owner">
+        <GoalBlock
+          block={{ data: list, status: "ready" }}
+          onRetry={noRetry}
+          projection={null}
+          today="2026-11-10"
+          view={{
+            goal: list[1] ?? base,
+            kind: "active",
+            others: list.length - 1,
+          }}
+        />
+      </HomeRoleProvider>
+    );
+  const SLIDE = /data-goal-slide="(open|closed)"/g;
+  const NAMES =
+    /data-goal-slide="(?:open|closed)"[\s\S]*?<p class="[^"]*font-medium[^"]*">([^<]*)</g;
+
+  it("com três metas, uma abre e as outras ficam fora da leitura e do Tab, na ordem do percentual", () => {
+    const out = html(goals);
+    expect([...out.matchAll(SLIDE)].map((match) => match[1])).toEqual([
+      "open",
+      "closed",
+      "closed",
+    ]);
+    expect([...out.matchAll(NAMES)].map((match) => match[1])).toEqual([
+      "Meta da loja",
+      "Pedidos",
+      "Vendas de novembro",
+    ]);
+    expect(out.match(/inert=""/g)).toHaveLength(2);
+  });
+
+  it("o cabeçalho tem o contador e as duas setas com nome, a anterior desligada na primeira", () => {
+    const out = html(goals);
+    expect(text(out)).toContain("1 de 3");
+    expect(out).toMatch(PREVIOUS_DISABLED);
+    expect(out).toMatch(NEXT_BUTTON);
+    expect(out).not.toMatch(NEXT_DISABLED);
+  });
+
+  it("abrir a tela não anuncia nada, e o pé segue sendo a única saída, com a contagem", () => {
+    const out = html(goals);
+    expect(out).toMatch(EMPTY_ANNOUNCEMENT);
+    expect(FOOTER_LINK.exec(out)?.[2]).toBe("Ver as 3 metas");
+    expect(out).not.toContain("Ver as outras");
+  });
+
+  it("com uma meta só não há setas, contador nem leitura marcada", () => {
+    const out = html([withPercent(1, "Meta da loja", "85.0")]);
+    expect(out).not.toContain("data-goal-stepper");
+    expect(out).not.toContain("data-goal-slides");
+    expect(out).not.toContain("Meta anterior");
+    expect(out).not.toMatch(POSITION);
   });
 });

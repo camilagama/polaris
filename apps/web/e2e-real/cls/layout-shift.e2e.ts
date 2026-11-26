@@ -355,8 +355,7 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
     page.getByRole("region", { name: "Vendas hoje" }).getByText("R$").first(),
   ],
   "/configuracoes": (page) => [
-    page.getByRole("heading", { level: 1, name: "Configurações" }),
-    page.getByRole("heading", { level: 2, name: "Da loja" }),
+    page.getByRole("heading", { level: 1, name: "Configurações da loja" }),
     page.getByRole("link", { exact: true, name: "Formas de receber" }),
   ],
   "/dashboard": (page) => [
@@ -365,11 +364,11 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   ],
   "/inventory": (page) => [
     page.getByRole("heading", { level: 1, name: "Estoque" }),
-    page.getByRole("list", { name: "Saldos por variante" }),
+    page.getByRole("list", { name: "Saldos em estoque" }),
   ],
   "/products": (page) => [
     page.getByRole("heading", { level: 1, name: "Produtos" }),
-    page.getByRole("list", { name: "Produtos" }),
+    page.getByRole("list", { exact: true, name: "Produtos cadastrados" }),
   ],
   "/sales": (page) => [
     page.getByRole("heading", { level: 1, name: "Nova venda" }),
@@ -377,7 +376,7 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   ],
   "/sales/history": (page) => [
     page.getByRole("heading", { level: 1, name: "Histórico de vendas" }),
-    page.getByRole("list", { name: "Vendas" }),
+    page.getByRole("list", { exact: true, name: "Vendas do período" }),
   ],
 };
 const DESTINATIONS: Path[] = [

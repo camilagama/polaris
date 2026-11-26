@@ -2,6 +2,7 @@ import type { createDatabase } from "@polaris/db/client";
 import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import {
   type AuthorizedTenantTransactionInput,
+  LegalAcceptancePendingError,
   TenantAuthorizationError,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
@@ -9,6 +10,7 @@ import {
 } from "@polaris/db/tenant-transaction";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "./environment";
+import { exemptRpcRequest } from "./legal-acceptance";
 import { TenantRequestContextError } from "./request-context-error";
 import {
   createTenantRequestContext,
@@ -20,6 +22,16 @@ import {
 } from "./tenant-request-context";
 
 type Database = ReturnType<typeof createDatabase>["db"];
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function createBindings(
   overrides: Partial<WorkerBindings> = {}
@@ -34,9 +46,15 @@ function createBindings(
 }
 
 function createFixture(session: TenantRequestSession | null) {
-  const database = { db: {} as Database, pool: { end: vi.fn() } };
+  const database = {
+    db: {} as Database,
+    pool: { end: vi.fn(), query: vi.fn() },
+  };
+  // the read of the gate: nothing accepted, so where it runs it refuses
+  const readAccepted = vi.fn(async () => ({}));
   const getSession = vi.fn(async () => session);
   const createDatabaseMock = vi.fn(() => database);
+  const createAuthDatabaseMock = vi.fn(() => database);
   const createAuth = vi.fn(
     (_options: { baseURL: string; database: Database; secret: string }) => ({
       api: { getSession },
@@ -63,8 +81,11 @@ function createFixture(session: TenantRequestSession | null) {
   const dependencies: TenantRequestContextDependencies = {
     createAuth:
       createAuth as unknown as TenantRequestContextDependencies["createAuth"],
+    createAuthDatabase:
+      createAuthDatabaseMock as unknown as TenantRequestContextDependencies["createAuthDatabase"],
     createDatabase:
       createDatabaseMock as unknown as TenantRequestContextDependencies["createDatabase"],
+    readAcceptedLegalVersions: readAccepted,
     withAuthorizedTenantTransaction:
       runTransaction as unknown as typeof withAuthorizedTenantTransaction,
   };
@@ -73,9 +94,11 @@ function createFixture(session: TenantRequestSession | null) {
     context: createTenantRequestContext(dependencies),
     sequence: createTenantRequestSequence(dependencies),
     createAuth,
+    createAuthDatabase: createAuthDatabaseMock,
     createDatabase: createDatabaseMock,
     database,
     getSession,
+    readAccepted,
     runTransaction,
   };
 }
@@ -107,7 +130,7 @@ describe("tenant request context", () => {
 
   it("rejects a session without an id before any tenant authorization", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(NOW) },
       user: { id: "session-user-42" },
     } as unknown as TenantRequestSession);
 
@@ -120,7 +143,7 @@ describe("tenant request context", () => {
 
   it("passes only the Better Auth session user and requested organization to the transaction", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -132,17 +155,16 @@ describe("tenant request context", () => {
         authenticatedUserId: "session-user-42",
         capability: "catalog:read",
         requestedOrganizationId: "org-requested-by-client",
+        requireLegalAcceptance: false,
         sessionId: "session-1",
       },
       baseInput.operation
     );
-    expect(fixture.createDatabase).toHaveBeenNthCalledWith(
-      1,
+    expect(fixture.createAuthDatabase).toHaveBeenCalledExactlyOnceWith(
       baseInput.bindings.AUTH_HYPERDRIVE?.connectionString,
       { maxConnections: 1 }
     );
-    expect(fixture.createDatabase).toHaveBeenNthCalledWith(
-      2,
+    expect(fixture.createDatabase).toHaveBeenCalledExactlyOnceWith(
       baseInput.bindings.HYPERDRIVE.connectionString,
       { maxConnections: 1 }
     );
@@ -159,7 +181,7 @@ describe("tenant request context", () => {
   });
   it("fails when Better Auth configuration is unavailable without opening a database pool", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -170,13 +192,14 @@ describe("tenant request context", () => {
       })
     ).rejects.toMatchObject({ code: "authentication_unavailable" });
 
+    expect(fixture.createAuthDatabase).not.toHaveBeenCalled();
     expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.createAuth).not.toHaveBeenCalled();
   });
 
   it("closes the database pool when the requested organization is invalid", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -189,7 +212,7 @@ describe("tenant request context", () => {
   });
 
   it("rejects a session older than the 30-day absolute lifetime without touching tenant data", async () => {
-    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    const thirtyOneDaysAgo = new Date("2026-10-19T02:50:00.000Z");
     const fixture = createFixture({
       session: { createdAt: thirtyOneDaysAgo, id: "session-1" },
       user: { id: "session-user-42" },
@@ -199,7 +222,8 @@ describe("tenant request context", () => {
       code: "session_required",
     });
 
-    expect(fixture.createDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createAuthDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.runTransaction).not.toHaveBeenCalled();
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
   });
@@ -216,8 +240,35 @@ describe("tenant request context", () => {
     expect(fixture.runTransaction).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["exactly 30 days old", "2026-10-20T02:50:00.000Z"],
+    ["30 days and 1 ms old", "2026-10-20T02:49:59.999Z"],
+  ])("refuses a session %s", async (_label, createdAt) => {
+    const fixture = createFixture({
+      session: { createdAt: new Date(createdAt), id: "session-1" },
+      user: { id: "session-user-42" },
+    });
+
+    await expect(fixture.context(baseInput)).rejects.toMatchObject({
+      code: "session_required",
+    });
+    expect(fixture.runTransaction).not.toHaveBeenCalled();
+  });
+
+  it("accepts a session 1 ms short of 30 days", async () => {
+    const fixture = createFixture({
+      session: {
+        createdAt: new Date("2026-10-20T02:50:00.001Z"),
+        id: "session-1",
+      },
+      user: { id: "session-user-42" },
+    });
+
+    await expect(fixture.context(baseInput)).resolves.toBe("tenant result");
+  });
+
   it("accepts a session just inside the absolute lifetime", async () => {
-    const twentyNineDaysAgo = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000);
+    const twentyNineDaysAgo = new Date("2026-10-21T02:50:00.000Z");
     const fixture = createFixture({
       session: { createdAt: twentyNineDaysAgo, id: "session-1" },
       user: { id: "session-user-42" },
@@ -228,7 +279,7 @@ describe("tenant request context", () => {
 
   it("fails closed when a deployed Worker has no dedicated auth Hyperdrive", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
     const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =
@@ -238,13 +289,14 @@ describe("tenant request context", () => {
       fixture.context({ ...baseInput, bindings: withoutAuthDatabase })
     ).rejects.toMatchObject({ code: "authentication_unavailable" });
 
+    expect(fixture.createAuthDatabase).not.toHaveBeenCalled();
     expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.getSession).not.toHaveBeenCalled();
   });
 
   it("uses one shared pool in local development when both roles share a connection", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
     const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =
@@ -260,13 +312,13 @@ describe("tenant request context", () => {
       })
     ).resolves.toBe("tenant result");
 
-    expect(fixture.createDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createAuthDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
   });
 });
 
 describe("tenant request context with requireFreshSession", () => {
-  const NOW = new Date("2026-10-30T15:00:00.000Z");
   const FIFTEEN_MINUTES = 15 * 60 * 1000;
 
   function runWith(
@@ -285,15 +337,6 @@ describe("tenant request context with requireFreshSession", () => {
     });
     return { fixture, operation, result };
   }
-
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(NOW);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
 
   it("refuses a 16-minute session before the operation, with the reason the router maps", async () => {
     const { operation, result, fixture } = runWith(
@@ -361,9 +404,160 @@ describe("tenant request context with requireFreshSession", () => {
   });
 });
 
+describe("tenant request context with the legal acceptance enforced", () => {
+  const session = {
+    session: { createdAt: new Date(NOW), id: "session-1" },
+    user: { id: "session-user-42" },
+  };
+  const enforced = createBindings({ LEGAL_ACCEPTANCE_ENFORCED: "true" });
+  const requestOf = () =>
+    new Request("https://polaris.example.invalid/rpc/sync/pull", {
+      headers: { cookie: "better-auth.session_token=fake" },
+    });
+
+  it("asks the entry of the transaction to check it and does not read it at the gate", async () => {
+    const fixture = createFixture(session);
+
+    await expect(
+      fixture.context({
+        ...baseInput,
+        bindings: enforced,
+        request: requestOf(),
+      })
+    ).resolves.toBe("tenant result");
+
+    expect(fixture.readAccepted).not.toHaveBeenCalled();
+    expect(fixture.runTransaction).toHaveBeenCalledWith(
+      fixture.database.db,
+      expect.objectContaining({ requireLegalAcceptance: true }),
+      baseInput.operation
+    );
+  });
+
+  it("does not ask for it with the control off, nor for an exempt procedure", async () => {
+    const off = createFixture(session);
+    await off.context({ ...baseInput, request: requestOf() });
+    expect(off.runTransaction.mock.calls[0]?.[1]).toMatchObject({
+      requireLegalAcceptance: false,
+    });
+
+    const exempt = createFixture(session);
+    const request = requestOf();
+    exemptRpcRequest(request, ["dataExport", "list"]);
+    await exempt.context({ ...baseInput, bindings: enforced, request });
+    expect(exempt.runTransaction.mock.calls[0]?.[1]).toMatchObject({
+      requireLegalAcceptance: false,
+    });
+    expect(off.readAccepted).not.toHaveBeenCalled();
+    expect(exempt.readAccepted).not.toHaveBeenCalled();
+  });
+
+  it("answers the refusal of the entry as the gate did: legal_acceptance_required with each pending document and its version in force", async () => {
+    const fixture = createFixture(session);
+    fixture.runTransaction.mockImplementationOnce(() =>
+      Promise.reject(new LegalAcceptancePendingError(["terms", "privacy"]))
+    );
+    const operation = vi.fn(async () => "never");
+
+    const outcome = fixture.context({
+      ...baseInput,
+      bindings: enforced,
+      operation,
+      request: requestOf(),
+    });
+    await expect(outcome).rejects.toBeInstanceOf(TenantRequestContextError);
+    await expect(outcome).rejects.toMatchObject({
+      code: "legal_acceptance_required",
+      pending: [
+        { document: "terms", version: 1 },
+        { document: "privacy", version: 1 },
+      ],
+    });
+    expect(operation).not.toHaveBeenCalled();
+    expect(fixture.database.pool.end).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives the same body the gate gives for the same pending documents", async () => {
+    const atEntry = createFixture(session);
+    atEntry.runTransaction.mockImplementationOnce(() =>
+      Promise.reject(new LegalAcceptancePendingError(["privacy"]))
+    );
+    const entryRefusal = await atEntry
+      .context({ ...baseInput, bindings: enforced, request: requestOf() })
+      .catch((error: unknown) => error);
+
+    const atGate = createFixture(session);
+    atGate.readAccepted.mockResolvedValueOnce({ terms: 1 });
+    const gateRefusal = await atGate
+      .sequence({
+        bindings: enforced,
+        capability: "product:create",
+        operation: async () => "never",
+        request: requestOf(),
+        requestedOrganizationId: "org-requested-by-client",
+      })
+      .catch((error: unknown) => error);
+
+    expect(entryRefusal).toBeInstanceOf(TenantRequestContextError);
+    expect(gateRefusal).toBeInstanceOf(TenantRequestContextError);
+    expect({
+      code: (entryRefusal as TenantRequestContextError).code,
+      pending: (entryRefusal as TenantRequestContextError).pending,
+    }).toEqual({
+      code: (gateRefusal as TenantRequestContextError).code,
+      pending: (gateRefusal as TenantRequestContextError).pending,
+    });
+  });
+
+  it("lets any other failure of the entry through: it is not turned into a refusal of the session", async () => {
+    const fixture = createFixture(session);
+    const failure = new Error("permission denied for function");
+    fixture.runTransaction.mockImplementationOnce(() =>
+      Promise.reject(failure)
+    );
+    await expect(
+      fixture.context({
+        ...baseInput,
+        bindings: enforced,
+        request: requestOf(),
+      })
+    ).rejects.toBe(failure);
+  });
+
+  it("keeps the check at the gate when the organization is malformed, so the pending acceptance still comes first", async () => {
+    const fixture = createFixture(session);
+    await expect(
+      fixture.context({
+        ...baseInput,
+        bindings: enforced,
+        request: requestOf(),
+        requestedOrganizationId: " org ",
+      })
+    ).rejects.toMatchObject({ code: "legal_acceptance_required" });
+    expect(fixture.readAccepted).toHaveBeenCalledOnce();
+    expect(fixture.runTransaction).not.toHaveBeenCalled();
+  });
+
+  it("keeps the check at the gate for a sequence, whose transactions do not repeat it", async () => {
+    const fixture = createFixture(session);
+    fixture.readAccepted.mockResolvedValueOnce({ privacy: 1, terms: 1 });
+    await fixture.sequence({
+      bindings: enforced,
+      capability: "product:create",
+      operation: (inTransaction) => inTransaction(async () => "row"),
+      request: requestOf(),
+      requestedOrganizationId: "org-requested-by-client",
+    });
+    expect(fixture.readAccepted).toHaveBeenCalledOnce();
+    expect(fixture.runTransaction.mock.calls[0]?.[1]).toMatchObject({
+      requireLegalAcceptance: false,
+    });
+  });
+});
+
 describe("tenant request sequence", () => {
   const session = {
-    session: { createdAt: new Date(), id: "session-1" },
+    session: { createdAt: new Date(NOW), id: "session-1" },
     user: { id: "session-user-42" },
   };
 
@@ -391,6 +585,7 @@ describe("tenant request sequence", () => {
         authenticatedUserId: "session-user-42",
         capability: "product:create",
         requestedOrganizationId: "org-requested-by-client",
+        requireLegalAcceptance: false,
         sessionId: "session-1",
       });
     }

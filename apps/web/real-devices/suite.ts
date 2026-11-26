@@ -16,7 +16,7 @@ export interface StepResult {
 }
 
 const WAIT_MS = 30_000;
-const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul\s+Saldo 3/;
+const SHIRT_WITH_THREE = /Camiseta do laboratório · Azul\s*Saldo 3/;
 
 /** Um passo falho pula os seguintes do mesmo fluxo: eles dependem do estado deixado por ele. */
 class Recorder {
@@ -103,35 +103,12 @@ async function control(browser: Browser, label: string) {
 async function setChecked(browser: Browser, label: string, checked: boolean) {
   const box = await control(browser, label);
   if ((await box.isSelected()) !== checked) {
-    await box.click();
+    await tap(browser, box);
   }
   await browser.waitUntil(async () => (await box.isSelected()) === checked, {
     timeout: 5000,
+    timeoutMsg: `"${label}" não ficou ${checked ? "marcada" : "desmarcada"}`,
   });
-}
-
-/** Selecionar por valor evita o seletor nativo do sistema, que o WebDriver não controla. */
-async function choose(browser: Browser, label: string, option: string) {
-  const select = await control(browser, label);
-  const chosen = await browser.execute(
-    (element, text) => {
-      const field = element as HTMLSelectElement;
-      const match = [...field.options].find(
-        (candidate) => candidate.textContent?.trim() === text
-      );
-      if (!match) {
-        return false;
-      }
-      field.value = match.value;
-      field.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
-    },
-    select,
-    option
-  );
-  if (!chosen) {
-    throw new Error(`opção não encontrada em "${label}": "${option}"`);
-  }
 }
 
 /** Toca num elemento como a pessoa faria: com o teclado fechado e o elemento no centro da tela. */
@@ -151,8 +128,8 @@ const click = async (browser: Browser, selector: string) =>
   await tap(browser, await browser.$(selector));
 
 /**
- * Botão (ou outro controle, por `selector`) cujo texto, somando os filhos, contém `text`; o seletor de texto parcial
- * só olha o primeiro nó.
+ * Botão (ou outro controle, por `selector`) visível cujo texto, somando os filhos, contém `text`; o seletor de texto
+ * parcial só olha o primeiro nó.
  */
 async function clickButtonContaining(
   browser: Browser,
@@ -162,8 +139,10 @@ async function clickButtonContaining(
   const find = (wanted: string) =>
     browser.execute(
       (needle, within) =>
-        [...document.querySelectorAll(within)].find((candidate) =>
-          candidate.textContent?.includes(needle)
+        [...document.querySelectorAll(within)].find(
+          (candidate) =>
+            candidate.textContent?.includes(needle) &&
+            candidate.getClientRects().length > 0
         ) ?? null,
       wanted,
       selector
@@ -259,6 +238,51 @@ async function clearSiteData(browser: Browser) {
   });
 }
 
+/** Os cartões de método são um grupo de rádio: toca no cartão (o rádio tem 16 px e fica sob o rótulo) e confere que ele ficou marcado. */
+async function chooseMethod(browser: Browser, method: string) {
+  await click(browser, `label[for="sale-method-${method}"]`);
+  // o id é do input escondido do rádio, que guarda o estado marcado
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (id) =>
+          (document.getElementById(id) as HTMLInputElement | null)?.checked ===
+          true,
+        `sale-method-${method}`
+      ),
+    { timeout: WAIT_MS, timeoutMsg: `o método ${method} não ficou marcado` }
+  );
+}
+
+/** O seletor é um combobox do Base UI: abre pelo botão (`trigger`) e toca na opção de nome exato. */
+async function chooseFromSelect(
+  browser: Browser,
+  trigger: string,
+  option: string
+) {
+  await click(browser, trigger);
+  await browser.waitUntil(
+    async () =>
+      (await browser.execute(
+        (wanted) =>
+          [...document.querySelectorAll('[role="option"]')].some(
+            (candidate) => candidate.textContent?.trim() === wanted
+          ),
+        option
+      )) === true,
+    { timeout: WAIT_MS, timeoutMsg: `opção não apareceu: "${option}"` }
+  );
+  await tap(
+    browser,
+    await browser.$(`//*[@role="option"][normalize-space()="${option}"]`)
+  );
+  await browser.waitUntil(
+    async () =>
+      ((await (await browser.$(trigger)).getText()) ?? "").trim() === option,
+    { timeout: WAIT_MS, timeoutMsg: `"${option}" não ficou escolhida` }
+  );
+}
+
 async function openScreensLab(
   browser: Browser,
   screen: "customers" | "sale",
@@ -279,10 +303,22 @@ async function startRuntime(browser: Browser, heading: string) {
   await waitForText(browser, heading);
 }
 
+/** O formulário de cliente é um diálogo: abre pelo botão "Novo cliente" e fecha ao cadastrar. */
 async function registerCustomer(browser: Browser, name: string, phone: string) {
-  await (await browser.$("#customer-name")).setValue(name);
+  await click(browser, "button=Novo cliente");
+  const nameField = await browser.$("#customer-name");
+  await nameField.waitForDisplayed({
+    timeout: WAIT_MS,
+    timeoutMsg: 'o formulário "Novo cliente" não abriu',
+  });
+  await nameField.setValue(name);
   await (await browser.$("#customer-phone")).setValue(phone);
   await click(browser, "button=Cadastrar cliente");
+  await nameField.waitForExist({
+    reverse: true,
+    timeout: WAIT_MS,
+    timeoutMsg: "o formulário não fechou depois de cadastrar",
+  });
 }
 
 const cardState = (browser: Browser, name: string) =>
@@ -393,7 +429,10 @@ async function customersFlow(
     async () => {
       await goOffline(browser, sessionId);
       await setChecked(browser, "Rede disponível", false);
-      await waitForText(browser, "Sem conexão. Você pode cadastrar");
+      await waitForText(
+        browser,
+        "Cadastrar e editar funciona e é enviado quando a conexão voltar"
+      );
     }
   );
 
@@ -401,7 +440,7 @@ async function customersFlow(
     'Registrar um cliente sem rede: fica no aparelho como "Aguardando envio"',
     async () => {
       await registerCustomer(browser, "Bia Souza", "11900000002");
-      await waitForText(browser, "Cliente salvo neste aparelho.");
+      await waitForText(browser, "salvo neste aparelho. Ele será enviado");
       await waitForCardState(browser, "Bia Souza", "Aguardando envio");
       await waitForText(browser, "Sem conexão · 1 operação guardada");
       // o servidor simulado só tem a Ana, confirmada antes: a Bia não saiu do aparelho
@@ -451,7 +490,7 @@ async function saleFlow(
   recorder.startFlow(
     "2. Venda: guardar sem rede, descontar do estoque do aparelho, confirmar ao voltar"
   );
-  const shirt = "Camiseta do laboratório — Azul";
+  const shirt = "Camiseta do laboratório · Azul";
 
   await recorder.step("Abrir a tela de venda e iniciar o runtime", async () => {
     // sem limpar os dados: o mesmo aparelho, outro usuário, na mesma origem
@@ -468,16 +507,19 @@ async function saleFlow(
     async () => {
       await goOffline(browser, sessionId);
       await setChecked(browser, "Rede disponível", false);
-      await waitForText(browser, "Sem conexão. A venda será guardada");
+      await waitForText(
+        browser,
+        "Pode vender: a venda fica guardada neste aparelho"
+      );
       await searchShirt(browser);
       // a variante é uma opção da lista que abre sob a busca
       await clickButtonContaining(browser, shirt, '[role="option"]');
       await (await control(browser, "Quantidade")).setValue("2");
-      await choose(browser, "Método de pagamento", "Pix");
-      await choose(
+      await chooseMethod(browser, "pix");
+      await chooseFromSelect(
         browser,
-        "Perfil de pagamento",
-        "Sem perfil de pagamento (taxas e prazo desconhecidos)"
+        "#sale-profile",
+        "Sem perfil de pagamento"
       );
     }
   );
@@ -485,7 +527,8 @@ async function saleFlow(
   await recorder.step(
     "Guardar a venda no aparelho (comando offline na fila)",
     async () => {
-      await click(browser, "button=Guardar venda neste aparelho");
+      // o botão existe duas vezes (na barra de baixo e no resumo): só o do layout atual aparece
+      await clickButtonContaining(browser, "Guardar venda neste aparelho");
       await waitForText(browser, "Venda guardada neste aparelho");
       await waitForText(browser, "Vendas guardadas neste aparelho");
       await waitForText(browser, "Sem conexão · 1 operação guardada");
@@ -572,12 +615,18 @@ async function shellFlow(
   await recorder.step(
     "Sem rede, uma rota interna também abre do shell",
     async () => {
-      await browser.url(shellUrl("/vendas/historico"));
+      await browser.url(shellUrl("/sales/history"));
+      await (
+        await browser.$('a[href="/sales/history"][aria-current="page"]')
+      ).waitForExist({
+        timeout: WAIT_MS,
+        timeoutMsg: "o menu não marcou o Histórico na rota interna",
+      });
       const title = await browser.getTitle();
       const filled = await browser.execute(
         () => (document.querySelector("#root")?.childElementCount ?? 0) > 0
       );
-      if (!(title.endsWith("Polaris") && filled)) {
+      if (!(title === "Histórico de vendas · Polaris" && filled)) {
         throw new Error(`rota interna não abriu offline (título "${title}")`);
       }
     }
@@ -591,7 +640,8 @@ async function shellFlow(
 const EXPENSES_LAB = "/offline-screens-lab?screen=expenses";
 const COMPETENCE = "Data de competência";
 const COMPETENCE_BUTTON = `button[aria-label^="${COMPETENCE},"]`;
-const CALENDAR = '[role="dialog"] [role="grid"]';
+const POPOVER = `[role="dialog"][aria-label="${COMPETENCE}"]`;
+const CALENDAR = `${POPOVER} [role="grid"]`;
 
 /** Com `GATE5_SCREENSHOT_DIR`, grava a tela do aparelho (`<plataforma>-<nome>.png`); sem ela, nada. */
 async function screenshot(browser: Browser, name: string) {
@@ -607,7 +657,7 @@ async function screenshot(browser: Browser, name: string) {
   );
 }
 
-/** A tela de despesas do laboratório no build do shell, com o runtime iniciado (o formulário traz a data). */
+/** A tela de despesas do laboratório no build do shell, com o runtime iniciado e o diálogo "Nova despesa" aberto (ele traz a data). */
 async function openExpensesLab(browser: Browser, network: boolean) {
   await browser.url(shellUrl(EXPENSES_LAB));
   await waitForText(browser, "Laboratório das telas offline");
@@ -618,6 +668,7 @@ async function openExpensesLab(browser: Browser, network: boolean) {
     await setChecked(browser, "Rede disponível", false);
   }
   await startRuntime(browser, "Despesas");
+  await click(browser, "button=Nova despesa");
   await (await browser.$(COMPETENCE_BUTTON)).waitForExist({
     timeout: WAIT_MS,
   });
@@ -632,8 +683,7 @@ async function openCompetence(
   expect: "calendar" | "failure"
 ) {
   await click(browser, COMPETENCE_BUTTON);
-  const target =
-    expect === "calendar" ? CALENDAR : '[role="dialog"] [role="alert"]';
+  const target = expect === "calendar" ? CALENDAR : `${POPOVER} [role="alert"]`;
   await (await browser.$(target)).waitForDisplayed({
     timeout: WAIT_MS,
     timeoutMsg:
@@ -655,13 +705,13 @@ async function tapInPopover(browser: Browser, selector: string) {
 
 /** O botão do popover cujo texto é `text`. */
 const popoverButton = (text: string) =>
-  `//*[@role="dialog"]//button[normalize-space()="${text}"]`;
+  `//*[@role="dialog"][@aria-label="${COMPETENCE}"]//button[normalize-space()="${text}"]`;
 
 const popoverText = (browser: Browser) =>
   browser.execute(
-    () =>
-      (document.querySelector('[role="dialog"]') as HTMLElement | null)
-        ?.innerText ?? ""
+    (selector) =>
+      (document.querySelector(selector) as HTMLElement | null)?.innerText ?? "",
+    POPOVER
   );
 
 /** Marca a página: some só se ela for carregada de novo. */
@@ -726,14 +776,14 @@ async function datePickerFlow(
     const chosen = day === "10" ? "11" : "10";
     await tapInPopover(
       browser,
-      `[role="dialog"] button[data-day="${year}-${month}-${chosen}"]`
+      `${POPOVER} button[data-day="${year}-${month}-${chosen}"]`
     );
     const expected = `${COMPETENCE}, ${chosen}/${month}/${year}`;
     await browser.waitUntil(
       async () => (await competenceLabel(browser)) === expected,
       { timeout: WAIT_MS, timeoutMsg: `o campo não chegou a "${expected}"` }
     );
-    await (await browser.$('[role="dialog"]')).waitForExist({
+    await (await browser.$(POPOVER)).waitForExist({
       reverse: true,
       timeout: WAIT_MS,
       timeoutMsg: "o calendário não fechou depois do toque no dia",

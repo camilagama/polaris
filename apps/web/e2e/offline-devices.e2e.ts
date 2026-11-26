@@ -5,7 +5,6 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
-import { openSettingsTab } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
@@ -23,6 +22,12 @@ const LEASE_KEY = {
   secret: "teste-secret-teste-secret-teste-secret-0123456789",
 };
 const HOUR = 3_600_000;
+/** `14/10/2026` at 15:00 in São Paulo, after every device date below; the lease it signs is valid for 72 h from here. */
+const NOW = new Date("2026-10-14T15:00:00-03:00");
+const hoursAgo = (hours: number) =>
+  new Date(NOW.getTime() - hours * HOUR).toISOString();
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+const AT_ACCOUNT = /\/conta(\?aba=aparelhos)?$/;
 const REVOKE_BUTTON = /^Revogar o aparelho/;
 const CONFIRM_ONE = "Sim, revogar este aparelho";
 const CONFIRM_ALL = "Sim, revogar e encerrar as outras sessões";
@@ -35,7 +40,7 @@ const SECRET_IN_CONSOLE = /cookie|token|session[-_ ]?id|set-cookie/i;
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 const device = (n: number, label: string | null, lastSeen: string) => ({
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: hoursAgo(318),
   id: uuid(n),
   label,
   lastSeenAt: lastSeen,
@@ -101,12 +106,12 @@ function scenario(overrides: Partial<Scenario> = {}): Scenario {
 }
 
 const twoDevices = () => [
-  device(1, "Caixa da loja", "2026-10-14T10:00:00.000Z"),
-  device(2, "Celular da Ana", "2026-10-13T10:00:00.000Z"),
+  device(1, "Caixa da loja", hoursAgo(8)),
+  device(2, "Celular da Ana", hoursAgo(32)),
 ];
 const threeDevices = () => [
   ...twoDevices(),
-  device(3, "Tablet do estoque", "2026-10-12T10:00:00.000Z"),
+  device(3, "Tablet do estoque", hoursAgo(56)),
 ];
 
 const inputOf = (route: { request: () => { postDataJSON: () => unknown } }) =>
@@ -118,6 +123,7 @@ const inputOf = (route: { request: () => { postDataJSON: () => unknown } }) =>
  * the app asks and is not here is unreachable.
  */
 async function serve(page: Page, state: Scenario) {
+  await page.clock.setFixedTime(NOW);
   const refused = () => rpcError(401, "UNAUTHORIZED");
   await serveHealth(page, () => state.down);
   // everything else the offline runtime asks for is unreachable here
@@ -172,7 +178,7 @@ async function serve(page: Page, state: Scenario) {
     }
     await route.fulfill(
       json({
-        device: { ...gone, revokedAt: "2026-10-14T13:00:00.000Z" },
+        device: { ...gone, revokedAt: hoursAgo(5) },
         endedCurrentSession,
         endedSessionCount: answer.endedSessionCount ?? 0,
         revokedGrantIds: [uuid(900)],
@@ -215,7 +221,7 @@ async function serve(page: Page, state: Scenario) {
       deviceId: string;
       organizationId: string;
     };
-    const issuedAt = new Date();
+    const issuedAt = new Date(NOW);
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({
@@ -374,7 +380,7 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   await expect(list.getByRole("listitem")).toHaveCount(2);
   const section = page.getByRole("region", { name: "Segurança" });
   const link = section.getByRole("link", { name: "Trocar senha" });
-  await expect(link).toHaveAttribute("href", "/configuracoes?aba=senha");
+  await expect(link).toHaveAttribute("href", "/conta");
   const box = await link.boundingBox();
   // the outline button of the interface: 32 px with a mouse (36 with touch), and the 44 px touch area is the
   // guardrails' (check 2); it is still a button, not a link in a paragraph
@@ -411,6 +417,45 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   }
 });
 
+test("'Trocar senha' tem a largura do próprio conteúdo a 1280 px e a do painel no celular", async ({
+  page,
+}) => {
+  const state = scenario({ devices: twoDevices() });
+  await page.route("**/api/auth-methods", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        emailPassword: true,
+        google: true,
+        turnstileSiteKey: null,
+      }),
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
+  );
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openDevices(page, state);
+
+  const section = page.getByRole("region", { name: "Segurança" });
+  const link = section.getByRole("link", { name: "Trocar senha" });
+  await expect(link).toBeVisible();
+  const panel = link.locator("..");
+  const wide = {
+    button: (await link.boundingBox())?.width ?? 0,
+    panel: (await panel.boundingBox())?.width ?? 0,
+  };
+  expect(wide.panel).toBeGreaterThan(600);
+  expect(wide.button).toBeLessThan(wide.panel / 2);
+
+  await page.setViewportSize({ height: 740, width: 360 });
+  await expect
+    .poll(async () => {
+      const button = (await link.boundingBox())?.width ?? 0;
+      const box = (await panel.boundingBox())?.width ?? 0;
+      return box > 0 && Math.abs(button - box) <= 2;
+    })
+    .toBe(true);
+});
+
 test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opção", async ({
   page,
 }) => {
@@ -436,7 +481,9 @@ test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opç�
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).not.toContainText("Celular da Ana");
   // the confirmation is gone: the focus stays on the page, not on the body, and the keyboard sees where it is
-  await expectFocusRing(page.getByRole("heading", { name: "Aparelhos" }));
+  await expectFocusRing(
+    page.getByRole("heading", { name: "Aparelhos", exact: true })
+  );
   // the option was not ticked: the call carries false
   expect(state.revokeBodies).toHaveLength(1);
   expect(state.revokeBodies[0]?.endOtherSessions ?? false).toBe(false);
@@ -628,8 +675,12 @@ test("sem aparelhos mostra o vazio com o próximo passo, e nunca depois de um er
   state.down = false;
   await page.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(
+    page.getByText("Nenhum aparelho registrado nesta conta.", { exact: true })
+  ).toBeVisible();
+  await expect(
     page.getByText(
-      "Nenhum aparelho registrado nesta conta. Um aparelho aparece aqui depois que você abre o Polaris nele com internet."
+      "Um aparelho aparece aqui depois que você abre o Polaris nele com internet.",
+      { exact: true }
     )
   ).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -815,7 +866,7 @@ test("login antigo sem fila: Entrar de novo sai pela proteção do Sair e vai à
   await confirmButton(page).click();
   await page.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL(
-    "**/entrar?motivo=recente&voltar=/configuracoes%3Faba%3Daparelhos"
+    "**/entrar?motivo=recente&voltar=/conta%3Faba%3Daparelhos"
   );
   expect(state.signOutCalls).toBe(1);
 });
@@ -894,7 +945,7 @@ test("sessão que acabou durante a ação: painel próprio, sem passar pelo Sair
 
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL(
-    "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+    "**/entrar?motivo=sessao&voltar=/conta%3Faba%3Daparelhos"
   );
   expect(state.signOutCalls).toBe(0);
   // leaving drops the lease and the collections too; the queue stays
@@ -1008,7 +1059,7 @@ for (const lookup of ["answers", "unreachable"] as const) {
 
     await panel.getByRole("button", { name: "Entrar de novo" }).click();
     await page.waitForURL(
-      "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+      "**/entrar?motivo=sessao&voltar=/conta%3Faba%3Daparelhos"
     );
     expect(state.signOutCalls).toBe(0);
     expect(await queuedOperations(page)).toBe(queuedBefore);
@@ -1075,7 +1126,7 @@ test("este navegador saiu e a pessoa clica em Entrar de novo antes de qualquer e
   expect(await leaseKeys(page)).not.toEqual([]); // nothing dropped it yet
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL(
-    "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+    "**/entrar?motivo=sessao&voltar=/conta%3Faba%3Daparelhos"
   );
   expect(await leaseKeys(page)).toEqual([]);
   expect(await queuedOperations(page)).toBe(queuedBefore);
@@ -1281,7 +1332,9 @@ test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a 
   await expect(page.getByRole("alert")).toContainText("Nada foi alterado");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // the confirmation that held the focus is gone: the focus goes to the heading, not to the body
-  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: "Aparelhos", exact: true })
+  ).toBeFocused();
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 
@@ -1289,9 +1342,7 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
-  await page.goto(
-    "/entrar?motivo=recente&voltar=/configuracoes%3Faba%3Daparelhos"
-  );
+  await page.goto("/entrar?motivo=recente&voltar=/conta%3Faba%3Daparelhos");
   await expect(
     page.getByRole("heading", { name: "Entrar no Polaris" })
   ).toBeVisible();
@@ -1306,7 +1357,7 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   ).toBeVisible();
 });
 
-// the 44 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails.e2e.ts); here, the visible height
+// the 44 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails/); here, the visible height
 // the design gives a control with touch (36 px) and that nothing scrolls sideways in the dialog and the panel
 test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 360 px e no iPhone SE", async ({
   page,
@@ -1364,19 +1415,21 @@ test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 
   }
 });
 
-test("Configurações oferece a aba Aparelhos quando o runtime offline está ligado", async ({
+test("Minha conta, no menu do círculo, abre Aparelhos quando o runtime offline está ligado e a senha não", async ({
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
   await page.goto("/");
-  // on the phone the rest of the menu is under "Mais"
-  const more = page.getByRole("button", { exact: true, name: "Mais" });
-  if (await more.isVisible()) {
-    await more.click();
-  }
-  await page.getByRole("link", { exact: true, name: "Configurações" }).click();
-  await openSettingsTab(page, "Aparelhos");
+  await page.getByRole("button", { name: STORE_MENU_NAME }).click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Minha conta" })
+    .click();
+  await expect(page).toHaveURL(AT_ACCOUNT);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Minha conta" })
+  ).toBeVisible();
   await expect(page.getByRole("list", { name: "Aparelhos" })).toBeVisible();
+  await expect(page.getByRole("tablist")).toHaveCount(0);
 });
 
 test("a 360 px o chip é de uma linha e Mais abre com a frase do estado; no desktop a frase fica no title", async ({

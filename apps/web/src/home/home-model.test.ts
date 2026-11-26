@@ -2,12 +2,12 @@ import type { GoalReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
   attentionLines,
-  bestDay,
   checklistLink,
   checklistNext,
   copyLine,
   copyStanding,
   endedInPastMonth,
+  FOCUS_REFRESH_MS,
   goalDaysLeftText,
   goalPeriodShort,
   goalProjection,
@@ -18,6 +18,7 @@ import {
   newSaleOfflineText,
   noCopyText,
   offlineGoal,
+  orderGoalsByProximity,
   pastGoalSummary,
   periodShort,
   pickGoal,
@@ -137,9 +138,12 @@ describe("the store's today and the turn of the day (§ 5.1)", () => {
     ).toBe("2026-10-24");
   });
 
-  it("re-reads on return at most once every 30 s", () => {
-    expect(shouldRefreshOnReturn(0, 29_999)).toBe(false);
-    expect(shouldRefreshOnReturn(0, 30_000)).toBe(true);
+  it("re-reads on return at most once every 5 min", () => {
+    expect(FOCUS_REFRESH_MS).toBe(300_000);
+    expect(shouldRefreshOnReturn(0, 30_000)).toBe(false);
+    expect(shouldRefreshOnReturn(0, 299_999)).toBe(false);
+    expect(shouldRefreshOnReturn(0, 300_000)).toBe(true);
+    expect(shouldRefreshOnReturn(1_000_000, 1_000_000 + 600_000)).toBe(true);
   });
 });
 
@@ -153,11 +157,6 @@ describe("the chart's totals come from the series of the period (AC-17)", () => 
 
   it("the series adds up to the month's figure", () => {
     expect(sumNetSales(month)).toBe("125.60");
-  });
-
-  it("finds the best day of a period, and none when nothing sold", () => {
-    expect(bestDay(month)?.date).toBe("2026-10-23");
-    expect(bestDay(series("2026-10-01", "2026-10-07"))).toBeNull();
   });
 });
 
@@ -194,10 +193,124 @@ function goal(overrides: Partial<GoalReadModel>): GoalReadModel {
   };
 }
 
+const progressOf = (percent: string, reached = false) => ({
+  percent,
+  periodEnded: false,
+  reached,
+  value: "1.00",
+});
+const goalId = (n: number) => `0199c2d0-0000-7000-8000-00000000010${n}`;
+
+describe("orderGoalsByProximity (AC-C2.1, AC-C2.2)", () => {
+  it("opens the goal nearest to being reached and goes down by percent", () => {
+    const ordered = orderGoalsByProximity([
+      goal({ id: goalId(1), progress: progressOf("20.0") }),
+      goal({ id: goalId(2), progress: progressOf("85.0") }),
+      goal({ id: goalId(3), progress: progressOf("60.0") }),
+    ]);
+    expect(ordered.map((entry) => entry.id)).toEqual([
+      goalId(2),
+      goalId(3),
+      goalId(1),
+    ]);
+  });
+
+  it("puts the reached goals after the ones not reached, whatever their percent", () => {
+    const ordered = orderGoalsByProximity([
+      goal({ id: goalId(1), progress: progressOf("130.0", true) }),
+      goal({ id: goalId(2), progress: progressOf("5.0") }),
+      goal({ id: goalId(3), progress: progressOf("100.0", true) }),
+    ]);
+    expect(ordered.map((entry) => entry.id)).toEqual([
+      goalId(2),
+      goalId(1),
+      goalId(3),
+    ]);
+  });
+
+  it("reads 100.0 and 99.9 by the number, not by the text", () => {
+    const ordered = orderGoalsByProximity([
+      goal({ id: goalId(1), progress: progressOf("99.9") }),
+      goal({ id: goalId(2), progress: progressOf("100.0") }),
+      goal({ id: goalId(3), progress: progressOf("9.9") }),
+    ]);
+    expect(ordered.map((entry) => entry.id)).toEqual([
+      goalId(2),
+      goalId(1),
+      goalId(3),
+    ]);
+  });
+
+  it("breaks a tie by the end of the period, then the start", () => {
+    const ordered = orderGoalsByProximity([
+      goal({
+        endsOn: "2026-12-31",
+        id: goalId(1),
+        progress: progressOf("50.0"),
+      }),
+      goal({
+        endsOn: "2026-10-31",
+        id: goalId(2),
+        progress: progressOf("50.0"),
+      }),
+      goal({
+        endsOn: "2026-10-31",
+        id: goalId(3),
+        progress: progressOf("50.0"),
+        startsOn: "2026-10-15",
+      }),
+    ]);
+    expect(ordered.map((entry) => entry.id)).toEqual([
+      goalId(2),
+      goalId(3),
+      goalId(1),
+    ]);
+  });
+
+  it("puts a goal the plan paused after the measured ones that are not reached, and does not touch the input", () => {
+    const input = [
+      goal({ id: goalId(1), paused: true, progress: null }),
+      goal({ id: goalId(2), progress: progressOf("0.0") }),
+    ];
+    expect(orderGoalsByProximity(input).map((entry) => entry.id)).toEqual([
+      goalId(2),
+      goalId(1),
+    ]);
+    expect(input[0]?.id).toBe(goalId(1));
+  });
+
+  it("puts a paused goal before the reached ones and after the measured ones", () => {
+    const ordered = orderGoalsByProximity([
+      goal({ id: goalId(1), progress: progressOf("120.0", true) }),
+      goal({ id: goalId(2), paused: true, progress: null }),
+      goal({ id: goalId(3), progress: progressOf("3.0") }),
+    ]);
+    expect(ordered.map((entry) => entry.id)).toEqual([
+      goalId(3),
+      goalId(2),
+      goalId(1),
+    ]);
+  });
+
+  it("is the goal pickGoal opens, with the others counted", () => {
+    const view = pickGoal(
+      [
+        goal({ id: goalId(1), progress: progressOf("20.0") }),
+        goal({ id: goalId(2), progress: progressOf("85.0") }),
+        goal({ id: goalId(3), progress: progressOf("60.0") }),
+      ],
+      "2026-10-23",
+      "America/Sao_Paulo"
+    );
+    expect(view).toMatchObject({ kind: "active", others: 2 });
+    expect(view.kind === "active" && view.goal.id).toBe(goalId(2));
+  });
+});
+
 describe("pickGoal (AC-10, AC-11, § 5.3)", () => {
   const zone = "America/Sao_Paulo";
 
-  it("shows the active goal that ends first, with how many others", () => {
+  it("with the same percent, shows the active goal that ends first, with how many others", () => {
     const view = pickGoal(
       [
         goal({

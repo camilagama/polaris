@@ -10,7 +10,7 @@ import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { createDatabase } from "../src/client";
 import { createCustomer } from "../src/customer-repository";
 import { receiveStock } from "../src/inventory-repository";
-import { archiveProduct, deleteProduct } from "../src/product-repository";
+import { archiveProduct } from "../src/product-repository";
 import {
   type CancelSaleRepositoryInput,
   cancelSale,
@@ -26,6 +26,7 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -421,7 +422,7 @@ async function run() {
       tenantA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: removedProduct.version,
           id: removedProduct.productId,
         })
@@ -1155,7 +1156,6 @@ async function run() {
       await concurrent.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     await admin.pool.end();

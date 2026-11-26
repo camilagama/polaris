@@ -1,3 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { flakyReport, summary } from "./e2e-flaky-report.mjs";
 
@@ -103,5 +108,134 @@ describe("the flaky report of the e2e journeys", () => {
       file: "jornadas/venda.e2e.ts",
       money: true,
     });
+  });
+});
+
+describe("the command of the flaky report", () => {
+  const dir = mkdtempSync(join(tmpdir(), "flaky-report-"));
+  const path = join(dir, "report.json");
+  writeFileSync(
+    path,
+    JSON.stringify(
+      report(
+        spec("jornadas/venda.e2e.ts", "venda", "online", "flaky"),
+        spec("jornadas/cliente.e2e.ts", "cliente", "online", "flaky")
+      )
+    )
+  );
+  const run = (...args) =>
+    spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL("./e2e-flaky-report.mjs", import.meta.url)),
+        ...args,
+      ],
+      { encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } }
+    );
+
+  it("fails on the verdict by default", () => {
+    const out = run(path);
+    expect(out.status).toBe(1);
+    expect(out.stdout).toContain("### e2e na pilha real:");
+  });
+
+  it("with --report-only writes the same summary and never fails", () => {
+    const out = run(path, "--report-only", "--label", "Catálogo (CSP)");
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain("### Catálogo (CSP): testes que só passaram");
+    expect(out.stdout).toContain("**Só relato (não reprova):** 2 tests");
+    expect(out.stdout).not.toContain("Reprovado");
+  });
+
+  it("without --report-only keeps the failing verdict line", () => {
+    const { stdout } = run(path);
+    expect(stdout).toContain("**Reprovado:** 2 tests");
+    expect(stdout).not.toContain("Só relato");
+  });
+
+  describe("with a report that is missing or unreadable", () => {
+    const missing = join(dir, "nao-existe.json");
+    const cut = join(dir, "cortado.json");
+    writeFileSync(cut, '{"suites":[{"file":"x","specs":[');
+    const shapeless = join(dir, "sem-suites.json");
+    writeFileSync(shapeless, JSON.stringify({ config: {} }));
+    const notObject = join(dir, "nulo.json");
+    writeFileSync(notObject, "null");
+    let summaries = 0;
+    const runWithSummary = (file, ...args) => {
+      summaries += 1;
+      const summaryPath = join(dir, `resumo-${summaries}.md`);
+      writeFileSync(summaryPath, "");
+      const out = spawnSync(
+        process.execPath,
+        [
+          fileURLToPath(new URL("./e2e-flaky-report.mjs", import.meta.url)),
+          file,
+          ...args,
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, GITHUB_STEP_SUMMARY: summaryPath },
+        }
+      );
+      return { out, written: readFileSync(summaryPath, "utf8") };
+    };
+
+    it("names the file and the label in one line, with no stack trace, and fails", () => {
+      const { out, written } = runWithSummary(missing, "--label", "Catálogo");
+      expect(out.status).toBe(1);
+      expect(out.stderr.trim().split("\n")).toEqual([
+        `Relatório do Playwright ausente (Catálogo): ${missing} não existe.`,
+      ]);
+      expect(written).toContain("### Catálogo: testes que só passaram");
+      expect(written).toContain(`**Relatório não existe:** \`${missing}\``);
+      expect(written).toContain("**Reprovado:**");
+      expect(out.stdout).toBe(`${written}\n`);
+    });
+
+    it("with --report-only still writes the summary and exits 0", () => {
+      const { out, written } = runWithSummary(missing, "--report-only");
+      expect(out.status).toBe(0);
+      expect(out.stderr).toContain("ausente (e2e na pilha real)");
+      expect(written).toContain("**Relatório não existe:**");
+      expect(written).toContain(
+        "**Só relato (não reprova):** sem relatório para conferir."
+      );
+      expect(written).not.toContain("Reprovado");
+    });
+
+    it.each([
+      ["cut off JSON", cut],
+      ["JSON with no suites", shapeless],
+      ["JSON that is not an object", notObject],
+      ["a directory", dir],
+    ])("treats %s as unreadable", (_name, file) => {
+      const { out, written } = runWithSummary(file, "--label", "Catálogo");
+      expect(out.status).toBe(1);
+      expect(out.stderr.trim().split("\n")).toEqual([
+        `Relatório do Playwright ilegível (Catálogo): ${file} não pôde ser lido como relatório do Playwright (JSON com suites).`,
+      ]);
+      expect(written).toContain(`**Relatório ilegível:** \`${file}\``);
+      expect(written).toContain("**Reprovado:**");
+      const lenient = runWithSummary(file, "--report-only");
+      expect(lenient.out.status).toBe(0);
+      expect(lenient.written).toContain("**Relatório ilegível:**");
+      expect(lenient.written).toContain("**Só relato (não reprova):**");
+      expect(lenient.written).not.toContain("Reprovado");
+    });
+  });
+
+  it("asks for the report path and refuses unknown or dangling options", () => {
+    for (const args of [
+      ["--report-only"],
+      [path, "--report-onyl"],
+      [path, "--label"],
+      [path, "--label", "--report-only"],
+      [path, "outro.json"],
+    ]) {
+      const out = run(...args);
+      expect(out.status, args.join(" ")).not.toBe(0);
+      expect(out.stderr, args.join(" ")).toContain("usage:");
+    }
   });
 });

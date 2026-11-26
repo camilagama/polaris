@@ -1,8 +1,17 @@
-import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
-import { and, eq, sql } from "drizzle-orm";
+import {
+  hasCapabilityForRole,
+  rolesWithCapability,
+} from "@polaris/domain/authorization/capabilities";
+import {
+  isLegalDocumentId,
+  LEGAL_DOCUMENT_IDS,
+  LEGAL_DOCUMENTS,
+  type LegalDocumentId,
+} from "@polaris/domain/legal/legal-documents";
+import { type SQL, sql } from "drizzle-orm";
 import type { createDatabase } from "./client";
+import { detailOf, raised } from "./database-refusal";
 import type { createRlsPocDatabase } from "./rls-poc-client";
-import { memberships, organizations } from "./schema/organization";
 
 type PocDatabase = ReturnType<typeof createRlsPocDatabase>["db"];
 type Database = ReturnType<typeof createDatabase>["db"];
@@ -37,6 +46,12 @@ export interface AuthorizedTenantTransactionInput {
    */
   isolationLevel?: "read committed" | "repeatable read";
   requestedOrganizationId: string;
+  /**
+   * Whether the entry checks the legal acceptance of the user (ADR 0100) before the membership. No default, so a caller
+   * that did not decide does not compile: the request context passes whether the control is on and the request is not
+   * exempt; a caller whose request already passed the check, or that runs without a request, passes `false`.
+   */
+  requireLegalAcceptance: boolean;
   /** The verified session's id; see `TenantRequestIdentity.sessionId`. */
   sessionId?: string;
 }
@@ -63,6 +78,35 @@ export class TenantAuthorizationError extends Error {
     this.code = code;
     this.name = "TenantAuthorizationError";
   }
+}
+
+/**
+ * The entry refused because the user still has documents to accept (ADR 0100). It is not a refusal of the
+ * authorization: the request context turns it into its own refusal, with what is pending, so a client keeps its offline
+ * copy and offers the acceptance instead of taking it for a refused session.
+ */
+export class LegalAcceptancePendingError extends Error {
+  readonly documents: readonly LegalDocumentId[];
+
+  constructor(documents: readonly LegalDocumentId[]) {
+    super("legal_acceptance_required");
+    this.documents = documents;
+    this.name = "LegalAcceptancePendingError";
+  }
+}
+
+/**
+ * The pending documents the entry wrote in the DETAIL of its refusal, in the order of `LEGAL_DOCUMENT_IDS`. A detail
+ * that does not read as a list of known documents counts as everything pending: the refusal stands either way.
+ */
+export function pendingDocumentsOf(
+  detail: string | undefined
+): LegalDocumentId[] {
+  const named = (detail ?? "").split(",");
+  if (!named.every(isLegalDocumentId)) {
+    return [...LEGAL_DOCUMENT_IDS];
+  }
+  return LEGAL_DOCUMENT_IDS.filter((document) => named.includes(document));
 }
 
 /**
@@ -117,7 +161,8 @@ export function withRlsPocTransaction<T>(
  * The requested organization ID is untrusted context and is authorized here.
  * Membership, capability, organization status, and tenant work share one
  * transaction. The organization GUC is not set until membership and capability
- * have passed.
+ * have passed. The checks run in the database (`begin_tenant_request`, under the
+ * same RLS as the tenant work) so the entry costs one statement after BEGIN.
  */
 export function withAuthorizedTenantTransaction<T>(
   database: Database,
@@ -132,6 +177,7 @@ export function withAuthorizedTenantTransaction<T>(
     capability,
     isolationLevel = "read committed",
     requestedOrganizationId,
+    requireLegalAcceptance,
     sessionId,
   } = input;
 
@@ -146,71 +192,77 @@ export function withAuthorizedTenantTransaction<T>(
 
   return database.transaction(
     async (transaction) => {
-      await transaction.execute(
-        sql`SELECT set_config('statement_timeout', ${String(TENANT_STATEMENT_TIMEOUT_MS)}, true),
-                   set_config('lock_timeout', ${String(TENANT_LOCK_TIMEOUT_MS)}, true),
-                   set_config('idle_in_transaction_session_timeout', ${String(TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS)}, true)`
-      );
-      await transaction.execute(
-        sql`SELECT set_config('app.user_id', ${authenticatedUserId}, true)`
-      );
-
-      const [membership] = await transaction
-        .select({
-          role: memberships.role,
-          status: memberships.status,
-        })
-        .from(memberships)
-        .where(
-          and(
-            eq(memberships.organizationId, requestedOrganizationId),
-            eq(memberships.userId, authenticatedUserId)
-          )
-        )
-        .limit(1);
-
-      if (membership?.status !== "active") {
-        return Promise.reject(
-          new TenantAuthorizationError("tenant_access_denied")
-        );
-      }
-
-      if (!hasCapabilityForRole(membership.role, capability)) {
-        throw new TenantAuthorizationError("capability_denied");
-      }
-
-      await transaction.execute(
-        sql`SELECT set_config('app.organization_id', ${requestedOrganizationId}, true)`
-      );
-
-      const [organization] = await transaction
-        .select({ status: organizations.status })
-        .from(organizations)
-        .where(eq(organizations.id, requestedOrganizationId))
-        .limit(1);
-
-      if (organization?.status !== "active") {
-        // the row is not visible unless active; only a member asks, so telling a closure apart reveals nothing new
-        const closed = await transaction.execute(
-          sql`SELECT 1 FROM public.closed_organization_status(${requestedOrganizationId})`
-        );
-        return Promise.reject(
-          new TenantAuthorizationError(
-            closed.rows.length > 0
-              ? "organization_closed"
-              : "tenant_access_denied"
+      let role: string;
+      try {
+        const result = await transaction.execute(
+          beginTenantRequestStatement(
+            authenticatedUserId,
+            requestedOrganizationId,
+            capability,
+            requireLegalAcceptance
           )
         );
+        const [row] = (result as unknown as { rows: { member_role: string }[] })
+          .rows;
+        if (!row) {
+          throw new Error("begin_tenant_request_without_role");
+        }
+        role = row.member_role;
+      } catch (error: unknown) {
+        if (raised(error, "42501", "legal_acceptance_required")) {
+          // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database detail only names the documents.
+          throw new LegalAcceptancePendingError(
+            pendingDocumentsOf(detailOf(error))
+          );
+        }
+        const refusal = tenantRefusalOf(error);
+        if (refusal) {
+          // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks it.
+          throw new TenantAuthorizationError(refusal);
+        }
+        throw error;
       }
 
       return operation(transaction, {
         capability,
         organizationId: requestedOrganizationId,
-        role: membership.role,
+        role,
         ...(sessionId ? { sessionId } : {}),
         userId: authenticatedUserId,
       });
     },
     { isolationLevel }
   );
+}
+
+const TENANT_REFUSALS: readonly TenantAuthorizationErrorCode[] = [
+  "tenant_access_denied",
+  "capability_denied",
+  "organization_closed",
+];
+
+function tenantRefusalOf(
+  error: unknown
+): TenantAuthorizationErrorCode | undefined {
+  return TENANT_REFUSALS.find((code) => raised(error, "42501", code));
+}
+
+/**
+ * The single statement after BEGIN: timeouts, `app.user_id`, the legal acceptance when asked for, membership,
+ * capability, `app.organization_id` and the organization's status, checked by `public.begin_tenant_request` in that
+ * order. The minimum accepted versions always go, from `LEGAL_DOCUMENTS`, the only place that holds them. The roles go
+ * as one `text[]` built element by element: drizzle expands a JS array inside `sql` into a parenthesized list, not an
+ * array parameter.
+ */
+function beginTenantRequestStatement(
+  authenticatedUserId: string,
+  requestedOrganizationId: string,
+  capability: string,
+  requireLegalAcceptance: boolean
+): SQL {
+  const roles = rolesWithCapability(capability);
+  return sql`SELECT member_role FROM public.begin_tenant_request(${authenticatedUserId}, ${requestedOrganizationId}, ARRAY[${sql.join(
+    roles.map((role) => sql`${role}`),
+    sql`, `
+  )}]::text[], ${requireLegalAcceptance}::boolean, ${LEGAL_DOCUMENTS.terms.minAcceptedVersion}::integer, ${LEGAL_DOCUMENTS.privacy.minAcceptedVersion}::integer, ${TENANT_STATEMENT_TIMEOUT_MS}::integer, ${TENANT_LOCK_TIMEOUT_MS}::integer, ${TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS}::integer)`;
 }

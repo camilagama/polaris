@@ -9,7 +9,7 @@ import {
 /**
  * The first paint of the Collapsible: a panel that mounts open (or closed) does not carry the height animation, which
  * waits for a change of state (the browser proof of the change, with the height half way, is in
- * e2e-pwa/ui-guardrails.e2e.ts).
+ * e2e-pwa/ui-guardrails/).
  */
 const html = (node: React.ReactNode) => renderToStaticMarkup(node);
 

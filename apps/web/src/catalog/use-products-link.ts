@@ -13,6 +13,8 @@ import {
 import { listLocalProducts } from "./local-products";
 
 interface ProductsLinkHandlers {
+  /** `?arquivados=1`: show the list of archived products. */
+  onArchived: () => void;
   /** `?importar=1`: open the import of a spreadsheet. */
   onImport: () => void;
   /** `?novo=1`: open the form of a new product. */
@@ -65,10 +67,16 @@ export function useProductsLink(
     if (handled.current || link.kind === "none") {
       return;
     }
-    if (link.kind === "new" || link.kind === "import") {
+    if (
+      link.kind === "new" ||
+      link.kind === "import" ||
+      link.kind === "archived"
+    ) {
       handled.current = true;
       if (link.kind === "new") {
         latest.current.onNew();
+      } else if (link.kind === "archived") {
+        latest.current.onArchived();
       } else {
         latest.current.onImport();
       }

@@ -267,6 +267,7 @@ describe("sale.list and sale.get RPCs", () => {
         occurredAt: new Date("2026-10-13T18:30:00.000Z"),
         occurredOn: "2026-10-13",
         paymentMethod: "pix",
+        paymentMethods: ["pix"],
         status: "confirmed" as const,
         totalDue: "99.80",
       },
@@ -281,6 +282,7 @@ describe("sale.list and sale.get RPCs", () => {
         occurredAt: new Date("2026-10-13T19:00:00.000Z"),
         occurredOn: "2026-10-13",
         paymentMethod: "cash",
+        paymentMethods: ["cash", "pix"],
         status: "cancelled" as const,
         totalDue: "10.00",
       },
@@ -307,6 +309,8 @@ describe("sale.list and sale.get RPCs", () => {
     expect(result.sales[1]).toMatchObject({
       cancelledAt: "2026-10-13T21:00:00.000Z",
       customerId: "0199c2d0-0000-7000-8000-000000000031",
+      paymentMethod: "cash",
+      paymentMethods: ["cash", "pix"],
     });
   });
 
@@ -326,6 +330,30 @@ describe("sale.list and sale.get RPCs", () => {
   });
 
   it("gets one sale with its cancellation and customer", async () => {
+    const detailPayment = {
+      amount: "99.80",
+      anticipationFee: {
+        amount: "0.00",
+        fixedAmount: null,
+        mode: "not_applicable",
+        percentage: null,
+      },
+      anticipationRequested: false,
+      expectedSettlementDays: null,
+      installmentPlan: null,
+      installments: null,
+      method: "pix",
+      paymentProfileId: null,
+      paymentProfileName: null,
+      paymentProfileRuleId: null,
+      paymentProfileVersion: null,
+      processingFee: {
+        amount: null,
+        fixedAmount: null,
+        mode: "unknown",
+        percentage: null,
+      },
+    };
     const getSale = vi.fn<GetSale>(async () => ({
       cancellation: cancelled.cancellation,
       customer: { customerId: null, version: 0 },
@@ -353,30 +381,8 @@ describe("sale.list and sale.get RPCs", () => {
             variantId,
           },
         ],
-        payment: {
-          amount: "99.80",
-          anticipationFee: {
-            amount: "0.00",
-            fixedAmount: null,
-            mode: "not_applicable",
-            percentage: null,
-          },
-          anticipationRequested: false,
-          expectedSettlementDays: null,
-          installmentPlan: null,
-          installments: null,
-          method: "pix",
-          paymentProfileId: null,
-          paymentProfileName: null,
-          paymentProfileRuleId: null,
-          paymentProfileVersion: null,
-          processingFee: {
-            amount: null,
-            fixedAmount: null,
-            mode: "unknown",
-            percentage: null,
-          },
-        },
+        payment: detailPayment,
+        payments: [{ ...detailPayment, position: 0 }],
         sale: {
           commandId,
           confirmedAt: new Date("2026-10-13T18:30:01.000Z"),
@@ -403,6 +409,9 @@ describe("sale.list and sale.get RPCs", () => {
     expect(getSale.mock.calls[0]?.[2]).toBe(saleId);
     expect(detail.cancellation?.reasonCode).toBe("customer_request");
     expect(detail.sale.items[0]?.unitCost).toBe("12.345678");
+    expect(detail.sale.payments).toEqual([
+      { ...detail.sale.payment, position: 0 },
+    ]);
     expect(Object.keys(detail.sale)).not.toContain("replayed");
     expect(detail.customer).toEqual({ customerId: null, version: 0 });
   });

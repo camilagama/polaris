@@ -55,7 +55,7 @@ const RPC_PREFIX = /^\/rpc\//;
  * a run on another day would draw another page. Prepended to `theme-init.js`, which every page already loads first.
  */
 const CLOCK = `(() => {
-  const fixed = ${Date.parse(NOW)};
+  const fixed = ${NOW.getTime()};
   const RealDate = Date;
   globalThis.Date = class extends RealDate {
     constructor(...args) {

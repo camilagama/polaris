@@ -45,20 +45,6 @@ const TOOLTIP_EDGE = "filete de 1 px do painel do tooltip (traço)";
 const PX_EXCEPTIONS: readonly PxException[] = [
   {
     count: 1,
-    path: "home/home-figures.tsx",
-    reason:
-      "coluna da miniatura do Mais vendidos: a caixa tem 32 px fixos (`Thumbnail`), então a coluna acompanha o mesmo valor",
-    segment: "grid-cols-[32px_minmax(0,1fr)]",
-  },
-  {
-    count: 1,
-    path: "home/home-figures.tsx",
-    reason:
-      "recuo da barra do Mais vendidos sob o nome: os 32 px da caixa da miniatura mais o respiro em rem",
-    segment: "ml-[calc(32px+0.75rem)]",
-  },
-  {
-    count: 1,
     path: "app-shell/app-shell.tsx",
     reason:
       "ícone de 18 px da aba da barra inferior: a reserva --app-bottom-bar de styles/index.css soma 18px à altura de duas linhas de rótulo",
@@ -117,6 +103,7 @@ const PX_EXCEPTIONS: readonly PxException[] = [
   },
   { count: 2, path: "ui/radio-group.tsx", reason: RING, segment: "ring-[3px]" },
   { count: 1, path: "ui/select.tsx", reason: RING, segment: "ring-[3px]" },
+  { count: 1, path: "ui/switch.tsx", reason: RING, segment: "ring-[3px]" },
   {
     count: 1,
     path: "ui/sidebar.tsx",

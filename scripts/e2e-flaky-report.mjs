@@ -9,11 +9,17 @@ import { pathToFileURL } from "node:url";
  * and is not counted.
  *
  * Usage: node scripts/e2e-flaky-report.mjs apps/web/test-results/e2e-real-report.json
+ * With `--report-only` the summary is written but the run never fails because of flaky tests, and its verdict line
+ * reads "Só relato (não reprova)" instead of "Reprovado"; `--label <text>` names
+ * the suite in the summary heading (default: "e2e na pilha real"). A report that is missing, cut off or without
+ * `suites` is named in one line on stderr (path and label) and in the summary; it fails the run like a flaky
+ * verdict does, and with `--report-only` it exits 0.
  */
 
 const MONEY_JOURNEYS = /jornadas\/(venda|devolucao|estoque)\.e2e\.ts$/;
 const PURPOSEFUL_RETRY = "retry-proposital";
 export const FLAKY_LIMIT = 2;
+const DEFAULT_LABEL = "e2e na pilha real";
 
 function* tests(suite, file) {
   const here = suite.file ?? file;
@@ -73,8 +79,15 @@ export function flakyReport(report) {
   return { failed: reasons.length > 0, flaky, reasons };
 }
 
-export function summary({ flaky, reasons }) {
-  const lines = ["### e2e na pilha real: testes que só passaram no retry", ""];
+const FAILED_MARK = "**Reprovado:**";
+const REPORT_ONLY_MARK = "**Só relato (não reprova):**";
+
+export function summary(
+  { flaky, reasons },
+  label = DEFAULT_LABEL,
+  reportOnly = false
+) {
+  const lines = [`### ${label}: testes que só passaram no retry`, ""];
   if (flaky.length === 0) {
     lines.push("Nenhum.");
   } else {
@@ -89,27 +102,94 @@ export function summary({ flaky, reasons }) {
     }
   }
   if (reasons.length > 0) {
-    lines.push("", `**Reprovado:** ${reasons.join("; ")}.`);
+    lines.push(
+      "",
+      `${reportOnly ? REPORT_ONLY_MARK : FAILED_MARK} ${reasons.join("; ")}.`
+    );
   }
   return `${lines.join("\n")}\n`;
 }
 
 const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
+function parseArgs(args) {
+  let reportOnly = false;
+  let label = DEFAULT_LABEL;
+  let path;
+  for (let at = 0; at < args.length; at += 1) {
+    const arg = args[at];
+    if (arg === "--report-only") {
+      reportOnly = true;
+    } else if (arg === "--label") {
+      at += 1;
+      label = args[at];
+    } else if (arg.startsWith("--") || path !== undefined) {
+      return;
+    } else {
+      path = arg;
+    }
+  }
+  if (path === undefined || !label || label.startsWith("--")) {
+    return;
+  }
+  return { label, path, reportOnly };
+}
+
+/** Reads the Playwright report; a missing, cut-off or misshapen file is a problem to report, not a stack trace. */
+function loadReport(path) {
+  let report;
+  try {
+    report = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    return { problem: error.code === "ENOENT" ? "ausente" : "ilegível" };
+  }
+  if (!(report && typeof report === "object" && Array.isArray(report.suites))) {
+    return { problem: "ilegível" };
+  }
+  return { report };
+}
+
+function unusableMessage(problem, { label, path }) {
+  return problem === "ausente"
+    ? `Relatório do Playwright ausente (${label}): ${path} não existe.`
+    : `Relatório do Playwright ilegível (${label}): ${path} não pôde ser lido como relatório do Playwright (JSON com suites).`;
+}
+
+function unusableSummary(problem, { label, path, reportOnly }) {
+  const what =
+    problem === "ausente"
+      ? `**Relatório não existe:** \`${path}\``
+      : `**Relatório ilegível:** \`${path}\` não pôde ser lido como relatório do Playwright (JSON com suites); um relatório cortado no meio cai aqui`;
+  return [
+    `### ${label}: testes que só passaram no retry`,
+    "",
+    `${what}; não há como listar os testes instáveis.`,
+    "",
+    `${reportOnly ? REPORT_ONLY_MARK : FAILED_MARK} sem relatório para conferir.`,
+    "",
+  ].join("\n");
+}
+
 function main() {
-  const [, , path] = process.argv;
-  if (!path) {
+  const options = parseArgs(process.argv.slice(2));
+  if (!options) {
     throw new Error(
-      "usage: node scripts/e2e-flaky-report.mjs <playwright json report>"
+      "usage: node scripts/e2e-flaky-report.mjs <playwright json report> [--report-only] [--label <text>]"
     );
   }
-  const result = flakyReport(JSON.parse(readFileSync(path, "utf8")));
-  const text = summary(result);
+  const loaded = loadReport(options.path);
+  const result = loaded.report ? flakyReport(loaded.report) : undefined;
+  const text = result
+    ? summary(result, options.label, options.reportOnly)
+    : unusableSummary(loaded.problem, options);
   console.log(text);
+  if (!result) {
+    console.error(unusableMessage(loaded.problem, options));
+  }
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
   }
-  if (result.failed) {
+  if ((result?.failed ?? true) && !options.reportOnly) {
     process.exitCode = 1;
   }
 }

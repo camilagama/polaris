@@ -1,0 +1,31 @@
+name: Chromium do Playwright
+description: Restaura ~/.cache/ms-playwright pela versão do lockfile e instala o Chromium sem apt (o apt só se faltar biblioteca).
+inputs:
+  app:
+    description: diretório do app (apps/web ou apps/catalog)
+    required: true
+  save:
+    description: "true só no job de aquecimento da main"
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      run: |
+        v=$(grep -m1 -oE '"playwright-core@[0-9.]+"' bun.lock | grep -oE '[0-9.]+')
+        [ -n "$v" ] || { echo "versão do playwright-core não achada no bun.lock"; exit 1; }
+        echo "v=$v" >> "$GITHUB_OUTPUT"
+    - id: cache
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ms-playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.v }}
+    - name: Install Chromium
+      shell: bash
+      run: scripts/playwright-install.sh "${{ inputs.app }}"
+    - if: ${{ inputs.save == 'true' && steps.cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.cache.outputs.cache-primary-key }}

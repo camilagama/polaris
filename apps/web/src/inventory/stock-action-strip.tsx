@@ -1,10 +1,7 @@
 import { type MouseEvent, useCallback } from "react";
-import { ActionStrip } from "../app-shell/action-strip";
+import { ActionStrip } from "@/ui/action-strip";
 import type { StockAttentionLink } from "./stock-list-model";
-
-/** A link inside a sentence: no touch area of its own (a line of text), only the focus ring. */
-export const LINK =
-  "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+import { TextLink } from "@/ui/text-link";
 
 function AttentionLink({
   first,
@@ -25,9 +22,9 @@ function AttentionLink({
   return (
     <>
       {first ? null : " · "}
-      <a className={LINK} href={link.href} onClick={handleClick}>
+      <TextLink inline href={link.href} onClick={handleClick}>
         {link.text}
-      </a>
+      </TextLink>
     </>
   );
 }
