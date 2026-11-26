@@ -85,10 +85,17 @@ export function termValue(scope: Locator, label: string | RegExp): Locator {
     .getByRole("definition");
 }
 
+/** An adjustment of the "Desconto, acréscimo ou frete" block, as typed in the field ("5,00", "10"). */
+export type SaleAdjustmentInput =
+  | { kind: "Desconto" | "Acréscimo"; mode: "percent"; value: string }
+  | { kind: "Desconto" | "Acréscimo" | "Frete"; mode: "fixed"; value: string };
+
+/** `adjustments` come after the percentage discounts and are optional: the callers that pass two arguments stay as they are. */
 export async function fillSale(
   page: Page,
   lines: SaleLineInput[],
-  discountPercents: string[]
+  discountPercents: string[],
+  adjustments: SaleAdjustmentInput[] = []
 ): Promise<void> {
   for (const [index, line] of lines.entries()) {
     if (index > 0) {
@@ -110,7 +117,7 @@ export async function fillSale(
     }
     await item.getByLabel("Preço cobrado").fill(line.charged);
   }
-  if (discountPercents.length > 0) {
+  if (discountPercents.length + adjustments.length > 0) {
     // date and adjustments stay closed in one line until "Alterar"
     await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
     await expect(
@@ -129,6 +136,27 @@ export async function fillSale(
     await choose(page, adjustment, "Tipo de ajuste", "Desconto");
     await choose(page, adjustment, "Como informar", "Percentual (%)");
     await adjustment.getByLabel("Percentual (%)").fill(percent);
+  }
+  for (const [offset, input] of adjustments.entries()) {
+    // biome-ignore lint/performance/noAwaitInLoops: one adjustment after the other
+    await page.getByRole("button", { name: "Adicionar ajuste" }).click();
+    const adjustment = page.getByRole("group", {
+      exact: true,
+      name: `Ajuste ${discountPercents.length + offset + 1}`,
+    });
+    await expect(adjustment).toBeVisible();
+    await choose(page, adjustment, "Tipo de ajuste", input.kind);
+    if (input.kind !== "Frete") {
+      await choose(
+        page,
+        adjustment,
+        "Como informar",
+        input.mode === "percent" ? "Percentual (%)" : "Valor fixo (R$)"
+      );
+    }
+    await adjustment
+      .getByLabel(input.mode === "percent" ? "Percentual (%)" : "Valor (R$)")
+      .fill(input.value);
   }
   await page
     .getByRole("radiogroup", { name: "Método de pagamento" })

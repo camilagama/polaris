@@ -1,7 +1,20 @@
+import type { Page } from "@playwright/test";
 import { extremeTimeZone, localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
-import { cents, moneyInput, numericCents, saleTotals } from "../oracle";
-import { confirmSale, fillSale, termValue } from "../pages/venda";
+import {
+  adjustedTotals,
+  cents,
+  moneyInput,
+  numericCents,
+  type SaleAdjustment,
+  saleTotals,
+} from "../oracle";
+import {
+  confirmSale,
+  fillSale,
+  type SaleAdjustmentInput,
+  termValue,
+} from "../pages/venda";
 import { seedProduct, seedStock } from "../seed";
 
 const PENCIL = /Lápis preto/;
@@ -11,6 +24,11 @@ const UNIT_COST_12_50 = /^12\.50*$/;
 const DISCOUNT_ROW = /^Desconto/;
 const CAP = /Boné aba reta/;
 const SHIRT = /Camiseta lisa/;
+const SALE_CONFIRM_PATH = "/rpc/sale/confirm";
+const SURCHARGE_ROW = /^Acréscimo/;
+const FREIGHT_ROW = /^Frete/;
+const DISCOUNT_ABOVE_SUBTOTAL =
+  /O total de descontos não pode ser maior que o subtotal/;
 
 /**
  * Journey 5: a cash sale with a percentage discount, against an oracle of integer cents (oracle.ts), on screen and
@@ -270,4 +288,264 @@ test("venda: arredondamento meia-alta uma vez por ajuste (casos a–e do orácul
   }
   // after the last sale settled: still one sale per case (a double tap would have left one more)
   expect(await saleRows(sql, organizationId)).toHaveLength(cases.length);
+});
+
+async function adjustmentRows(sql: Sql, organizationId: string) {
+  return (
+    await sql.query<{
+      kind: string;
+      value_type: string;
+      percentage: string | null;
+      amount: string;
+    }>(
+      `SELECT a.kind, a.value_type, a.percentage::text AS percentage, a.amount::text AS amount
+         FROM sale_adjustments a WHERE a.organization_id = $1 ORDER BY a.sale_id, a.position`,
+      [organizationId]
+    )
+  ).rows.map((row) => ({
+    amount: numericCents(row.amount),
+    kind: row.kind,
+    percentage: row.percentage === null ? null : Number(row.percentage),
+    valueType: row.value_type,
+  }));
+}
+
+async function stockOf(sql: Sql, variantId: string) {
+  return (
+    await sql.query<{ quantity: number }>(
+      "SELECT quantity FROM inventory_balances WHERE variant_id = $1",
+      [variantId]
+    )
+  ).rows[0]?.quantity;
+}
+
+function trackConfirmRequests(page: Page): string[] {
+  const methods: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === SALE_CONFIRM_PATH) {
+      methods.push(request.method());
+    }
+  });
+  return methods;
+}
+
+const adjustedLines = [
+  { charged: "24,90", option: SHIRT, quantity: 1, search: "Camiseta" },
+  { charged: "9,99", option: CAP, quantity: 1, search: "Boné" },
+];
+
+async function seedAdjustedStore(
+  journey: Awaited<ReturnType<typeof openJourney>>,
+  zone: string
+) {
+  const organizationId = journey.organizationId as string;
+  const today = localDate(runT0(), zone);
+  const shirt = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Camiseta lisa",
+    "25.00"
+  );
+  const cap = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Boné aba reta",
+    "10.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    shirt.variantId,
+    10,
+    "12.50",
+    today
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    cap.variantId,
+    10,
+    "4.00",
+    today
+  );
+  return { cap, organizationId, shirt };
+}
+
+const oracleLines = adjustedLines.map((line) => ({
+  chargedCents: cents(line.charged),
+  quantity: line.quantity,
+}));
+
+test("venda: desconto em valor, acréscimo percentual e frete somam ao total devido; tela e banco iguais ao oráculo", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const zone = "America/Sao_Paulo";
+  const journey = await openJourney(browser, testInfo, "venda-ajustes", {
+    organization: { timezone: zone },
+  });
+  const { page } = journey;
+  const { organizationId } = await seedAdjustedStore(journey, zone);
+
+  const typed: SaleAdjustmentInput[] = [
+    { kind: "Desconto", mode: "fixed", value: "5,00" },
+    { kind: "Acréscimo", mode: "percent", value: "10" },
+    { kind: "Frete", mode: "fixed", value: "12,00" },
+  ];
+  const expected = adjustedTotals(oracleLines, [
+    { cents: 500, kind: "discount" },
+    { kind: "surcharge", percent: "10" },
+    { cents: 1200, kind: "freight" },
+  ]);
+  // 3489 − 500 + 349 + 1200: the 10% (348,9) is rounded half-up, once
+  expect(expected.total).toBe(4538);
+
+  const confirmRequests = trackConfirmRequests(page);
+  await page.goto("/sales");
+  await fillSale(page, adjustedLines, [], typed);
+  const confirmed = await confirmSale(page);
+  // control of the refusal case: this is the path the confirmation takes, so an empty list there means something
+  expect(confirmRequests.length).toBeGreaterThan(0);
+  expect(cents(await termValue(confirmed, "Subtotal").innerText())).toBe(
+    expected.subtotal
+  );
+  expect(cents(await termValue(confirmed, DISCOUNT_ROW).innerText())).toBe(
+    -expected.discount
+  );
+  expect(cents(await termValue(confirmed, SURCHARGE_ROW).innerText())).toBe(
+    expected.surcharge
+  );
+  expect(cents(await termValue(confirmed, FREIGHT_ROW).innerText())).toBe(
+    expected.freight
+  );
+  expect(cents(await termValue(confirmed, "Total devido").innerText())).toBe(
+    expected.total
+  );
+
+  await expect
+    .poll(async () => (await saleRows(sql, organizationId)).length)
+    .toBe(1);
+  const [sale] = await saleRows(sql, organizationId);
+  expect(sale).toMatchObject({
+    discount: expected.discount,
+    subtotal: expected.subtotal,
+  });
+  expect(await adjustmentRows(sql, organizationId)).toEqual([
+    { amount: 500, kind: "discount", percentage: null, valueType: "fixed" },
+    {
+      amount: expected.surcharge,
+      kind: "surcharge",
+      percentage: 10,
+      valueType: "percentage",
+    },
+    { amount: 1200, kind: "freight", percentage: null, valueType: "fixed" },
+  ]);
+});
+
+test("venda: desconto de 10% e acréscimo de 10% saem do mesmo subtotal, sem compor", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const zone = "America/Sao_Paulo";
+  const journey = await openJourney(browser, testInfo, "venda-ajustes-compor", {
+    organization: { timezone: zone },
+  });
+  const { page } = journey;
+  const { organizationId } = await seedAdjustedStore(journey, zone);
+
+  const adjustments: SaleAdjustment[] = [
+    { kind: "discount", percent: "10" },
+    { kind: "surcharge", percent: "10" },
+  ];
+  const expected = adjustedTotals(oracleLines, adjustments);
+  // both are 349 on 3489, so the total is the subtotal; composed it would be 3489 − 349 + 314 = 3454
+  expect(expected.amounts).toEqual([349, 349]);
+  expect(expected.total).toBe(3489);
+
+  await page.goto("/sales");
+  await fillSale(
+    page,
+    adjustedLines,
+    ["10"],
+    [{ kind: "Acréscimo", mode: "percent", value: "10" }]
+  );
+  const confirmed = await confirmSale(page);
+  expect(cents(await termValue(confirmed, DISCOUNT_ROW).innerText())).toBe(
+    -349
+  );
+  expect(cents(await termValue(confirmed, SURCHARGE_ROW).innerText())).toBe(
+    349
+  );
+  expect(cents(await termValue(confirmed, "Total devido").innerText())).toBe(
+    expected.total
+  );
+
+  await expect
+    .poll(async () => (await adjustmentRows(sql, organizationId)).length)
+    .toBe(2);
+  expect(await adjustmentRows(sql, organizationId)).toEqual([
+    { amount: 349, kind: "discount", percentage: 10, valueType: "percentage" },
+    {
+      amount: 349,
+      kind: "surcharge",
+      percentage: 10,
+      valueType: "percentage",
+    },
+  ]);
+  expect(await saleRows(sql, organizationId)).toHaveLength(1);
+});
+
+test("venda: desconto maior que o subtotal é recusado no formulário, nenhum comando sai, nada é gravado e o estoque não muda", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const zone = "America/Sao_Paulo";
+  const journey = await openJourney(browser, testInfo, "venda-ajustes-recusa", {
+    organization: { timezone: zone },
+  });
+  const { page } = journey;
+  const { cap, organizationId, shirt } = await seedAdjustedStore(journey, zone);
+  const movementsBefore = (
+    await sql.query<{ total: number }>(
+      "SELECT count(*)::int AS total FROM stock_movements WHERE organization_id = $1",
+      [organizationId]
+    )
+  ).rows[0]?.total;
+
+  const above = adjustedTotals(oracleLines, [
+    { cents: 3490, kind: "discount" },
+  ]);
+  expect(above.discountExceedsSubtotal).toBe(true);
+  expect(
+    adjustedTotals(oracleLines, [{ cents: 3489, kind: "discount" }])
+      .discountExceedsSubtotal
+  ).toBe(false);
+
+  await page.goto("/sales");
+  await fillSale(
+    page,
+    adjustedLines,
+    [],
+    [{ kind: "Desconto", mode: "fixed", value: moneyInput(3490) }]
+  );
+  const confirmRequests = trackConfirmRequests(page);
+  await page.getByRole("button", { name: "Confirmar venda" }).click();
+  await expect(page.getByText(DISCOUNT_ABOVE_SUBTOTAL).first()).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Venda confirmada" })
+  ).toHaveCount(0);
+
+  expect(confirmRequests).toEqual([]);
+  expect(await saleRows(sql, organizationId)).toHaveLength(0);
+  expect(await adjustmentRows(sql, organizationId)).toHaveLength(0);
+  expect(await stockOf(sql, shirt.variantId)).toBe(10);
+  expect(await stockOf(sql, cap.variantId)).toBe(10);
+  expect(
+    (
+      await sql.query<{ total: number }>(
+        "SELECT count(*)::int AS total FROM stock_movements WHERE organization_id = $1",
+        [organizationId]
+      )
+    ).rows[0]?.total
+  ).toBe(movementsBefore);
 });
