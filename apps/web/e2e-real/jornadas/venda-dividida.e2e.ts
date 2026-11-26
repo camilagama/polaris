@@ -186,6 +186,7 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
   expect(cents(await chainValue(page, GROSS_SALES).innerText())).toBe(
     TOTAL_CENTS
   );
+  await expect(chainValue(page, NET_SALES)).toHaveText(MONEY);
   expect(cents(await chainValue(page, NET_SALES).innerText())).toBe(
     TOTAL_CENTS
   );

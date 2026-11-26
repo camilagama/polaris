@@ -545,12 +545,12 @@ test("Refazer uma venda dividida recusada: mesmos itens e as duas partes, a nova
       items: [
         {
           charged: "300,00",
-          name: expect.stringContaining("Camiseta lisa"),
+          name: "Camiseta lisa",
           quantity: "2",
         },
         {
           charged: "150,00",
-          name: expect.stringContaining("Calça jeans"),
+          name: "Calça jeans",
           quantity: "1",
         },
       ],
