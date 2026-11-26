@@ -443,6 +443,51 @@ test("Categorias a 360 px: nome de 100 caracteres sem espaço quebra na linha, o
   ]);
 });
 
+test("Categorias a 360 px: o rótulo escondido do campo de renomear tem 1 px no Field e, clonado num pai de bloco, flex-col ou flex-row, fora dele", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "a largura é a do teste"
+  );
+  await page.setViewportSize({ height: 740, width: 360 });
+  const longName = "A".repeat(100);
+  await openScreen(page, "/categories", "Categorias", {
+    "category/list": reply({ categories: [category(1, longName)] }),
+  });
+  await menuOf(page, longName).click();
+  await page.getByRole("menuitem", { exact: true, name: "Renomear" }).click();
+  const hidden = page.locator("form[data-category-id] label.sr-only");
+  await expect(hidden).toHaveText(`Novo nome para ${longName}`);
+  await expect(hidden).toHaveCSS("width", "1px");
+
+  const outside = await page.evaluate(() => {
+    const source = document.querySelector(
+      "form[data-category-id] label.sr-only"
+    );
+    if (!source) {
+      return null;
+    }
+    const widthIn = (parentClass: string) => {
+      const parent = document.createElement("div");
+      parent.className = parentClass;
+      const clone = source.cloneNode(true) as HTMLElement;
+      parent.append(clone);
+      document.body.append(parent);
+      const { width } = clone.getBoundingClientRect();
+      parent.remove();
+      return width;
+    };
+    return {
+      block: widthIn(""),
+      flexColumn: widthIn("flex flex-col"),
+      flexRow: widthIn("flex flex-row"),
+    };
+  });
+  expect(outside).toEqual({ block: 1, flexColumn: 1, flexRow: 1 });
+  await expectNoSidewaysScroll(page);
+});
+
 test("Categorias: o nome passa de 100 caracteres, o campo diz quantos e nada é enviado", async ({
   page,
 }) => {
