@@ -182,3 +182,32 @@ for (const month of MONTHS) {
     );
   });
 }
+
+test("a 360 px o rótulo escondido do mês tem 1 px e a página não rola de lado", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "a largura é a do teste"
+  );
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.clock.setFixedTime(new Date(NOW));
+  await serveExpenses(page);
+  await page.goto("/expenses");
+
+  const bar = page.getByRole("search", {
+    exact: true,
+    name: "Filtrar despesas",
+  });
+  await expect(bar.locator("#expense-month")).toBeVisible();
+  const label = bar.locator("label[for='expense-month']");
+  await expect(label).toHaveText("Mês de competência");
+  await expect(label).toHaveCSS("position", "absolute");
+  await expect(label).toHaveCSS("width", "1px");
+  const overflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth
+  );
+  expect(overflow).toBeLessThan(1);
+});

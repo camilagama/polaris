@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { LAB_PROFILE_SERVER_VERSION } from "../src/offline-poc/sale-lab-server";
 import { SPLIT_PROFILE_HINT } from "../src/sales/sale-payment-hints";
 import { chooseSelectOption } from "./select-option";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -23,8 +24,6 @@ const SPLIT_MISMATCH =
 
 const NOW = new Date("2026-10-01T12:00:00-03:00");
 const STAMP = NOW.toISOString();
-
-const LAB_SERVER_PROFILE_VERSION = 3;
 
 const PROFILE = {
   archivedAt: null,
@@ -574,7 +573,7 @@ test("sem internet, a venda de 1 parte com perfil leva o id e a versÃ£o dele atÃ
   page,
 }) => {
   const chosen = {
-    expectedVersion: LAB_SERVER_PROFILE_VERSION,
+    expectedVersion: LAB_PROFILE_SERVER_VERSION,
     id: PROFILE.id,
   };
   await openSaleLab(page, undefined, { current: chosen.expectedVersion });

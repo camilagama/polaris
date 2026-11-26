@@ -215,8 +215,8 @@ function NoticeAlert({
       <AlertDescription
         className={
           onUndo || noticeAction
-            ? "flex flex-wrap items-center gap-x-3 gap-y-1"
-            : undefined
+            ? "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 [overflow-wrap:anywhere]"
+            : "min-w-0 [overflow-wrap:anywhere]"
         }
       >
         {notice}

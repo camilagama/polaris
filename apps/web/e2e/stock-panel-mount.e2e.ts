@@ -133,3 +133,27 @@ test("o painel aberto numa linha que a busca tira da lista não deixa os botões
   await expect(page.getByText(PANEL_OPEN_REASON)).toBeVisible();
   await expectShirtButtonsOff(page, true);
 });
+
+test("a 360 px a legenda escondida do painel de estoque tem 1 px e a página não rola de lado", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "a largura é a do teste"
+  );
+  await page.setViewportSize({ height: 740, width: 360 });
+  await openStockLab(page);
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(page.getByLabel("Quantidade recebida")).toBeFocused();
+
+  const legend = page.locator("form fieldset > legend.sr-only");
+  await expect(legend).toHaveCount(1);
+  await expect(legend).toHaveCSS("position", "absolute");
+  await expect(legend).toHaveCSS("width", "1px");
+  const overflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth
+  );
+  expect(overflow).toBeLessThan(1);
+});

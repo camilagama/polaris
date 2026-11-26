@@ -720,6 +720,11 @@ export const SPEC_SCREENS = {
     "dashboard",
     "expenses",
   ],
+  "apps/web/e2e-real/jornadas/despesa-editar-anular.e2e.ts": [
+    "home",
+    "dashboard",
+    "expenses",
+  ],
   "apps/web/e2e-real/jornadas/devolucao.e2e.ts": [
     "home",
     "sale-detail",
@@ -764,8 +769,18 @@ export const SPEC_SCREENS = {
     "home",
     "dashboard",
   ],
+  "apps/web/e2e-real/jornadas/importacao-de-produtos.e2e.ts": [
+    "home",
+    "sale",
+    "products",
+  ],
   "apps/web/e2e-real/jornadas/inicio-grade.e2e.ts": ["home"],
   "apps/web/e2e-real/jornadas/inicio.e2e.ts": ["home"],
+  "apps/web/e2e-real/jornadas/meta.e2e.ts": [
+    "home",
+    "dashboard",
+    "sale-detail",
+  ],
   "apps/web/e2e-real/jornadas/onboarding.e2e.ts": [
     "home",
     "products",
@@ -777,6 +792,12 @@ export const SPEC_SCREENS = {
     "dashboard",
     "expenses",
   ],
+  "apps/web/e2e-real/jornadas/produto-duas-variantes.e2e.ts": [
+    "home",
+    "sale",
+    "products",
+    "inventory",
+  ],
   "apps/web/e2e-real/jornadas/produto.e2e.ts": ["home", "sale", "products"],
   "apps/web/e2e-real/jornadas/resultado-historico-offline.e2e.ts": [
     "home",
@@ -786,6 +807,7 @@ export const SPEC_SCREENS = {
     "home",
     "dashboard",
   ],
+  "apps/web/e2e-real/jornadas/resultado-periodo.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e-real/jornadas/sair-e-recarregar.e2e.ts": ["home", "sign-in"],
   "apps/web/e2e-real/jornadas/valor-kpi.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e-real/jornadas/venda-saldo-curto-sem-conexao.e2e.ts": [

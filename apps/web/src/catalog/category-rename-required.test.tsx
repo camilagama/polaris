@@ -107,6 +107,26 @@ describe("renaming a category with an empty name", () => {
     expect(field.getAttribute("aria-invalid")).toBeNull();
   });
 
+  it("does not bring the message back when the person types and erases again before sending", async () => {
+    const user = userEvent.setup();
+    render(<Renaming onSubmit={noop} />);
+    const field = screen.getByRole("textbox", { name: FIELD });
+    await user.clear(field);
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(screen.getByText(REQUIRED)).toBeTruthy();
+
+    await user.type(field, "B");
+    await user.keyboard("{Backspace}");
+
+    expect((field as HTMLInputElement).value).toBe("");
+    expect(screen.queryByText(REQUIRED)).toBeNull();
+    expect(field.getAttribute("aria-invalid")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(screen.getByText(REQUIRED)).toBeTruthy();
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+  });
+
   it("keeps the limit message, not the required one, for a name over 100 characters", async () => {
     const user = userEvent.setup();
     render(<Renaming onSubmit={noop} />);
