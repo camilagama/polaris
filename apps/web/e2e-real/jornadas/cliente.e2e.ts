@@ -169,6 +169,9 @@ test("cliente: duplicado sugerido na mesma loja, sem sugestão na outra", async 
     storeA.page.getByRole("button", { name: `Mais ações para ${first}` })
   ).toBeVisible();
   await expect(firstForm).toBeHidden();
+  await expect
+    .poll(async () => (await customersOf(sql, organizationA)).length)
+    .toBe(1);
   const [original] = await customersOf(sql, organizationA);
   expect(original?.name).toBe(first);
 
@@ -205,10 +208,11 @@ test("cliente: duplicado sugerido na mesma loja, sem sugestão na outra", async 
     storeB.page.getByRole("heading", { name: POSSIBLE_DUPLICATES })
   ).toHaveCount(0);
   await expect(formB).toBeHidden();
-  const rowsB = await customersOf(sql, organizationB);
-  expect(rowsB).toEqual([
-    expect.objectContaining({ name: third, organization_id: organizationB }),
-  ]);
+  await expect
+    .poll(() => customersOf(sql, organizationB))
+    .toEqual([
+      expect.objectContaining({ name: third, organization_id: organizationB }),
+    ]);
   expect(await customersOf(sql, organizationA)).toEqual(rowsA);
 });
 
