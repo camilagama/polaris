@@ -1002,7 +1002,7 @@ for (const theme of THEMES.slice(0, 2)) {
     await context.close();
   });
 
-  test(`tema ${theme.name}: o rádio de um cartão desligado e a chave desligada apagam a 50 %, sem somar`, async ({
+  test(`tema ${theme.name}: o rádio de um cartão desligado, a chave desligada e a caixa e a chave dentro de um rótulo apagam a 50 %, sem somar`, async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -1027,6 +1027,29 @@ for (const theme of THEMES.slice(0, 2)) {
     expect(toggle.opacity).toBe("0.5");
     expect(toggle.fadedAncestors).toEqual([]);
     expect(toggle.cursor).toBe("not-allowed");
+    const held = await Promise.all(
+      [
+        { name: "Caixa dentro do rótulo", role: "checkbox" },
+        { name: "Chave dentro do rótulo", role: "switch" },
+      ].map(async ({ name, role }) => {
+        const control = page.getByRole(role as "checkbox" | "switch", {
+          name,
+        });
+        return {
+          control: await control.evaluate(measureOffControl),
+          label: await control
+            .locator("xpath=ancestor::label")
+            .evaluate((node) => getComputedStyle(node).opacity),
+          name,
+        };
+      })
+    );
+    for (const { control, label, name } of held) {
+      expect(label, name).toBe("0.5");
+      expect(control.opacity, name).toBe("1");
+      expect(control.fadedAncestors, name).toEqual(["LABEL"]);
+      expect(control.cursor, name).toBe("not-allowed");
+    }
     await context.close();
   });
 }

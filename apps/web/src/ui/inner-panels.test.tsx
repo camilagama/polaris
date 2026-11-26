@@ -167,6 +167,10 @@ describe("CheckableOption", () => {
     expect(labelClassesOf(html)).not.toContain("opacity-50");
     expect(classesOf(html)).not.toContain("opacity-50");
     expect(html).toContain("data-disabled:opacity-50");
+    expect(classesOf(html)).toContain("has-data-disabled:opacity-100");
+    expect(classesOf(html)).not.toContain("has-data-disabled:opacity-50");
+    expect(html).toContain("group-has-data-disabled/label:opacity-50!");
+    expect(html).not.toContain("group-has-data-disabled/label:opacity-100!");
   });
 });
 
