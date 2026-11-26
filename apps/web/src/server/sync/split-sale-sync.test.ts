@@ -577,6 +577,9 @@ describe("a sale in parts locked with no answer and kept on the device", () => {
       throw new Error("the sent body is valid");
     }
     const online = await table.confirm({}, {}, sent.request);
+    const recordedParts = structuredClone(
+      table.recorded.get(sent.request.commandId)?.command.payments
+    );
     const kept = prepareConfirmation({
       attemptUnsettled: true,
       body,
@@ -597,7 +600,7 @@ describe("a sale in parts locked with no answer and kept on the device", () => {
           : { ...kept.request, payments: keptParts },
       stores: device.stores,
     });
-    return { device, online, sent, table };
+    return { device, online, recordedParts, sent, table };
   }
 
   it("is the same sale on the server: the device's command replays it, with both parts, and no second sale", async () => {
@@ -629,7 +632,7 @@ describe("a sale in parts locked with no answer and kept on the device", () => {
     if (!(first && second)) {
       throw new Error("the body has two parts");
     }
-    const { device, sent, table } = await sentOnlineThenKept([
+    const { device, recordedParts, sent, table } = await sentOnlineThenKept([
       { ...first, amount: "40.00" },
       { ...second, amount: "60.00" },
     ]);
@@ -640,7 +643,8 @@ describe("a sale in parts locked with no answer and kept on the device", () => {
     expect(table.recorded.size).toBe(1);
     expect(
       table.recorded.get(sent.request.commandId)?.command.payments
-    ).toEqual(normalizeConfirmSaleCommand(sent.request, now).payments);
+    ).toEqual(recordedParts);
+    expect(recordedParts).toHaveLength(2);
     const [kept] = (await device.outbox.snapshot()).commands;
     expect(kept?.commandId).toBe(sent.request.commandId);
   });
