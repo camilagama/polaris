@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InsetBlock } from "@/ui/inset-block";
+import { formatFileSize } from "../lib/format";
 import { productMediaAssetUrl } from "../lib/media-upload";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import {
@@ -38,10 +39,6 @@ export interface RunningCommand {
 export interface ConfirmRequest {
   assetId: string;
   kind: ConfirmKind;
-}
-
-function formatBytes(value: number): string {
-  return `${(value / 1_000_000).toFixed(1).replace(".", ",")} MB`;
 }
 
 function confirmButtonLabel(kind: ConfirmKind, running: boolean): string {
@@ -131,7 +128,7 @@ function ProductMediaItem({
             {showCover ? <Badge data-cover="">Capa</Badge> : null}
           </p>
           <span className="text-muted-foreground text-support">
-            {asset.width} × {asset.height} · {formatBytes(asset.byteSize)}
+            {asset.width} × {asset.height} · {formatFileSize(asset.byteSize)}
           </span>
           {variantCount > 0 ? (
             <span className="text-muted-foreground text-support">

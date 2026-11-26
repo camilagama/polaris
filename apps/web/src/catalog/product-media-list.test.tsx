@@ -64,8 +64,15 @@ describe("the list of images of a product", () => {
     const html = render();
     expect(html).toContain("Imagem 1 de 3");
     expect(html).toContain("Imagem 3 de 3");
-    expect(html).toContain("1000 × 800 · 0,4 MB");
+    expect(html).toContain("1000 × 800 · 400 KB");
     expect(html).toContain('alt="Camiseta lisa, imagem 2"');
+  });
+
+  it("writes a small image in KB and never as 0,0 MB", () => {
+    const small = { ...asset(0), byteSize: 40_000 };
+    const html = render({ assets: [small] });
+    expect(html).toContain("1000 × 800 · 40 KB");
+    expect(html).not.toContain("0,0 MB");
   });
 
   it("says how many variants an image has, in the singular and the plural", () => {

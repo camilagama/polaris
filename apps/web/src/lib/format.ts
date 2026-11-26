@@ -72,3 +72,14 @@ export function formatCalendarDate(value: string): string {
 export function formatQuantity(value: number): string {
   return String(value).replace(thousandsPattern, ".");
 }
+
+const KB = 1000;
+const MB = 1_000_000;
+
+/** A file size the way screens write it: "820 KB" under a megabyte (never below "1 KB"), "1,2 MB" from a megabyte up. */
+export function formatFileSize(bytes: number): string {
+  if (bytes < MB) {
+    return `${Math.max(1, Math.round(bytes / KB))} KB`;
+  }
+  return `${(bytes / MB).toFixed(1).replace(".", ",")} MB`;
+}
