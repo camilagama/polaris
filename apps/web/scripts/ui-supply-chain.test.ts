@@ -488,6 +488,7 @@ export const Box = () => <Dialog.Root />;`;
   it("leaves out of the walk only these folders of apps/web", () => {
     const NOT_WALKED = [
       "e2e",
+      "e2e-agent",
       "e2e-pwa",
       "e2e-real",
       "poc",
