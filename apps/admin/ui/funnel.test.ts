@@ -462,7 +462,7 @@ describe("what the funnel shows (AC-8)", () => {
 
   const RETURN_CAPTION = "Voltou ao app, por semana de criação da loja";
   const BIAS =
-    "O M3 é um piso de “voltou”: sair do app e revogar um aparelho apagam a sessão, a sessão se renova só uma vez por dia e o app aberto sem conexão não a toca. Isso infla o “nunca voltou”, e a série de e-mails não liga só porque “nunca voltou” está alto.";
+    "O M3 é um piso de “voltou”: sair do app e revogar um aparelho apagam a sessão, a sessão se renova só uma vez por dia e o app aberto sem conexão não a toca. Isso infla o “nunca voltou”, e a série de e-mails não liga só porque “nunca voltou” está alto: exige também o M2 baixo.";
 
   it("shows the voltou / nunca voltou table, with the bias said next to it, when the answer carries the cells", async () => {
     const page = await openFunnel([json(funnel(2, false, "shown"))]);
@@ -513,8 +513,8 @@ describe("what the funnel shows (AC-8)", () => {
     const rows = cells(page.root, RETURN_CAPTION);
     expect(rows[0]).toEqual([
       "semana de 05/10/2026",
-      "não disponível (semana não congelada)",
-      "não disponível (semana não congelada)",
+      "não disponível (semana não registrada; o número não virá)",
+      "não disponível (semana não registrada; o número não virá)",
     ]);
     expect(rows.flat().join(" ")).not.toContain("prazo ainda corre");
   });

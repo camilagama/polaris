@@ -206,7 +206,7 @@ export function weekText(week: {
 
 const FUNNEL_REASONS: Readonly<Record<string, string>> = {
   activation_window_open: "não disponível (o prazo ainda corre)",
-  not_frozen: "não disponível (semana não congelada)",
+  not_frozen: "não disponível (semana não registrada; o número não virá)",
   suppressed: "não disponível (grupo pequeno)",
   week_not_closed: "não disponível (semana em andamento)",
 };
