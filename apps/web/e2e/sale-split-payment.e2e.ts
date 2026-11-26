@@ -37,6 +37,13 @@ const PROFILE = {
   version: 1,
 };
 
+const SECOND_PROFILE = {
+  ...PROFILE,
+  id: "0199c2d0-0000-7000-8000-0000000000c2",
+  name: "Cartão reserva",
+  version: 5,
+};
+
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
   contentType: "application/json",
@@ -57,13 +64,19 @@ async function openSaleLab(
     route.fulfill(
       refusal("BAD_REQUEST", 400, { reason: "sale_payment_split_mismatch" })
     ),
-  profileVersion: { current: number } = { current: 1 }
+  profileVersion: { current: number } = { current: 1 },
+  withSecondProfile = false
 ): Promise<ConfirmCalls> {
   const calls: ConfirmCalls = { bodies: [] };
   await page.clock.setFixedTime(NOW);
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill(
-      rpc({ profiles: [{ ...PROFILE, version: profileVersion.current }] })
+      rpc({
+        profiles: [
+          { ...PROFILE, version: profileVersion.current },
+          ...(withSecondProfile ? [SECOND_PROFILE] : []),
+        ],
+      })
     )
   );
   await page.route("**/rpc/sale/confirm", async (route) => {
@@ -600,6 +613,56 @@ test("sem internet, a venda de 1 parte com perfil leva o id e a versão dele at�
       method: "pix",
       paymentProfile: chosen,
     }),
+  ]);
+});
+
+test("sem internet, a venda dividida com 2 perfis leva o id e a versão do perfil escolhido em cada parte, e não os do 1º", async ({
+  page,
+}) => {
+  const first = { expectedVersion: LAB_PROFILE_SERVER_VERSION, id: PROFILE.id };
+  const second = {
+    expectedVersion: SECOND_PROFILE.version,
+    id: SECOND_PROFILE.id,
+  };
+  await openSaleLab(page, undefined, { current: first.expectedVersion }, true);
+  await sellShirtFor300(page);
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+  ).toBeVisible();
+  await page.getByLabel("Rede disponível").uncheck();
+  await splitButton(page).click();
+  await chooseSelectOption(part(page, 1), "Método", "Pix");
+  await part(page, 1).getByLabel("Valor").fill("100,00");
+  await chooseSelectOption(
+    part(page, 1),
+    "Perfil de pagamento",
+    SECOND_PROFILE.name
+  );
+  await chooseSelectOption(part(page, 2), "Método", "Débito");
+  await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+  const [queued] = await queuedPayloads(page);
+  expect(queued?.payments).toEqual([
+    expect.objectContaining({ method: "pix", paymentProfile: second }),
+    expect.objectContaining({ method: "debit_card", paymentProfile: first }),
+  ]);
+
+  await page.getByLabel("Rede disponível").check();
+  await expect(page.getByTestId("server-records")).toHaveText("1", {
+    timeout: 20_000,
+  });
+  const recorded = await recordedSales(page);
+  expect(recorded).toHaveLength(1);
+  expect(recorded[0]?.payments).toEqual([
+    expect.objectContaining({ method: "pix", paymentProfile: second }),
+    expect.objectContaining({ method: "debit_card", paymentProfile: first }),
   ]);
 });
 
