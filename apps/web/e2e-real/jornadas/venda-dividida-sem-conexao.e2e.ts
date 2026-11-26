@@ -475,6 +475,14 @@ test("Refazer uma venda dividida recusada: mesmos itens e as duas partes, a nova
       timeout: 60_000,
     })
     .toEqual(["rejected"]);
+  expect(
+    (
+      await sql.query<{ code: string }>(
+        "SELECT outcome_code AS code FROM sync_commands WHERE organization_id = $1",
+        [organizationId]
+      )
+    ).rows
+  ).toEqual([{ code: "payment_profile_changed" }]);
   expect(await payments(sql, organizationId)).toEqual([]);
 
   await page.goto("/attention");
@@ -558,8 +566,10 @@ test("Refazer uma venda dividida recusada: mesmos itens e as duas partes, a nova
     .click();
   await page.getByRole("button", { name: "Confirmar descarte" }).click();
   await expect.poll(() => outbox(page), { timeout: 15_000 }).toEqual([]);
+  await page.goto("/attention");
+  await expect(refused).toHaveCount(0);
   expect(
-    (await payments(sql, organizationId)).length,
-    "discarding the refused sale does not touch the new one"
-  ).toBe(2);
+    (await payments(sql, organizationId)).map((row) => row.method),
+    "the new sale is still the one recorded"
+  ).toEqual(["pix", "cash"]);
 });
