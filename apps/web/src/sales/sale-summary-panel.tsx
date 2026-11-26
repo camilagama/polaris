@@ -534,10 +534,7 @@ export function SummaryPanel({
   const rows = summary?.rows.filter((row) => row.tone !== "total") ?? [];
   const total = summary?.rows.find((row) => row.tone === "total");
   return (
-    <aside
-      aria-labelledby="sale-summary-title"
-      className="@[44rem]/sale:sticky @[44rem]/sale:top-4 min-w-0 @[44rem]/sale:self-start"
-    >
+    <div className="@[44rem]/sale:sticky @[44rem]/sale:top-4 min-w-0 @[44rem]/sale:self-start">
       <Block headingId="sale-summary-title" title="Resumo" variant="plain">
         <div className="grid gap-3">
           {summary ? (
@@ -640,7 +637,7 @@ export function SummaryPanel({
           </p>
         </div>
       </Block>
-    </aside>
+    </div>
   );
 }
 

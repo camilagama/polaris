@@ -39,7 +39,7 @@ const NO_SPLIT = {
     onStart: noop,
   },
 };
-const EMPTY_COUNT_LINE = /data-slot="card-description">\u00a0<\/div>/;
+const COUNT_SLOT = 'data-slot="items-count"';
 const variantId = "22222222-2222-4222-8222-222222222222";
 const NOW = new Date(2026, 10, 3, 14, 5);
 const chosenItem: ItemDraft = {
@@ -181,9 +181,9 @@ describe("o contador e o Adicionar item da venda", () => {
     };
   };
 
-  it("venda vazia: sem 'N linhas · M unidades' e sem Adicionar item, e a linha do contador segue no DOM", () => {
+  it("venda vazia: sem 'N linhas · M unidades', sem Adicionar item e sem linha reservada do contador", () => {
     const html = renderItemsChrome(createBlankSaleForm(ids()));
-    expect(html).toMatch(EMPTY_COUNT_LINE);
+    expect(html).toBe("");
     expect(html).not.toContain("Adicionar");
     expect(html).not.toContain("<button");
   });
@@ -196,6 +196,8 @@ describe("o contador e o Adicionar item da venda", () => {
     };
     const html = renderItemsChrome(form);
     expect(html).toContain(">1 linha · 1 unidade<");
+    expect(html).toContain(COUNT_SLOT);
+    expect(html).not.toContain("card-description");
     expect(html).toContain("Adicionar item");
   });
 
@@ -267,7 +269,7 @@ describe("o contador e o Adicionar item da venda", () => {
       ],
     };
     const html = renderItemsChrome(form);
-    expect(html).toMatch(EMPTY_COUNT_LINE);
+    expect(html).not.toContain(COUNT_SLOT);
     expect(html).not.toContain("aria-live");
     expect(html).not.toContain('role="status"');
   });

@@ -116,11 +116,11 @@ reflowTest(
     await expect(action).toHaveClass(TOUCH_HIT);
     // what the split changes: the card of the payment, the summary and the bar at the bottom
     await assertNothingClipped(
-      page.locator('fieldset[aria-labelledby="sale-payment-title"]')
+      page.getByRole("region", { exact: true, name: "Pagamento" })
     );
     await assertNothingClipped(page.locator("[data-submit-bar]"));
     await assertNoPageScroll(page);
-    const summary = page.getByRole("complementary", { name: "Resumo" });
+    const summary = page.getByRole("region", { exact: true, name: "Resumo" });
     await expect(summary).toContainText("Pagamento em 2 partes");
     await assertNothingClipped(summary);
   }

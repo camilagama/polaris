@@ -103,7 +103,7 @@ async function swapToGreen(page: Page, item: Locator) {
 }
 
 const summaryOf = (page: Page) =>
-  page.getByRole("complementary", { name: "Resumo" });
+  page.getByRole("region", { exact: true, name: "Resumo" });
 
 test("trocar a variante sem editar preço leva o preço da variante nova, no item e no Resumo", async ({
   page,

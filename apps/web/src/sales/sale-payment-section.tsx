@@ -1141,11 +1141,7 @@ export function PaymentSection({
         title="Pagamento"
       />
       <BlockPanel>
-        <fieldset
-          aria-labelledby="sale-payment-title"
-          className="grid min-w-0 gap-5"
-          disabled={disabled}
-        >
+        <fieldset className="grid min-w-0 gap-5" disabled={disabled}>
           {splitOn ? (
             <SplitParts
               disabled={disabled}
