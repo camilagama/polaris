@@ -12,7 +12,7 @@ const PROCESSING_FEES = "(−) Taxas de processamento";
 const SALE_CENTS = 10_000;
 const FIRST_PERCENT = "3,5";
 const SECOND_PERCENT = "4,2";
-const NO_PROFILE = "Sem perfil de pagamento";
+const OTHER_PROFILE = "Outra forma da jornada";
 
 type Sql = Parameters<Parameters<typeof test>[2]>[0]["sql"];
 
@@ -191,7 +191,7 @@ test("forma de receber: cadastrada, vendida, editada e arquivada sem mexer na ve
     "40.00",
     localDate(runT0(), zone)
   );
-  const firstFee = percentOfCents(SALE_CENTS, FIRST_PERCENT.replace(",", "."));
+  const firstFee = percentOfCents(SALE_CENTS, FIRST_PERCENT);
   expect(firstFee, "oracle").toBe(350);
 
   // AC-3.1: one row, version 1, the percentage as typed, "Ativo" in the list
@@ -218,6 +218,7 @@ test("forma de receber: cadastrada, vendida, editada e arquivada sem mexer na ve
       [organizationId]
     )
   ).rows;
+  expect(profile?.id).toBeDefined();
   const sold = {
     amount: SALE_CENTS,
     fee: firstFee,
@@ -261,6 +262,22 @@ test("forma de receber: cadastrada, vendida, editada e arquivada sem mexer na ve
   await expectProcessingFees(page, firstFee);
 
   // AC-3.4: archived, the list says "Arquivado", Vender no longer offers it, the sale stays as it was
+  // a second active profile is the proof that the list of Vender loaded when the archived one is missing from it
+  const noFee = { fixedAmount: null, mode: "none" as const, percentage: null };
+  await user.rpc.paymentProfile.create({
+    name: OTHER_PROFILE,
+    organizationId,
+    rules: [
+      {
+        anticipationFee: noFee,
+        expectedSettlementDays: 1,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        processingFee: noFee,
+      },
+    ],
+  });
   await openProfiles(page);
   await page
     .getByRole("button", { name: `Mais ações para ${PROFILE}` })
@@ -269,6 +286,7 @@ test("forma de receber: cadastrada, vendida, editada e arquivada sem mexer na ve
     .getByRole("menuitem", { name: `Arquivar perfil ${PROFILE}` })
     .click();
   await expect(page.getByText(`Perfil “${PROFILE}” arquivado.`)).toBeVisible();
+  await expect(profileRow(page)).toHaveCount(0);
   await page.getByRole("checkbox", { name: "Incluir arquivados" }).check();
   await expect(profileRow(page)).toContainText("Arquivado");
   await expect
@@ -277,10 +295,14 @@ test("forma de receber: cadastrada, vendida, editada e arquivada sem mexer na ve
 
   await page.goto("/sales");
   await page
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: "Pix" })
+    .check();
+  await page
     .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
     .click();
   await expect(
-    page.getByRole("option", { exact: true, name: NO_PROFILE })
+    page.getByRole("option", { exact: true, name: OTHER_PROFILE })
   ).toBeVisible();
   await expect(
     page.getByRole("option", { exact: true, name: PROFILE })
