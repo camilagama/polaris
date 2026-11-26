@@ -376,17 +376,16 @@ function ChosenItemFields({
 }
 
 /**
- * "N linhas · M unidades" under "Itens": the counts cover only the lines with a variant chosen, never the empty line
- * "Adicionar item" opens. The line is always in the DOM (a no-break space while empty) so that the first choice does
- * not push the item below it down.
+ * "N linhas · M unidades" beside "Itens": the counts cover only the lines with a variant chosen, never the empty line
+ * "Adicionar item" opens. Nothing is drawn while no variant is chosen, so the panel starts at its first field.
  */
 export function ItemsCount({ count }: { count: SaleCount }) {
+  if (count.lines === 0) {
+    return null;
+  }
   return (
-    <div
-      className="text-muted-foreground text-support"
-      data-slot="card-description"
-    >
-      {count.lines > 0 ? <SaleCountLabel count={count} /> : "\u00a0"}
+    <div className="text-muted-foreground text-support" data-slot="items-count">
+      <SaleCountLabel count={count} />
     </div>
   );
 }

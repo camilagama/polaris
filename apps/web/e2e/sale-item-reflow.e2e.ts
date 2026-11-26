@@ -196,7 +196,7 @@ for (const pixels of [16, 20]) {
     );
 
     reflowTest(
-      "o contador 'N linhas · M unidades' sob Itens, com 9.999 unidades, cabe a 320 e 360 px: nada cortado, sem rolagem de lado e sem tocar o Atualizar",
+      "o contador 'N linhas · M unidades' no cabeçalho de Itens, com 9.999 unidades, cabe a 320 e 360 px: nada cortado, sem rolagem de lado e sem tocar o Atualizar",
       async ({ page }) => {
         const item = await openItem(page, pixels);
         await item.getByLabel("Quantidade").fill("9999");

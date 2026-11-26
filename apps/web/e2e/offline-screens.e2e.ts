@@ -498,7 +498,7 @@ async function chooseProfile(page: Page, option: string) {
 }
 
 const summary = (page: Page) =>
-  page.getByRole("complementary", { name: "Resumo" });
+  page.getByRole("region", { exact: true, name: "Resumo" });
 
 const keepSale = (page: Page) =>
   page.getByRole("button", { name: "Guardar venda neste aparelho" });
