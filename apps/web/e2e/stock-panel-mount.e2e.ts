@@ -146,7 +146,7 @@ test("a 360 px a legenda escondida do painel de estoque tem 1 px e a página nã
   await page.getByRole("button", { name: RECEIVE_JEANS }).click();
   await expect(page.getByLabel("Quantidade recebida")).toBeFocused();
 
-  const legend = page.locator("form fieldset > legend.sr-only");
+  const legend = page.locator("form fieldset > legend");
   await expect(legend).toHaveCount(1);
   await expect(legend).toHaveCSS("position", "absolute");
   await expect(legend).toHaveCSS("width", "1px");

@@ -183,7 +183,9 @@ for (const month of MONTHS) {
   });
 }
 
-test("a 360 px o rótulo escondido do mês tem 1 px e a página não rola de lado", async ({
+// The hidden label is the MonthPicker's own (`[&>label]:sr-only` in expenses-page), not a FieldLabel: this guards that
+// it stays out of the flow, so it does not widen the page at 360 px.
+test("a 360 px o rótulo escondido do MonthPicker não alarga a página", async ({
   page,
 }, testInfo) => {
   test.skip(
