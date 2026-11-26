@@ -36,6 +36,7 @@ Plano: Fase 13, T-125a (POL-60). As jornadas abrem o app de verdade no Chromium 
 | `harness/chave-do-runtime.e2e.ts` | cada projeto serve o seu build e tem a chave do runtime no estado certo (menu Aparelhos e registro do aparelho) |
 | `jornadas/onboarding.e2e.ts` | organização aberta na tela com nome e fuso extremo; uma só, com o usuário como dono; repetir não duplica |
 | `jornadas/produto.e2e.ts` | categoria, produto e preço de tabela na tela; preço em centavos no banco; o produto aparece na venda |
+| `jornadas/produto-duas-variantes.e2e.ts` | produto com duas variantes (P e M) feito na tela: criar, configurar o tamanho, dar entrada de 7 e de 3 pelo Estoque, vender 1 de P pela tela de venda. A lista do Estoque mostra cada variante com o saldo certo; no banco a venda é um movimento só, na variante P (saldo 6), e M segue com 3 e um movimento. Projeto `online` |
 | `jornadas/estoque.e2e.ts` | recebimento com custo; baixa acima do saldo recusada na tela e no servidor; saldo = soma dos movimentos |
 | `jornadas/cliente.e2e.ts` | cadastro, lista, uma linha na organização, cliente associado a uma venda |
 | `jornadas/venda.e2e.ts` | venda com dois itens, desconto percentual e dinheiro contra o oráculo em centavos (`oracle.ts`, inteiros, sem importar o domínio); duplo toque gera uma venda; estoque, movimento e snapshot de custo; data local da venda no fuso extremo; casos de arredondamento a–e (meia-alta, um arredondamento por ajuste, percentuais sem compor) |
