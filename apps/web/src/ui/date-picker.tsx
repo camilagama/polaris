@@ -58,8 +58,9 @@ export type DatePickerProps = DateLimits & {
 
 /**
  * One date: an outline button with the calendar icon and the date written "24/10/2026" ("Escolher data" when there
- * is none) opens the month in a Popover, with "Hoje" in its footer. A touch on a day chooses it and closes. In this
- * first version the phone uses the same Popover; the full-screen Dialog comes later.
+ * is none) opens the month in a Popover, with "Hoje" in its footer. A touch on a day chooses it and closes. The phone
+ * keeps the Popover too, by UX decision: one touch already closes the panel and the month fits at 320 px, while a
+ * full-screen Dialog would hide the sale and add a close step without giving the day more room.
  */
 export function DatePicker({
   className,
