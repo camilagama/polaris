@@ -3,9 +3,6 @@ import { Button } from "@/ui/button";
 import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
 
-// biome-ignore lint/performance/noBarrelFile: the screens still import the list parts from this path; each folder moves to the `ListBlock` and drops its import
-export { ListTotalFooter } from "@/ui/list-total-footer";
-
 /* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the date as the lists write
    it, the rows drawn so far and the buttons of a row. */
 

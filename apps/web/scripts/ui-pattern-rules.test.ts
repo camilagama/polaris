@@ -61,7 +61,7 @@ const LIST_PARTS = new Set([
   "ListTotalFooter",
   "RowTile",
 ]);
-// the pieces and the module that still reexports them: a namespace or a dynamic import of one of them is a use too
+// the pieces and the module that used to reexport them: a namespace or a dynamic import of one of them is a use too, so a reexport that comes back there still fails
 const LIST_PART_MODULES = [
   UI_MODULE("list-notice"),
   UI_MODULE("list-total-footer"),
@@ -329,7 +329,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
   ],
   R4: [
     // catalog
-    "src/catalog/screen-parts.tsx",
     // customers
     // expenses
     // offline
@@ -715,8 +714,8 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: o screen-parts que reexporta", () => {
-    expect(DEBT.R4).toEqual(["src/catalog/screen-parts.tsx"]);
+  it("a dívida de R4 está vazia: nenhuma tela importa as peças soltas nem pelo reexport", () => {
+    expect(DEBT.R4).toEqual([]);
   });
 });
 

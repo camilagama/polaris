@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { Tabs } from "@/ui/tabs";
-import { ScreenTabList, ScreenTabTrigger } from "./screen-tabs";
+import { ScreenTabList, ScreenTabTrigger } from "@/ui/section-tabs";
 
 const ROOMS = { clientWidth: 100, scrollLeft: 50, scrollWidth: 400 };
 const originals = new Map<string, PropertyDescriptor | undefined>();

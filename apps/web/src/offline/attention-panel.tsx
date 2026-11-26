@@ -16,7 +16,7 @@ import { Button, buttonVariants } from "@/ui/button";
 import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
 import { InsetBlock } from "@/ui/inset-block";
-import { ActionStrip } from "../app-shell/action-strip";
+import { ActionStrip } from "@/ui/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
 import { type TitleBack, TitleLine } from "../app-shell/screen-title";
 import {
