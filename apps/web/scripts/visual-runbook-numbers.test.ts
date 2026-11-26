@@ -16,9 +16,10 @@ const SPEC = join(web, "e2e-pwa", "ui-visual.e2e.ts");
 const SNAPSHOTS = join(web, "e2e-pwa", "ui-visual.e2e.ts-snapshots");
 
 const NO_PHRASE = /não achei a frase/;
+const NO_BLOCK = /não achei o bloco VISUAL_STATES/;
 const NO_SECTION = /não achei a seção/;
 const NEXT_SECTION = /^## /m;
-const ENTRY = /^ {2}\["/;
+const ENTRY = /^ {2}\[/;
 
 const SECTION = "## Regressão visual";
 const FIX =
@@ -35,10 +36,11 @@ const section = (markdown: string): string => {
 };
 
 const claimedNumbers = (text: string, noun: string, lead: string) => {
+  const phrase = `${lead}N ${noun}`;
   const found = [...text.matchAll(new RegExp(`${lead}(\\d+) ${noun}\\b`, "g"))];
   if (found.length !== 1) {
     throw new Error(
-      `não achei a frase "${lead.trim() ? `${lead}N` : "N"} ${noun}" uma única vez na seção Regressão visual (achei ${found.length}): ${FIX}`
+      `não achei a frase "${phrase}" uma única vez na seção Regressão visual (achei ${found.length}): ${FIX}`
     );
   }
   return Number(found[0]?.[1]);
@@ -56,8 +58,8 @@ const countStates = (spec: string): number => {
     .filter((line) => ENTRY.test(line)).length;
 };
 
-const countImages = (): number =>
-  readdirSync(SNAPSHOTS).filter((name) => name.endsWith(".png")).length;
+const countImages = (names: readonly string[]): number =>
+  names.filter((name) => name.endsWith(".png")).length;
 
 const claimed = (markdown: string) => {
   const text = section(markdown);
@@ -74,7 +76,7 @@ describe("os números do runbook de regressão visual", () => {
   it("são os do spec e da pasta de baselines", () => {
     const { states, images } = claimed(readFileSync(RUNBOOK, "utf8"));
     const spec = countStates(readFileSync(SPEC, "utf8"));
-    const folder = countImages();
+    const folder = countImages(readdirSync(SNAPSHOTS));
     const problems = [
       states === spec ? "" : `${states} estados no runbook, ${spec} no spec`,
       images === folder
@@ -85,6 +87,21 @@ describe("os números do runbook de regressão visual", () => {
   });
 
   describe("controles", () => {
+    it("conta a entrada que o formatador quebrou em várias linhas", () => {
+      const spec = `const VISUAL_STATES = [\n  ["a", "a"],\n  [\n    "um nome muito longo",\n    "b",\n  ],\n] as const;\n`;
+      expect(countStates(spec)).toBe(2);
+    });
+
+    it("reprova quando o bloco VISUAL_STATES não existe", () => {
+      expect(() =>
+        countStates('const OUTRO = [\n  ["a"],\n] as const;\n')
+      ).toThrow(NO_BLOCK);
+    });
+
+    it("conta só os .png da pasta", () => {
+      expect(countImages(["a.png", "LEIAME.md", "b.png", "c.png.tmp"])).toBe(2);
+    });
+
     const sample = (phrase: string) =>
       `# x\n\n${SECTION}\n\n${phrase}\n\n## Outra\n\nrefere 99 estados e 98 imagens\n`;
 
