@@ -23,11 +23,6 @@ import {
 } from "../../offline/sale-confirm";
 import { syncOutbox } from "../../offline/sync-runner";
 import { FakeWriter } from "../../offline/test-support";
-import { queueOfflineSale } from "../../sales/queue-offline-sale";
-import {
-  prepareConfirmation,
-  type SaleCommandBody,
-} from "../../sales/sale-form-model";
 import { createSaleConfirmHandler } from "./handlers/sale-confirm";
 import {
   InvalidSyncPayloadError,
@@ -248,7 +243,6 @@ async function setup() {
     serve: (next: SyncCommandHandler) => {
       handler = next;
     },
-    stores: { deviceId, lease, organizationId, outbox, writer },
     sync: () => syncOutbox({ outbox, push }),
   };
 }
@@ -538,85 +532,69 @@ function salesTable() {
 }
 
 describe("a sale in parts locked with no answer and kept on the device", () => {
-  const body: SaleCommandBody = {
-    adjustments: [],
-    commandVersion: 1,
-    items: [
-      {
-        chargedUnitPrice: "50.00",
-        listedUnitPrice: "50.00",
-        quantity: 2,
-        variantId,
-      },
-    ],
-    payments: [
-      {
-        amount: "30.00",
-        anticipationRequested: false,
-        installmentPlan: null,
-        installments: null,
-        method: "pix",
-        paymentProfile: null,
-      },
-      {
-        amount: "70.00",
-        anticipationRequested: false,
-        installmentPlan: "issuer",
-        installments: 3,
-        method: "credit_card",
-        paymentProfile: profile,
-      },
-    ],
+  /**
+   * What the screen sent online: the device keeps the same command ID, instant and parts (the screen side of that
+   * copy is `sales/queue-offline-sale.test.ts`).
+   */
+  const sentParts: OfflineSalePaymentPart[] = [
+    {
+      amount: "30.00",
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method: "pix",
+      paymentProfile: null,
+    },
+    {
+      amount: "70.00",
+      anticipationRequested: false,
+      installmentPlan: "issuer",
+      installments: 3,
+      method: "credit_card",
+      paymentProfile: profile,
+    },
+  ];
+  const line = {
+    chargedUnitPrice: "50.00",
+    listedUnitPrice: "50.00",
+    quantity: 2,
+    variantId,
   };
+  const commandId = uuid(101);
 
   /** The screen sent the sale online, the server recorded it and the answer was lost; the sale is kept on the device. */
-  async function sentOnlineThenKept(
-    keptParts?: NonNullable<SaleCommandBody["payments"]>
-  ) {
+  async function sentOnlineThenKept(keptParts: OfflineSalePaymentPart[]) {
     const table = salesTable();
     const device = await setup();
     device.serve(
       createSaleConfirmHandler({ confirmSale: table.confirm as never })
     );
-    const sent = prepareConfirmation({
-      body,
-      createId: () => uuid(101),
-      now,
-      organizationId,
-      previousAttempt: null,
-    });
-    if (!sent.ok) {
-      throw new Error("the sent body is valid");
-    }
-    const online = await table.confirm({}, {}, sent.request);
-    const recordedParts = structuredClone(
-      table.recorded.get(sent.request.commandId)?.command.payments
+    const online = await table.confirm(
+      {},
+      {},
+      {
+        adjustments: [],
+        commandId,
+        commandVersion: 1,
+        items: [line],
+        occurredAt: now.toISOString(),
+        payments: sentParts,
+        recordedAt: now.toISOString(),
+      }
     );
-    const kept = prepareConfirmation({
-      attemptUnsettled: true,
-      body,
-      createId: () => uuid(999),
-      now,
-      occurredAtOverride: null,
-      organizationId,
-      previousAttempt: sent.attempt,
+    const recordedParts = structuredClone(
+      table.recorded.get(commandId)?.command.payments
+    );
+    await device.sell({
+      lines: [line],
+      newCommandId: () => commandId,
+      payments: keptParts,
     });
-    if (!kept.ok) {
-      throw new Error("the kept body is valid");
-    }
-    await queueOfflineSale({
-      labels: new Map(),
-      request:
-        keptParts === undefined
-          ? kept.request
-          : { ...kept.request, payments: keptParts },
-      stores: device.stores,
-    });
-    return { device, online, recordedParts, sent, table };
+    return { device, online, recordedParts, table };
   }
 
   it("is the same sale on the server: the device's command replays it, with both parts, and no second sale", async () => {
-    const { device, online, sent, table } = await sentOnlineThenKept();
+    const { device, online, table } = await sentOnlineThenKept(sentParts);
 
     const summary = await device.sync();
 
@@ -627,12 +605,8 @@ describe("a sale in parts locked with no answer and kept on the device", () => {
       sale: { id: online.sale.id },
     });
     expect(table.recorded.size).toBe(1);
-    expect(
-      table.recorded.get(sent.request.commandId)?.command.payments
-    ).toHaveLength(2);
-    expect(
-      device.frame.stored.get(sent.request.commandId)?.outcome
-    ).toMatchObject({
+    expect(table.recorded.get(commandId)?.command.payments).toHaveLength(2);
+    expect(device.frame.stored.get(commandId)?.outcome).toMatchObject({
       result: { saleId: online.sale.id },
       status: "accepted",
     });
@@ -640,11 +614,11 @@ describe("a sale in parts locked with no answer and kept on the device", () => {
   });
 
   it("with the second part of another amount under the same command ID, is a conflict and never a second sale", async () => {
-    const [first, second] = body.payments ?? [];
+    const [first, second] = sentParts;
     if (!(first && second)) {
-      throw new Error("the body has two parts");
+      throw new Error("two parts were sent");
     }
-    const { device, recordedParts, sent, table } = await sentOnlineThenKept([
+    const { device, recordedParts, table } = await sentOnlineThenKept([
       { ...first, amount: "40.00" },
       { ...second, amount: "60.00" },
     ]);
@@ -653,11 +627,11 @@ describe("a sale in parts locked with no answer and kept on the device", () => {
 
     expect(summary.blockedBy?.rejection?.code).toBe("sale_command_conflict");
     expect(table.recorded.size).toBe(1);
-    expect(
-      table.recorded.get(sent.request.commandId)?.command.payments
-    ).toEqual(recordedParts);
     expect(recordedParts).toHaveLength(2);
+    expect(table.recorded.get(commandId)?.command.payments).toEqual(
+      recordedParts
+    );
     const [kept] = (await device.outbox.snapshot()).commands;
-    expect(kept?.commandId).toBe(sent.request.commandId);
+    expect(kept?.commandId).toBe(commandId);
   });
 });
