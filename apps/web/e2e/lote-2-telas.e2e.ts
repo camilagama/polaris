@@ -312,6 +312,57 @@ test("Categorias: renomear na própria linha leva o cursor ao campo, 'Cancelar' 
   ]);
 });
 
+test("Categorias a 360 px: renomear com o nome em branco diz que falta o nome no lugar do contador, devolve o foco ao campo e salvar com nome funciona", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "a largura é a do teste"
+  );
+  await page.setViewportSize({ height: 740, width: 360 });
+  const renamed: unknown[] = [];
+  await openScreen(page, "/categories", "Categorias", {
+    "category/list": reply({ categories: [category(1, "Camisetas")] }),
+    "category/rename": (route) => {
+      renamed.push((route.request().postDataJSON() as { json: unknown }).json);
+      return route.fulfill(
+        rpc({ category: category(1, "Blusas"), changed: true })
+      );
+    },
+  });
+  await menuOf(page, "Camisetas").click();
+  await page.getByRole("menuitem", { exact: true, name: "Renomear" }).click();
+  const field = page.getByLabel("Novo nome para Camisetas");
+  await expect(field).toBeFocused();
+  await expect(page.getByText("9/100 caracteres")).toBeVisible();
+
+  await field.fill("   ");
+  await page.getByRole("button", { name: "Salvar" }).click();
+
+  const message = page.getByText("Informe o nome da categoria.");
+  await expect(message).toBeVisible();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(field).toBeFocused();
+  await expect(
+    page.locator("form[data-category-id]").getByText("/100 caracteres")
+  ).toHaveCount(0);
+  const box = await message.boundingBox();
+  expect(box).not.toBeNull();
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
+  expect(renamed).toEqual([]);
+
+  await field.fill("Blusas");
+  await expect(message).toHaveCount(0);
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+  await page.getByRole("button", { name: "Salvar" }).click();
+  await expect(
+    page.getByText("Categoria renomeada para “Blusas”.")
+  ).toBeVisible();
+  expect(renamed).toEqual([
+    { id: id(41), name: "Blusas", organizationId: ORGANIZATION.id },
+  ]);
+});
+
 test("Categorias: o nome passa de 100 caracteres, o campo diz quantos e nada é enviado", async ({
   page,
 }) => {
