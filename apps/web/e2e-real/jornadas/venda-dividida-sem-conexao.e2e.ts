@@ -366,6 +366,46 @@ test("venda dividida sem conexão com o perfil da parte 2 mudado: a venda inteir
   ).toContainText("Você já refez esta venda", { timeout: 30_000 });
 });
 
+const NO_PROFILE = "Sem perfil de pagamento";
+const ITEM_GROUP = /^Item \d+$/;
+const PART_GROUP = /^Parte \d+$/;
+const CHANGE_VARIANT = /^Trocar/;
+const CHANGE_PREFIX = /^Trocar variante de /;
+
+/** What Vender shows after Refazer: each item's name, quantity and charged price, each part's amount, method and profile. */
+async function restoredSale(page: Page) {
+  const items = page.getByRole("group", { name: ITEM_GROUP });
+  const parts = page.getByRole("group", { name: PART_GROUP });
+  return {
+    items: await Promise.all(
+      (await items.all()).map(async (line) => ({
+        charged: await line.getByLabel("Preço cobrado").inputValue(),
+        name: (
+          (await line
+            .getByRole("button", { name: CHANGE_VARIANT })
+            .textContent()) ?? ""
+        ).replace(CHANGE_PREFIX, ""),
+        quantity: await line.getByLabel("Quantidade").inputValue(),
+      }))
+    ),
+    parts: await Promise.all(
+      (await parts.all()).map(async (scope) => {
+        const select = async (name: string) =>
+          (
+            await scope
+              .getByRole("combobox", { exact: true, name })
+              .textContent()
+          )?.trim();
+        return {
+          amount: await scope.getByLabel("Valor").inputValue(),
+          method: await select("Método"),
+          profile: await select("Perfil de pagamento"),
+        };
+      })
+    ),
+  };
+}
+
 const REDONE_TITLE =
   /^Venda de R\$ 750,00 · Pix \+ Dinheiro · \d{2}\/\d{2} \d{2}:\d{2}$/;
 const PANTS = /Calça jeans/;
@@ -497,26 +537,28 @@ test("Refazer uma venda dividida recusada: mesmos itens e as duas partes, a nova
   await expect(
     page.getByText("Você está refazendo uma venda recusada")
   ).toBeVisible();
-  const item = (ordinal: 1 | 2) =>
-    page.getByRole("group", { exact: true, name: `Item ${ordinal}` });
-  await expect(item(1).getByLabel("Quantidade")).toHaveValue("2");
-  await expect(item(1).getByLabel("Preço cobrado")).toHaveValue("300,00");
-  await expect(item(2).getByLabel("Quantidade")).toHaveValue("1");
-  await expect(item(2).getByLabel("Preço cobrado")).toHaveValue("150,00");
-  await expect(part(page, 1).getByLabel("Valor")).toHaveValue("250,00");
-  await expect(part(page, 2).getByLabel("Valor")).toHaveValue("500,00");
-  await expect(
-    part(page, 1).getByRole("combobox", { exact: true, name: "Método" })
-  ).toContainText("Pix");
-  await expect(
-    part(page, 1).getByRole("combobox", {
-      exact: true,
-      name: "Perfil de pagamento",
-    })
-  ).toContainText(PROFILE_NAME);
-  await expect(
-    part(page, 2).getByRole("combobox", { exact: true, name: "Método" })
-  ).toContainText("Dinheiro");
+  await expect(page.getByRole("group", { name: ITEM_GROUP })).toHaveCount(2);
+  await expect(page.getByRole("group", { name: PART_GROUP })).toHaveCount(2);
+  await expect
+    .poll(() => restoredSale(page), { timeout: 30_000 })
+    .toEqual({
+      items: [
+        {
+          charged: "300,00",
+          name: expect.stringContaining("Camiseta lisa"),
+          quantity: "2",
+        },
+        {
+          charged: "150,00",
+          name: expect.stringContaining("Calça jeans"),
+          quantity: "1",
+        },
+      ],
+      parts: [
+        { amount: "250,00", method: "Pix", profile: PROFILE_NAME },
+        { amount: "500,00", method: "Dinheiro", profile: NO_PROFILE },
+      ],
+    });
   const review = page.getByRole("button", {
     name: "Revisei a prévia da parte 1",
   });
