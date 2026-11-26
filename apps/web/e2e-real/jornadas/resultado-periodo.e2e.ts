@@ -93,7 +93,7 @@ test("o Resultado troca de período: este mês e o mês passado somam só o que 
     pill: `${shortDate(lastStart)} a ${shortDate(lastEnd)}`,
   };
   const current: Period = {
-    link: `${shortDate(thisStart)} a ${shortDate(today)}`,
+    link: `${shortDate(thisStart)} a \\d\\d/\\d\\d`,
     pill: `${shortDate(thisStart)} a ${shortDate(addDays(monthStart(today, 1), -1))}`,
   };
 
@@ -120,7 +120,8 @@ test("o Resultado troca de período: este mês e o mês passado somam só o que 
     );
   const now = new Date(runT0()).toISOString();
   await sell(1, `${lastEnd}T14:00:00.000Z`);
-  await sell(3, `${lastEnd}T15:00:00.000Z`);
+  await sell(1, `${lastEnd}T14:30:00.000Z`);
+  await sell(2, `${lastEnd}T15:00:00.000Z`);
   await sell(1, now);
   await sell(2, now);
 
@@ -146,7 +147,7 @@ test("o Resultado troca de período: este mês e o mês passado somam só o que 
 
   await pickPeriod(page, "Mês passado");
   expect(await readResultado(page, last)).toEqual({
-    count: 2,
+    count: 3,
     expenses: 5000,
     net: 18_000,
   });

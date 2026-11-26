@@ -58,10 +58,14 @@ async function openEdit(page: Page) {
   return page.getByRole("dialog", { name: "Editar despesa" });
 }
 
-async function resultExpenses(page: Page): Promise<number> {
+async function expectResultExpenses(page: Page, expected: number) {
   await page.goto("/dashboard");
   await expect(chainValue(page, EXPENSES_OF_PERIOD)).toHaveText(BRL_VALUE);
-  return cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText());
+  await expect
+    .poll(async () =>
+      cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText())
+    )
+    .toBe(expected);
 }
 
 /**
@@ -108,7 +112,7 @@ test("despesa editada e anulada: o banco, a lista e o Resultado concordam em cen
   expect(await stored()).toEqual([
     { amount: 10_000, version: 1, voided: false },
   ]);
-  expect(await resultExpenses(page)).toBe(10_000);
+  await expectResultExpenses(page, 10_000);
 
   // edit to 120,50: the amount is in cents in the table, the version went up, list and Resultado say 120,50
   await page.goto("/expenses");
@@ -122,7 +126,7 @@ test("despesa editada e anulada: o banco, a lista e o Resultado concordam em cen
   await expect
     .poll(stored)
     .toEqual([{ amount: 12_050, version: 2, voided: false }]);
-  expect(await resultExpenses(page)).toBe(12_050);
+  await expectResultExpenses(page, 12_050);
 
   // void: out of "Ativas" and of the Resultado, in "Anuladas" with no "Editar", voided in the table
   await page.goto("/expenses");
@@ -162,7 +166,7 @@ test("despesa editada e anulada: o banco, a lista e o Resultado concordam em cen
   await showStatus(page, "Ativas");
   await expect(expenseRow(page, DESCRIPTION)).toContainText("R$ 120,50");
   expect((await stored())[0]?.amount).toBe(12_050);
-  expect(await resultExpenses(page)).toBe(12_050);
+  await expectResultExpenses(page, 12_050);
 });
 
 /**
@@ -220,6 +224,8 @@ test("despesa editada sobre uma versão antiga: a tela avisa e o banco guarda s�
       .filter({ hasText: "Esta despesa mudou em outra solicitação" })
       .first()
   ).toBeVisible();
+
+  await expect(expenseRow(page, DESCRIPTION)).toContainText("R$ 130,00");
 
   const rows = (
     await sql.query<{ amount: string; version: number }>(
