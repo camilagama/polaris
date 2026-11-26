@@ -2,7 +2,7 @@ import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities
 import { useCallback, useMemo } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
-import { ScreenTitle } from "../app-shell/screen-title";
+import { ScreenTitle, TitleLine } from "../app-shell/screen-title";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
@@ -21,7 +21,11 @@ import {
 } from "./data-export-model";
 
 function Title() {
-  return <ScreenTitle>Seus dados</ScreenTitle>;
+  return (
+    <TitleLine>
+      <ScreenTitle>Seus dados</ScreenTitle>
+    </TitleLine>
+  );
 }
 
 /**

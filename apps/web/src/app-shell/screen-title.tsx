@@ -46,6 +46,11 @@ export function useInTab(): boolean {
   return useContext(InTabContext);
 }
 
+/** Whether `ScreenTitle` with `tabNamesIt` is only for a screen reader here: the line of the title then holds no height. */
+export function useTitleHidden(tabNamesIt: boolean): boolean {
+  return useContext(InTabContext) && tabNamesIt;
+}
+
 /**
  * The title of a screen: the `h1` of the page when it stands alone, and a section title under the screen's `h1` when it
  * is a tab, as the Metas of the Resultado (one `h1` a page).
@@ -116,14 +121,21 @@ export function TitleLine({
   action,
   back,
   children,
+  titleHidden = false,
 }: {
   action?: ReactNode;
   back?: TitleBack | undefined;
   children: ReactNode;
+  /** The title is only for a screen reader (the tab names the screen) and there is no action: the line draws no box, so it takes no room in the grid of the page. */
+  titleHidden?: boolean;
 }) {
   return (
     <div
-      className="grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3"
+      className={
+        titleHidden && !action
+          ? "contents"
+          : "grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3"
+      }
       data-title-line=""
     >
       {back ? (

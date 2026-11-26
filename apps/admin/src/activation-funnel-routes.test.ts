@@ -3,6 +3,7 @@ import {
   type ActivationFunnelResponse,
   activationFunnelResponse,
   type RawActivationFunnel,
+  rawActivationFunnel,
 } from "@polaris/contracts/admin-activation-funnel";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -172,6 +173,25 @@ function withFourteenDays(answer: RawActivationFunnel): RawActivationFunnel {
             trialStarted: suppressed,
           }
     ),
+  };
+}
+
+/** The same answer as the function of the PR that reads the frozen counter writes it: the two M3 cells in every cohort. */
+function withReturns(
+  answer: RawActivationFunnel,
+  first: Pick<
+    RawActivationFunnel["cohorts"][number],
+    "neverReturned" | "returned"
+  > = { neverReturned: shown(8), returned: shown(5) }
+): RawActivationFunnel {
+  return {
+    ...answer,
+    cohorts: answer.cohorts.map((cohort, index) => ({
+      ...cohort,
+      ...(index === 0
+        ? first
+        : { neverReturned: windowOpen, returned: windowOpen }),
+    })),
   };
 }
 
@@ -350,8 +370,141 @@ describe("GET /api/funnel", () => {
     });
   });
 
+  it("answers the cells of the M3 when the function sends them, null with the reason where it froze none, and nothing when it sends none", async () => {
+    const old = await setup().get("?weeks=2");
+    const oldBody = (await old.json()) as ActivationFunnelResponse;
+    expect(old.status).toBe(200);
+    expect(oldBody.cohorts[0]).not.toHaveProperty("returned");
+    expect(oldBody.cohorts[0]).not.toHaveProperty("neverReturned");
+
+    const next = await setup(
+      vi.fn(() => Promise.resolve(withReturns(raw())))
+    ).get("?weeks=2");
+    const nextBody = (await next.json()) as ActivationFunnelResponse;
+    expect(next.status).toBe(200);
+    expect(activationFunnelResponse.parse(nextBody)).toEqual(nextBody);
+    expect(nextBody.cohorts[0]?.returned).toEqual({ reason: null, value: 5 });
+    expect(nextBody.cohorts[0]?.neverReturned).toEqual({
+      reason: null,
+      value: 8,
+    });
+    expect(nextBody.cohorts[1]?.returned).toEqual({
+      reason: "activation_window_open",
+      value: null,
+    });
+    expect(JSON.stringify(nextBody)).not.toMatch(ZERO_VALUE);
+    expect(nextBody.cohorts[0]).not.toHaveProperty("percent.returned");
+  });
+
+  it("answers a week the weekly freeze never wrote with the M3's own reason, not the one of the open window", async () => {
+    const notFrozen = {
+      reason: "not_frozen" as const,
+      state: "unavailable" as const,
+    };
+    const response = await setup(
+      vi.fn(() =>
+        Promise.resolve(
+          withReturns(raw(), { neverReturned: notFrozen, returned: notFrozen })
+        )
+      )
+    ).get("?weeks=2");
+    const body = (await response.json()) as ActivationFunnelResponse;
+    expect(response.status).toBe(200);
+    expect(activationFunnelResponse.parse(body)).toEqual(body);
+    expect(body.cohorts[0]?.returned).toEqual({
+      reason: "not_frozen",
+      value: null,
+    });
+    expect(body.cohorts[0]?.neverReturned).toEqual({
+      reason: "not_frozen",
+      value: null,
+    });
+    expect(JSON.stringify(body)).not.toMatch(ZERO_VALUE);
+  });
+
+  it("refuses the M3's reason in a cell that is not of the M3, on the way in and on the way out", () => {
+    const notFrozen = {
+      reason: "not_frozen" as const,
+      state: "unavailable" as const,
+    };
+    const answer = raw();
+    expect(
+      rawActivationFunnel.safeParse({
+        ...answer,
+        cohorts: answer.cohorts.map((cohort, index) =>
+          index === 0 ? { ...cohort, withFirstSale: notFrozen } : cohort
+        ),
+      }).success
+    ).toBe(false);
+    const view = activationFunnelView(raw());
+    const refused = activationFunnelResponse.safeParse({
+      ...view,
+      cohorts: view.cohorts.map((cohort, index) =>
+        index === 0
+          ? { ...cohort, stores: { reason: "not_frozen", value: null } }
+          : cohort
+      ),
+    });
+    expect(refused.success).toBe(false);
+  });
+
+  it("passes on a frozen pair above the live stores of the week, since the counter was frozen weeks before", async () => {
+    const response = await setup(
+      vi.fn(() =>
+        Promise.resolve(
+          withReturns(raw(), { neverReturned: shown(12), returned: shown(10) })
+        )
+      )
+    ).get("?weeks=2");
+    const body = (await response.json()) as ActivationFunnelResponse;
+    expect(response.status).toBe(200);
+    expect(body.cohorts[0]?.returned).toEqual({ reason: null, value: 10 });
+    expect(body.cohorts[0]?.stores).toEqual({ reason: null, value: 21 });
+  });
+
+  it("answers a week with the two M3 cells suppressed as null, never 0", async () => {
+    const response = await setup(
+      vi.fn(() =>
+        Promise.resolve(
+          withReturns(raw(), {
+            neverReturned: suppressed,
+            returned: suppressed,
+          })
+        )
+      )
+    ).get("?weeks=2");
+    const body = (await response.json()) as ActivationFunnelResponse;
+    expect(response.status).toBe(200);
+    expect(body.cohorts[0]?.returned).toEqual({
+      reason: "suppressed",
+      value: null,
+    });
+    expect(body.cohorts[0]?.neverReturned).toEqual({
+      reason: "suppressed",
+      value: null,
+    });
+    expect(JSON.stringify(body)).not.toMatch(ZERO_VALUE);
+  });
+
   it.each([
     ["a key more", { ...raw(), storeIds: ["org-1"] }],
+    [
+      "an M3 cell under k shown",
+      withReturns(raw(), { neverReturned: shown(8), returned: shown(4) }),
+    ],
+    [
+      "an M3 cell with 0 shown",
+      withReturns(raw(), { neverReturned: shown(8), returned: shown(0) }),
+    ],
+    [
+      "one M3 cell without the other",
+      {
+        ...raw(),
+        cohorts: raw().cohorts.map((cohort, index) =>
+          index === 0 ? { ...cohort, returned: shown(5) } : cohort
+        ),
+      },
+    ],
     [
       "a 14-day cell under k shown",
       {
@@ -665,6 +818,21 @@ describe("the answer's contract", () => {
     expect(activationFunnelResponse.parse(view)).toEqual(view);
   });
 
+  it("keeps the two M3 cells as the function showed them and makes no share of them", () => {
+    const next = activationFunnelView(withReturns(raw()));
+    expect(next.cohorts[0]?.returned).toEqual({ reason: null, value: 5 });
+    expect(next.cohorts[0]?.neverReturned).toEqual({ reason: null, value: 8 });
+    expect(Object.keys(next.cohorts[0]?.percent ?? {})).not.toContain(
+      "returned"
+    );
+    expect(next.cohorts[1]?.neverReturned).toEqual({
+      reason: "activation_window_open",
+      value: null,
+    });
+    expect(activationFunnelResponse.parse(next)).toEqual(next);
+    expect(Object.keys(closed ?? {})).not.toContain("returned");
+  });
+
   it("says when it was read and what the numbers leave out", () => {
     expect(view.updatedAt).toBe("2026-10-27T17:05:07.123Z");
     expect(view.internalStoresExcluded).toBe(3);
@@ -729,6 +897,26 @@ describe("the answer's contract", () => {
             soldInTrial: { reason: null, value: 5 },
           },
         ],
+      },
+    ],
+    [
+      "an M3 cell with 0 shown",
+      {
+        ...view,
+        cohorts: [
+          {
+            ...view.cohorts[0],
+            neverReturned: { reason: null, value: 6 },
+            returned: { reason: null, value: 0 },
+          },
+        ],
+      },
+    ],
+    [
+      "one M3 cell without the other",
+      {
+        ...view,
+        cohorts: [{ ...view.cohorts[0], returned: { reason: null, value: 6 } }],
       },
     ],
     [

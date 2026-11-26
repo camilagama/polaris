@@ -13,7 +13,10 @@ import { z } from "zod";
  *   its own, not a customer's activity (ADR 0071 amended).
  *
  * The "up to 14 days" and Pro trial cells of a cohort are optional in both shapes: the Admin is deployed before the
- * function that writes them, and an answer without them keeps the shape it had.
+ * function that writes them, and an answer without them keeps the shape it had. So are the two cells of the M3, the
+ * stores that did and did not come back to the app (ADR 0106, D9): a week the function froze no row for is `null`
+ * with the M3's own reason, `not_frozen`, never 0 and never the reason of the windows above (they would say the
+ * deadline still runs for a number that will not come). Only those two cells accept it.
  */
 
 // The pages run under a CSP without 'unsafe-eval' and the Worker never allows it: no code generation (as in ./index).
@@ -35,6 +38,17 @@ const rawCell = z.discriminatedUnion("state", [
   z.object({ state: z.literal("suppressed") }).strict(),
   z
     .object({ reason: unavailableReason, state: z.literal("unavailable") })
+    .strict(),
+]);
+
+const rawReturnCell = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("shown"), value: shownCount }).strict(),
+  z.object({ state: z.literal("suppressed") }).strict(),
+  z
+    .object({
+      reason: z.enum([...unavailableReason.options, "not_frozen"]),
+      state: z.literal("unavailable"),
+    })
     .strict(),
 ]);
 
@@ -74,6 +88,24 @@ function trialCellsTogether(cohort: {
   );
 }
 
+/**
+ * The M3 cells of a cohort, read from the frozen counter. Optional on the way in for the same reason as the cells
+ * above, and the two come together or not at all: a week is frozen with both numbers or with neither.
+ */
+const rawReturnCells = {
+  neverReturned: rawReturnCell.optional(),
+  returned: rawReturnCell.optional(),
+};
+
+function returnCellsTogether(cohort: {
+  neverReturned?: unknown;
+  returned?: unknown;
+}): boolean {
+  return (
+    (cohort.returned === undefined) === (cohort.neverReturned === undefined)
+  );
+}
+
 const rawRetention = z
   .object({ week2: rawCell, week3: rawCell, week5: rawCell })
   .strict();
@@ -89,6 +121,7 @@ export const rawActivationFunnel = z
           .object({
             ...rawWeek,
             ...rawFourteenDayCells,
+            ...rawReturnCells,
             activatedIn7Days: rawCell,
             retention: rawRetention,
             stores: rawCell,
@@ -99,6 +132,7 @@ export const rawActivationFunnel = z
           })
           .strict()
           .refine(trialCellsTogether)
+          .refine(returnCellsTogether)
       )
       .max(26),
     generatedAt: z.string(),
@@ -116,6 +150,7 @@ export const rawActivationFunnel = z
 
 export type RawActivationFunnel = z.infer<typeof rawActivationFunnel>;
 export type RawActivationFunnelCell = z.infer<typeof rawCell>;
+export type RawActivationFunnelReturnCell = z.infer<typeof rawReturnCell>;
 
 /** Why a number is not there: under k on some side (no hint which), or not known yet. */
 export const activationFunnelReason = z.enum([
@@ -124,10 +159,22 @@ export const activationFunnelReason = z.enum([
   "week_not_closed",
 ]);
 
+/** The reasons of the M3 cells: the ones above and `not_frozen`, a week the weekly freeze never wrote a row for. */
+export const activationFunnelReturnReason = z.enum([
+  ...activationFunnelReason.options,
+  "not_frozen",
+]);
+
 /** A count: the number the function showed, or `null` with the reason; never 0 in its place. */
 const funnelCount = z.union([
   z.object({ reason: z.null(), value: shownCount }).strict(),
   z.object({ reason: activationFunnelReason, value: z.null() }).strict(),
+]);
+
+/** A count of the M3: as `funnelCount`, and its reason may also be `not_frozen`. */
+const funnelReturnCount = z.union([
+  z.object({ reason: z.null(), value: shownCount }).strict(),
+  z.object({ reason: activationFunnelReturnReason, value: z.null() }).strict(),
 ]);
 
 /** A percentage (0 to 100, one decimal) between two numbers shown, or `null` with the reason of the side missing. */
@@ -153,6 +200,11 @@ const fourteenDayCells = {
   trialStarted: funnelCount.optional(),
 };
 
+const returnCells = {
+  neverReturned: funnelReturnCount.optional(),
+  returned: funnelReturnCount.optional(),
+};
+
 /** What the numbers leave out, said with them (AC-12 moves to the screen; the JSON says it already). */
 export const ACTIVATION_FUNNEL_NOT_COUNTED = Object.freeze({
   internalStores:
@@ -173,6 +225,7 @@ export const activationFunnelResponse = z
           .object({
             ...week,
             ...fourteenDayCells,
+            ...returnCells,
             activatedIn7Days: funnelCount,
             percent: z
               .object({
@@ -209,6 +262,7 @@ export const activationFunnelResponse = z
           })
           .strict()
           .refine(trialCellsTogether)
+          .refine(returnCellsTogether)
       )
       .max(26),
     internalStoresExcluded: count,
@@ -240,4 +294,5 @@ export const activationFunnelResponse = z
 
 export type ActivationFunnelResponse = z.infer<typeof activationFunnelResponse>;
 export type ActivationFunnelCount = z.infer<typeof funnelCount>;
+export type ActivationFunnelReturnCount = z.infer<typeof funnelReturnCount>;
 export type ActivationFunnelPercent = z.infer<typeof funnelPercent>;

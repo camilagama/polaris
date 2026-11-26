@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { TextLink } from "@/ui/text-link";
 import { HELP_LABEL } from "../app-shell/navigation-model";
-import { ScreenTitle } from "../app-shell/screen-title";
+import { ScreenTitle, TitleLine } from "../app-shell/screen-title";
 import { DPO_EMAIL, mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
 
 export const HELP_INTRO =
@@ -59,8 +59,10 @@ function ContactCard({
 export function HelpPage() {
   return (
     <div className="grid max-w-[40rem] gap-6">
-      <header className="grid gap-2">
-        <ScreenTitle>{HELP_LABEL}</ScreenTitle>
+      <header className="grid gap-1">
+        <TitleLine>
+          <ScreenTitle>{HELP_LABEL}</ScreenTitle>
+        </TitleLine>
         <p className="m-0 text-muted-foreground">{HELP_INTRO}</p>
       </header>
       <ContactCard

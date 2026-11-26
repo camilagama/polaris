@@ -371,6 +371,16 @@ async function expectCounterDoesNotPushItem(page: Page) {
   await expect(quantity).toBeVisible();
   await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
   await expect(addItem).toBeVisible();
+  const fontSize = (target: Locator) =>
+    target.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize)
+    );
+  const countSize = await fontSize(count);
+  const titleSize = await fontSize(title);
+  expect(
+    countSize,
+    "the counter is auxiliary text, smaller than the title it sits beside"
+  ).toBeLessThan(titleSize);
   expect(Math.abs((await headerHeight()) - headerBefore)).toBeLessThanOrEqual(
     1
   );
