@@ -93,7 +93,9 @@ test("meta de número de vendas: criada pela tela, conclui com a 2ª venda e nã
   await expect(datePickerButton(form, "Período da meta")).toHaveAccessibleName(
     `Período da meta, ${dayAndMonth(firstDay)} a ${dayAndMonth(lastDay)}`
   );
-  await form.getByRole("textbox", { name: "Nome Opcional" }).fill("Duas vendas no mês");
+  await form
+    .getByRole("textbox", { name: "Nome Opcional" })
+    .fill("Duas vendas no mês");
   await form.getByLabel("Alvo").fill("2");
   await form.getByRole("button", { name: "Criar meta" }).click();
   await expect(page.getByText("Meta criada.")).toBeVisible();
