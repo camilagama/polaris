@@ -9,8 +9,8 @@ import { Field, FieldLabel } from "@/ui/field";
  */
 const classesOf = (html: string, tag: string) =>
   (html.match(new RegExp(`<${tag} [^>]*class="([^"]*)"`))?.[1] ?? "")
-    .replaceAll("&amp;", "&")
     .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
     .split(" ");
 
 describe("FieldLabel hidden with sr-only", () => {
