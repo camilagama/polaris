@@ -126,6 +126,18 @@ function newServer(screen: LabScreen) {
     : new FakeCustomerServer();
 }
 
+/** What the simulated server recorded for each sale (command ID and the payments it carried), for the e2e to read. */
+function recordedSales(server: ReturnType<typeof newServer>): string {
+  return JSON.stringify(
+    server instanceof SaleLabServer
+      ? [...server.sales].map(([commandId, sale]) => ({
+          commandId,
+          payments: sale.payments,
+        }))
+      : []
+  );
+}
+
 function recordsOn(
   server: ReturnType<typeof newServer>,
   screen: LabScreen
@@ -434,7 +446,12 @@ export function ScreensLab() {
             </div>
             <p>
               Registros no servidor simulado:{" "}
-              <span data-testid="server-records">{serverRecords}</span>
+              <span
+                data-sales={recordedSales(server)}
+                data-testid="server-records"
+              >
+                {serverRecords}
+              </span>
             </p>
           </div>
           {started && onlineOnly ? (

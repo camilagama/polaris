@@ -730,4 +730,33 @@ test("1 venda com 2 partes: travada sem resposta, guardada no aparelho com as pa
   });
   await expect.poll(() => queuedCommands(page)).toEqual([]);
   expect(calls.bodies).toHaveLength(1);
+
+  const recorded = await recordedSales(page);
+  expect(recorded).toHaveLength(1);
+  expect(recorded[0]?.commandId).toBe(sent?.commandId);
+  expect(recorded[0]?.payments).toEqual([
+    expect.objectContaining({
+      amount: "100.00",
+      method: "pix",
+      paymentProfile: null,
+    }),
+    expect.objectContaining({
+      amount: "200.00",
+      method: "debit_card",
+      paymentProfile: { expectedVersion: PROFILE.version, id: PROFILE.id },
+    }),
+  ]);
 });
+
+interface RecordedSale {
+  commandId: string;
+  payments: unknown[];
+}
+
+/** The sales the simulated server of the lab recorded, with the command ID and the payments each carried. */
+async function recordedSales(page: Page): Promise<RecordedSale[]> {
+  const raw = await page
+    .getByTestId("server-records")
+    .getAttribute("data-sales");
+  return JSON.parse(raw ?? "[]") as RecordedSale[];
+}
