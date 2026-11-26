@@ -357,6 +357,35 @@ describe("a store's diagnostics (AC-5)", () => {
     }
   );
 
+  it("marks only the quota within its limit as the quiet one, and an unknown situation as one to read", async () => {
+    const { section } = await opened(
+      json(
+        diagnostics({
+          quotas: [
+            { key: "goals.active.max", limit: 50, status: "ok", used: 12 },
+            {
+              key: "goals.active.max",
+              limit: 50,
+              status: "novo" as never,
+              used: 12,
+            },
+          ],
+        })
+      )
+    );
+    const quotaTable = byTag(section, "table")[0] as FakeElement;
+
+    expect(
+      byTag(quotaTable, "span").map((status) => [
+        status.getAttribute("class"),
+        status.textContent,
+      ])
+    ).toEqual([
+      ["quota-status quota-ok", "Dentro do limite"],
+      ["quota-status", "situação desconhecida: novo"],
+    ]);
+  });
+
   it("says in words when a quota is at or over the limit, and lists the grants and the attention points", async () => {
     const { section } = await opened(
       json(
@@ -388,6 +417,23 @@ describe("a store's diagnostics (AC-5)", () => {
       ["Variantes ativas", "31", "30", "Acima do limite"],
       ["Metas ativas", "1", "1", "No limite"],
     ]);
+    const quotaTable = byTag(section, "table")[0] as FakeElement;
+    expect(quotaTable.getAttribute("class")).toBe("grid quotas");
+    expect(
+      byTag(quotaTable, "td").map((cell) => cell.getAttribute("data-label"))
+    ).toEqual([
+      "Cota",
+      "Uso",
+      "Limite",
+      "Situação",
+      "Cota",
+      "Uso",
+      "Limite",
+      "Situação",
+    ]);
+    expect(
+      byTag(quotaTable, "span").map((status) => status.getAttribute("class"))
+    ).toEqual(["quota-status", "quota-status"]);
     const text = visibleText(section);
     expect(text).toContain("Variantes ativas20000");
     expect(text).toContain(

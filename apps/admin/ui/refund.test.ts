@@ -27,6 +27,7 @@ import type { RefundWindowView, SupportCaseSummary } from "./types";
  * says it is audited; the server's window shown as it came, and its refusal said without saying why.
  */
 
+const HEADING = /^h[1-4]$/;
 const STORE = "org-pro-1";
 const CASE_ID = "0199b0b0-0000-7000-8000-00000000000a";
 
@@ -123,6 +124,26 @@ describe("the refund area of the chosen store (AC-9)", () => {
     expect(
       calls.some((call) => call.path.startsWith("/api/support-cases"))
     ).toBe(false);
+  });
+
+  it("keeps h2 and h3 where the area stands on its own, outside a card (the Lojas screen)", async () => {
+    const { listCases, section } = await chosen([
+      json({ cases: [supportCase()], next: null }),
+      json(refundWindow()),
+    ]);
+    await listCases();
+    buttons(section, "Ler a cobrança")[0]?.click();
+    await flush();
+
+    expect(
+      allElements(section)
+        .filter((element) => HEADING.test(element.tagName))
+        .map((element) => element.tagName)
+    ).toEqual(["h2", "h3", "h3"]);
+    expect(byTag(section, "h3").map((h) => h.getAttribute("class"))).toEqual([
+      null,
+      null,
+    ]);
   });
 
   it("lists the open cases of this store only, as the server filters them", async () => {
