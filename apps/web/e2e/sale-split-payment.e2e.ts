@@ -1,7 +1,11 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { LAB_PROFILE_SERVER_VERSION } from "../src/offline-poc/sale-lab-server";
+import {
+  LAB_PROFILE_SERVER_VERSION,
+  LAB_SECOND_PROFILE_ID,
+  LAB_SECOND_PROFILE_SERVER_VERSION,
+} from "../src/offline-poc/sale-lab-server";
 import { SPLIT_PROFILE_HINT } from "../src/sales/sale-payment-hints";
 import { chooseSelectOption } from "./select-option";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -39,9 +43,9 @@ const PROFILE = {
 
 const SECOND_PROFILE = {
   ...PROFILE,
-  id: "0199c2d0-0000-7000-8000-0000000000c2",
+  id: LAB_SECOND_PROFILE_ID,
   name: "Cartão reserva",
-  version: 5,
+  version: LAB_SECOND_PROFILE_SERVER_VERSION,
 };
 
 const rpc = (json: unknown, status = 200) => ({
@@ -433,6 +437,8 @@ test("sem internet: Dividir pagamento fica ligado, a venda dividida é guardada 
 interface QueuedCommand {
   commandId: string;
   payload: Record<string, unknown>;
+  rejection: { code: string } | null;
+  status: string;
 }
 
 /** The payloads of the commands this page keeps to send. */
@@ -464,8 +470,9 @@ function queuedCommands(page: Page): Promise<QueuedCommand[]> {
           request.onsuccess = () => resolve(request.result);
         });
         for (const row of rows) {
-          const { commandId, payload } = row as QueuedCommand;
-          payloads.push({ commandId, payload });
+          const { commandId, payload, rejection, status } =
+            row as QueuedCommand;
+          payloads.push({ commandId, payload, rejection, status });
         }
       }
       database.close();
@@ -666,6 +673,56 @@ test("sem internet, a venda dividida com 2 perfis leva o id e a versão do perfi
   ]);
 });
 
+test("sem internet, a venda dividida com o perfil de uma parte numa versão velha é recusada pelo servidor como a de 1 parte, e fica guardada para corrigir", async ({
+  page,
+}) => {
+  const stale = LAB_PROFILE_SERVER_VERSION - 1;
+  await openSaleLab(page, undefined, { current: stale });
+  await sellShirtFor300(page);
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+  ).toBeVisible();
+  await page.getByLabel("Rede disponível").uncheck();
+  await splitButton(page).click();
+  await chooseSelectOption(part(page, 1), "Método", "Pix");
+  await part(page, 1).getByLabel("Valor").fill("100,00");
+  await chooseSelectOption(
+    part(page, 1),
+    "Perfil de pagamento",
+    "Sem perfil de pagamento"
+  );
+  await chooseSelectOption(part(page, 2), "Método", "Débito");
+  await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+  const [queued] = await queuedCommands(page);
+  expect(queued?.payload).not.toHaveProperty("paymentProfile");
+  expect(queued?.payload.payments).toEqual([
+    expect.objectContaining({ method: "pix", paymentProfile: null }),
+    expect.objectContaining({
+      method: "debit_card",
+      paymentProfile: { expectedVersion: stale, id: PROFILE.id },
+    }),
+  ]);
+
+  await page.getByLabel("Rede disponível").check();
+  await expect
+    .poll(async () => (await queuedCommands(page))[0]?.status, {
+      timeout: 20_000,
+    })
+    .toBe("rejected");
+  const [refused] = await queuedCommands(page);
+  expect(refused?.commandId).toBe(queued?.commandId);
+  expect(refused?.rejection?.code).toBe("payment_profile_changed");
+  await expect(page.getByTestId("server-records")).toHaveText("0");
+});
+
 test("sem item: Dividir pagamento fica desligado e diz por quê", async ({
   page,
 }) => {
@@ -790,8 +847,10 @@ test("a rede cai com a venda já dividida: Guardar neste aparelho guarda a venda
 test("1 venda com 2 partes: travada sem resposta, guardada no aparelho com as partes enviadas e o mesmo ID, e o servidor a recebe uma vez", async ({
   page,
 }) => {
-  const calls = await openSaleLab(page, (route) =>
-    route.abort("connectionreset")
+  const calls = await openSaleLab(
+    page,
+    (route) => route.abort("connectionreset"),
+    { current: LAB_PROFILE_SERVER_VERSION }
   );
   await sellShirtFor300(page);
   await splitButton(page).click();
@@ -841,7 +900,10 @@ test("1 venda com 2 partes: travada sem resposta, guardada no aparelho com as pa
     expect.objectContaining({
       amount: "200.00",
       method: "debit_card",
-      paymentProfile: { expectedVersion: PROFILE.version, id: PROFILE.id },
+      paymentProfile: {
+        expectedVersion: LAB_PROFILE_SERVER_VERSION,
+        id: PROFILE.id,
+      },
     }),
   ]);
 
@@ -864,7 +926,10 @@ test("1 venda com 2 partes: travada sem resposta, guardada no aparelho com as pa
     expect.objectContaining({
       amount: "200.00",
       method: "debit_card",
-      paymentProfile: { expectedVersion: PROFILE.version, id: PROFILE.id },
+      paymentProfile: {
+        expectedVersion: LAB_PROFILE_SERVER_VERSION,
+        id: PROFILE.id,
+      },
     }),
   ]);
 });
