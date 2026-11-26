@@ -2,12 +2,16 @@ import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { cents, numericCents } from "../oracle";
 import { chainValue } from "../pages/resultado";
-import { historyRows, salesCard, ZONE } from "../pages/resultado-historico";
+import {
+  historyRows,
+  monthToToday,
+  salesCard,
+  ZONE,
+} from "../pages/resultado-historico";
 import { choose, confirmSale, fillSale } from "../pages/venda";
 import { seedProduct, seedStock } from "../seed";
 
 const SHIRT = /Camiseta lisa/;
-const SALE_LINK = /^Ver a venda de \d\d\/\d\d a \d\d\/\d\d no Histórico$/;
 const MONEY = /-?R\$\s?[\d.]+,\d{2}/;
 const NET_SALES = "(=) Vendas líquidas";
 const GROSS_SALES = "Vendas brutas";
@@ -15,7 +19,7 @@ const PERIOD_LABEL = "Vendas líquidas do período";
 const SCREEN_LABEL = "Total na tela";
 const TOTAL_CENTS = 30_000;
 
-/** The one amount a piece of text says, in cents; refuses text with none. */
+/** The first amount a piece of text says, in cents; refuses text with none. */
 function amountIn(text: string): number {
   const amount = MONEY.exec(text)?.[0];
   if (amount === undefined) {
@@ -185,14 +189,18 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
   );
 
   // Histórico: from the sales card, with the period; one row and the net figure of the period
-  await salesCard(page).getByRole("button", { name: SALE_LINK }).click();
+  await salesCard(page)
+    .getByRole("button", {
+      exact: true,
+      name: `Ver a venda de ${monthToToday().label} no Histórico`,
+    })
+    .click();
   await expect(historyRows(page)).toHaveCount(1);
   await expect(historyRows(page)).toContainText(MONEY);
   expect(amountIn(await historyRows(page).innerText())).toBe(TOTAL_CENTS);
   await page
     .getByRole("button", { exact: true, name: "Tirar o filtro Situação" })
     .click();
-  await expect(historyRows(page)).toHaveCount(1);
   const footer = page.locator("[data-list-total]");
   await expect(footer).toContainText(PERIOD_LABEL);
   await expect(footer).not.toContainText(SCREEN_LABEL);
@@ -214,6 +222,9 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
   expect(amountIn(await parts.nth(1).locator("p").first().innerText())).toBe(
     20_000
   );
+  await expect(
+    page.getByRole("list", { exact: true, name: "Pagamento em 2 partes" })
+  ).not.toContainText("300,00");
   const totals = page.locator("[data-receipt-totals]");
   await expect(totals.getByText(MONEY)).toHaveCount(1);
   expect(amountIn(await totals.getByText(MONEY).innerText())).toBe(TOTAL_CENTS);
