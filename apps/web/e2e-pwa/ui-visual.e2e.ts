@@ -58,6 +58,10 @@ const VISUAL_STATES = [
   ["perfis de pagamento lista", "pagamento-lista"],
   ["aparelhos lista", "aparelhos-lista"],
   ["pendências vazio", "pendencias-vazio"],
+  ["ajuda", "ajuda"],
+  ["trocar senha", "trocar-senha"],
+  ["seus dados com cópias", "seus-dados"],
+  ["configurações lista", "configuracoes"],
 ] as const;
 
 /**
@@ -106,12 +110,32 @@ const EXPENSES_CONTEXTS = [
   { theme: "claro", touch: true, viewport: "320" },
 ] as const;
 
-const contextsOf = (file: string): readonly UiContext[] => [
+/**
+ * Ajuda, Trocar senha, Seus dados and Configurações are drawn in the state with data only, at the two themes of the wide
+ * screen and in the light one of the phone: the frame of their blocks shows from 760 px, and Configurações on a phone
+ * is a list of rows, a drawing of its own.
+ */
+const BLOCK_FILES: readonly string[] = [
+  "ajuda",
+  "trocar-senha",
+  "seus-dados",
+  "configuracoes",
+];
+const BLOCK_CONTEXTS = [
+  { theme: "claro", touch: false, viewport: "1280" },
+  { theme: "escuro", touch: false, viewport: "1280" },
+  { theme: "claro", touch: true, viewport: "360" },
+] as const;
+
+const standardContextsOf = (file: string): readonly UiContext[] => [
   ...CONTEXTS,
   ...(HOME_FILES.includes(file) ? HOME_CONTEXTS : []),
   ...(TABS_FILES.includes(file) ? TABS_CONTEXTS : []),
   ...(EXPENSES_FILES.includes(file) ? EXPENSES_CONTEXTS : []),
 ];
+
+const contextsOf = (file: string): readonly UiContext[] =>
+  BLOCK_FILES.includes(file) ? BLOCK_CONTEXTS : standardContextsOf(file);
 
 const SCREENSHOT = {
   animations: "disabled",

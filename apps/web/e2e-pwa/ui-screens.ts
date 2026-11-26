@@ -24,6 +24,7 @@ import { productStates } from "./ui-product-states";
 import { resultStates } from "./ui-result-states";
 import { saleDetailStates } from "./ui-sale-detail-states";
 import { saleStates } from "./ui-sale-states";
+import { settingsStates } from "./ui-settings-states";
 import { stockStates } from "./ui-stock-states";
 import { subscriptionStates } from "./ui-subscription-states";
 
@@ -756,6 +757,15 @@ const subscriptionScreen = (
   sourceDirs: SUBSCRIPTION_SOURCES,
 });
 
+/** The files of Ajuda, Configurações and Seus dados, in the shell (`ui-settings-states.ts`). */
+const SETTINGS_SOURCES = ["src/help", "src/settings", "src/data-export"];
+
+const settingsScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
+  name,
+  open,
+  sourceDirs: SETTINGS_SOURCES,
+});
+
 /** One state of the first access, the acceptance or a legal page (`ui-account-states.ts`). */
 const accountScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   name,
@@ -1038,6 +1048,9 @@ export const SCREENS: UiScreen[] = [
   attentionScreen("vazio", attentionStates.empty),
   attentionScreen("sem offline", attentionStates.unavailable),
   saleScreen("pagamento dividido", saleStates.split),
+  settingsScreen("ajuda", settingsStates.help),
+  settingsScreen("configurações lista", settingsStates.list),
+  settingsScreen("seus dados com cópias", settingsStates.yourData),
   {
     name: "peças do shell loja que não abriu",
     open: organizationGateStates.failed,

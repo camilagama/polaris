@@ -58,7 +58,7 @@ const profile = (
 
 // a credit rule with a known fee and a fee that is not known, a Pix rule with a fixed and a percentage fee, and an
 // archived profile with a name too long for the line: every shape a row has
-const PROFILES = [
+export const PAYMENT_PROFILES = [
   profile(1, "Maquininha da loja", "active", [
     {
       anticipationFee: fee("unknown", null),
@@ -98,7 +98,7 @@ const PROFILES = [
 async function openProfilesLab(page: Page) {
   await page.clock.setFixedTime(NOW);
   await page.route("**/rpc/paymentProfile/list", (route: Route) =>
-    route.fulfill(rpc({ profiles: PROFILES }))
+    route.fulfill(rpc({ profiles: PAYMENT_PROFILES }))
   );
   await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=payment-profiles");
