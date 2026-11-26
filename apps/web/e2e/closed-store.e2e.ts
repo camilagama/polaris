@@ -1,63 +1,31 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  CLOSED_COPY_ID,
+  CLOSED_NOW,
+  CLOSED_STORE_ID,
+  closingStore,
+  fixClosedStoreClock,
+  READY_COPY,
+} from "./closed-store-fixture";
 import { runClockFor } from "./run-clock-for";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
-const STORE_ID = "0199c2d0-0000-7000-8000-00000000a001";
 const OTHER_ID = "0199c2d0-0000-7000-8000-00000000a002";
-const EXPORT_ID = "0199c2d0-0000-7000-8000-0000000000aa";
 const SESSION_USER = { email: "dona@exemplo.test", id: "u", name: "Ana Dona" };
+const STORE_ID = CLOSED_STORE_ID;
 const PATH = `/loja-encerrada?loja=${STORE_ID}`;
-const NOW = new Date("2026-10-30T12:00:00-03:00");
+const EXPORT_ID = CLOSED_COPY_ID;
+const NOW = CLOSED_NOW;
+const READY = READY_COPY;
+const store = closingStore;
 const TECHNICAL =
   /closing|deletion_scheduled|deletable|purged|not_handled|fresh_session|closed_export|_required|_unavailable/;
 const CLAIMS_STATE = /nada foi alterado|desfeito|encerramento/i;
 const SIGN_IN = /\/entrar\?motivo=sessao&voltar=\/loja-encerrada/;
 
 type Store = Record<string, unknown>;
-
-const store = (overrides: Store = {}): Store => ({
-  canRecover: true,
-  deletableFrom: "2027-01-18T03:00:00.000Z",
-  deletionDate: "2027-01-18",
-  exportOpenUntil: "2027-01-18T03:00:00.000Z",
-  id: STORE_ID,
-  milestones: {
-    closure: "2026-10-20T12:00:00.000Z",
-    d7: "2027-01-11T03:00:00.000Z",
-    d30: "2026-12-19T03:00:00.000Z",
-    deletionDay: "2027-01-18T03:00:00.000Z",
-  },
-  name: "Loja do teste",
-  phase: "closing",
-  recoverUntil: "2026-11-19T12:00:00.000Z",
-  renewal: "not_handled",
-  requestedAt: "2026-10-20T12:00:00.000Z",
-  timezone: "America/Sao_Paulo",
-  ...overrides,
-});
-
-const copy = (overrides: Store = {}): Store => ({
-  errorCode: null,
-  expiresAt: null,
-  files: [],
-  formats: ["json", "csv"],
-  id: EXPORT_ID,
-  mode: "closed",
-  readyAt: null,
-  requestedAt: "2026-10-30T14:10:00.000Z",
-  status: "requested",
-  totalBytes: null,
-  ...overrides,
-});
-const READY = copy({
-  expiresAt: "2026-10-31T14:40:00.000Z",
-  files: [{ name: "dados.json", ordinal: 1, sizeBytes: 820_400 }],
-  readyAt: "2026-10-30T14:40:00.000Z",
-  status: "ready",
-  totalBytes: 820_400,
-});
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
@@ -186,7 +154,7 @@ const copies = (page: Page) =>
   page.getByRole("region", { name: "Suas cópias" });
 
 test.beforeEach(async ({ page }) => {
-  await page.clock.setFixedTime(NOW);
+  await fixClosedStoreClock(page);
 });
 
 test.describe("cada fase com a sua frase, as três datas e a renovação (AC-5, AC-6, AC-18)", () => {
