@@ -365,3 +365,201 @@ test("venda dividida sem conexão com o perfil da parte 2 mudado: a venda inteir
     })
   ).toContainText("Você já refez esta venda", { timeout: 30_000 });
 });
+
+const REDONE_TITLE =
+  /^Venda de R\$ 750,00 · Pix \+ Dinheiro · \d{2}\/\d{2} \d{2}:\d{2}$/;
+const PANTS = /Calça jeans/;
+
+/** The items the server recorded for the store, by position. */
+async function soldItems(sql: Sql, organizationId: string) {
+  return (
+    await sql.query<{
+      charged: string;
+      label: string;
+      position: number;
+      quantity: number;
+    }>(
+      `SELECT i.position, i.product_label AS label, i.quantity,
+              i.charged_unit_price::text AS charged
+         FROM sale_items i WHERE i.organization_id = $1 ORDER BY i.position`,
+      [organizationId]
+    )
+  ).rows.map((row) => ({ ...row, charged: numericCents(row.charged) }));
+}
+
+/**
+ * Refazer a refused sale paid in two parts (Pix with a profile + Dinheiro) with two items: Vender comes back with the
+ * same items, quantities, prices and both parts with the same amounts; confirming records ONE new sale with the two
+ * parts, and the refused one stays on the device, untouched, until it is discarded.
+ */
+test("Refazer uma venda dividida recusada: mesmos itens e as duas partes, a nova entra uma vez e a recusada fica até ser descartada", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const { journey, organizationId } = await openStore(
+    browser,
+    sql,
+    testInfo,
+    "refazer-venda-dividida"
+  );
+  const { page } = journey;
+  const { rpc } = journey.user;
+  const pants = await seedProduct(rpc, organizationId, "Calça jeans", "150.00");
+  await seedStock(
+    rpc,
+    organizationId,
+    pants.variantId,
+    2,
+    "60.00",
+    localDate(runT0(), ZONE)
+  );
+  const noFee = { fixedAmount: null, mode: "none" as const, percentage: null };
+  const rule = {
+    anticipationFee: noFee,
+    expectedSettlementDays: 1,
+    installmentPlan: null,
+    installments: null,
+    method: "pix" as const,
+    processingFee: noFee,
+  };
+  const profile = await rpc.paymentProfile.create({
+    name: PROFILE_NAME,
+    organizationId,
+    rules: [rule],
+  });
+
+  await sellerOffline(page);
+  await fillSale(
+    page,
+    [
+      { charged: "300,00", option: SHIRT, quantity: 2, search: "Camiseta" },
+      { charged: "150,00", option: PANTS, quantity: 1, search: "Calça" },
+    ],
+    []
+  );
+  await page
+    .getByRole("button", { exact: true, name: "Dividir pagamento" })
+    .click();
+  await choose(page, part(page, 1), "Método", "Pix");
+  await choose(page, part(page, 1), "Perfil de pagamento", PROFILE_NAME);
+  await part(page, 1).getByLabel("Valor").fill("250,00");
+  await expect(part(page, 2).getByLabel("Valor")).toHaveValue("500,00");
+  await choose(page, part(page, 2), "Método", "Dinheiro");
+  await choose(
+    page,
+    part(page, 2),
+    "Perfil de pagamento",
+    "Sem perfil de pagamento"
+  );
+  await keepOnDevice(page);
+  const [kept, ...otherCommands] = await outbox(page);
+  expect(otherCommands).toEqual([]);
+  expect(kept?.payload).toMatchObject({
+    payments: [
+      { amount: "250.00", method: "pix" },
+      { amount: "500.00", method: "cash" },
+    ],
+  });
+
+  const changed = await rpc.paymentProfile.update({
+    expectedVersion: profile.version,
+    id: profile.id,
+    name: PROFILE_NAME,
+    organizationId,
+    rules: [{ ...rule, expectedSettlementDays: 2 }],
+  });
+  await page.context().setOffline(false);
+  await expect
+    .poll(async () => (await outbox(page)).map((command) => command.status), {
+      timeout: 60_000,
+    })
+    .toEqual(["rejected"]);
+  expect(await payments(sql, organizationId)).toEqual([]);
+
+  await page.goto("/attention");
+  const refused = page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { name: REDONE_TITLE }),
+  });
+  await expect(refused).toBeVisible({ timeout: 30_000 });
+  await expect(refused).toContainText("O perfil de pagamento da parte 1");
+  await refused.getByRole("button", { name: "Refazer esta venda" }).click();
+
+  await page.waitForURL("**/sales");
+  await expect(
+    page.getByText("Você está refazendo uma venda recusada")
+  ).toBeVisible();
+  const item = (ordinal: 1 | 2) =>
+    page.getByRole("group", { exact: true, name: `Item ${ordinal}` });
+  await expect(item(1).getByLabel("Quantidade")).toHaveValue("2");
+  await expect(item(1).getByLabel("Preço cobrado")).toHaveValue("300,00");
+  await expect(item(2).getByLabel("Quantidade")).toHaveValue("1");
+  await expect(item(2).getByLabel("Preço cobrado")).toHaveValue("150,00");
+  await expect(part(page, 1).getByLabel("Valor")).toHaveValue("250,00");
+  await expect(part(page, 2).getByLabel("Valor")).toHaveValue("500,00");
+  await expect(
+    part(page, 1).getByRole("combobox", { exact: true, name: "Método" })
+  ).toContainText("Pix");
+  await expect(
+    part(page, 1).getByRole("combobox", {
+      exact: true,
+      name: "Perfil de pagamento",
+    })
+  ).toContainText(PROFILE_NAME);
+  await expect(
+    part(page, 2).getByRole("combobox", { exact: true, name: "Método" })
+  ).toContainText("Dinheiro");
+  const review = page.getByRole("button", {
+    name: "Revisei a prévia da parte 1",
+  });
+  await expect(review).toBeVisible({ timeout: 30_000 });
+  await review.click();
+  await confirmSale(page);
+
+  await expect
+    .poll(() => payments(sql, organizationId), { timeout: 30_000 })
+    .toEqual([
+      {
+        amount: 25_000,
+        method: "pix",
+        position: 0,
+        profile_version: changed.profile.version,
+      },
+      { amount: 50_000, method: "cash", position: 1, profile_version: null },
+    ]);
+  expect(await soldItems(sql, organizationId)).toEqual([
+    {
+      charged: 30_000,
+      label: expect.stringContaining("Camiseta lisa"),
+      position: 0,
+      quantity: 2,
+    },
+    {
+      charged: 15_000,
+      label: expect.stringContaining("Calça jeans"),
+      position: 1,
+      quantity: 1,
+    },
+  ]);
+
+  expect(
+    await outbox(page),
+    "the refused sale is still on the device, as it was"
+  ).toEqual([{ ...kept, status: "rejected" }]);
+  await page.goto("/attention");
+  await expect(refused).toContainText("Você já refez esta venda", {
+    timeout: 30_000,
+  });
+  await expect(
+    refused.getByRole("button", { name: "Refazer esta venda" })
+  ).toHaveCount(0);
+  await refused
+    .getByRole("button", { name: "Descartar a venda recusada…" })
+    .click();
+  await page.getByRole("button", { name: "Confirmar descarte" }).click();
+  await expect.poll(() => outbox(page), { timeout: 15_000 }).toEqual([]);
+  expect(
+    (await payments(sql, organizationId)).length,
+    "discarding the refused sale does not touch the new one"
+  ).toBe(2);
+});
