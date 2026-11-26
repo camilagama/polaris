@@ -16,6 +16,7 @@ O que o revisor de UX acha medindo vira teste que falha no CI, sem IA. São dez 
 | 8 | Layout shift no celular | `apps/web/e2e-real/cls/layout-shift.e2e.ts`, projeto `layout-shift` do e2e-real (pilha real, build do runtime, sem retry) | A 360 × 800 com toque, um `PerformanceObserver` de `layout-shift` posto antes dos scripts da página mede o CLS de Web Vitals (a maior janela de deslocamentos) dos quatro destinos da barra de baixo e do Resultado, carregados num contexto novo (`frio`) e alcançados de dentro do app (`quente`), do Início da loja vazia, do Início quando a rede cai e volta, e de `/entrar`. "Assentou" é sinal: o conteúdo final da tela visível, nada "Carregando…" nem `aria-busy`, fontes carregadas e dois quadros seguidos sem mudança no DOM nem deslocamento novo. Limite de 0,05; a lista exata das telas ainda acima dele está em `e2e-real/cls/layout-shift.list.ts`: tela fora da lista acima do limite reprova, tela da lista que já passa também reprova (quem corrige tira a linha). A falha lista os três maiores deslocamentos, com o elemento, o texto e as caixas antes → depois. Casos de controle da lista e da conta em `layout-shift.list.test.ts`; uma recarga da página no meio de uma medida reprova em vez de medir zero. A pilha local responde em milissegundos: o teste vê o shell e os esqueletos, mas pode não ver um deslocamento que só aparece com resposta lenta (rede 4G, catálogo público), que fica para a medição manual. |
 | 9 | Altura estável na troca de estado | `apps/web/e2e/home/cartoes-e-grafico.e2e.ts` e os arquivos de `apps/web/e2e/dashboard/` (config do offline-poc, servidor simulado), a 360 e 1280 px | Troca de período por clique no "Vendas por dia" (dados ↔ dados, dados ↔ vazio, vazio ↔ vazio e o carregando do gráfico), no "Vendas × custos por dia" do Resultado (com venda ↔ sem venda a desenhar) e escolher ou soltar cada um dos 30 dias nos cartões de KPI: a altura do cartão, o topo do bloco que vem depois, o total, o que vem depois do desenho, o texto de apoio e a sparkline não mudam mais de 1 px. O CLS (verificação 8) não vê isso, porque ignora deslocamento logo depois de um clique (`hadRecentInput`). |
 | 10 | Nome acessível dito uma vez | os arquivos `telas-NN.e2e.ts` de `apps/web/e2e-pwa/ui-guardrails/` (`repeatedNameFaults`, em `ui-guardrails/measures.ts`) | Em todo elemento mostrado, compara o nome acessível (`aria-labelledby`, `aria-label`, rótulo do campo, `alt`, conteúdo) com o `title`, o `aria-description`, o texto do `aria-describedby` e o texto em `sr-only` do vizinho ou de dentro, e acusa o que é igual (sem diferenciar maiúsculas nem espaços). Não conta: `title` que é o único nome, rótulo de campo ou alvo de `aria-labelledby` em `sr-only`, texto `aria-hidden`, `script`, `style`, `option` e o que está dentro de `svg`, e, como vizinho em `sr-only`, região viva (`aria-live`, `status`, `alert`). **Limite:** pega duplicidade de marcação, não o que um leitor de tela fala; só um aparelho real mostra isso. As exceções que o produto tem hoje ficam em `KNOWN_REPEATED_NAMES` (seletor e atributo, com a causa); o teste exige a lista exata e que cada entrada ainda aconteça, e quem corrige a causa tira a entrada. |
+| 11 | Padrão visual das telas (a trava) | `apps/web/scripts/ui-pattern-rules.test.ts` (Vitest, sem navegador) | Varre `src/**` fora de `ui/`, da galeria e dos testes. R1: aba de tela e filtro não importam o `Tabs` cru (`@/ui/tabs`). R2: nenhuma tela importa `Card*`; a moldura é o `Block`. R3: nenhuma tela escreve à mão uma moldura (`rounded` e `border` de largura simples na mesma string de classe; `border-0` não conta). R4: `ListTotalFooter`, `ListNotice` e `RowTile` só vivem em `ui/`; a tela usa o `ListBlock`. R5 (aviso, não reprova): `Block` com `.map(` de linhas fora do `ListBlock`. |
 
 Cada verificação roda só nos eixos (largura, ponteiro, tema) que podem mudar o resultado dela. O mapa está em `CHECK_CONTEXTS`, em `apps/web/e2e-pwa/ui-screens.ts`, e `ui-guardrails/screen-checks.ts` gera os testes a partir dele:
 
@@ -49,6 +50,23 @@ bunx playwright test --config playwright.pwa.config.ts --project=chromium-deskto
 ```
 
 Uma falha diz a verificação (`1. nada sai do contêiner`, `2. área de toque`, `3. axe`, `6. foco de 3 px`, `10. nome acessível dito uma vez`; a 7 diz a camada e o seletor de cada regra fora das camadas do Tailwind), o elemento e a medida. A de movimento diz o elemento e a duração da animação que correu com `reduce`.
+
+## A trava do padrão visual
+
+A trava `ui-pattern-rules` é um teste de fonte: lê o código das telas, não renderiza nada, e reprova o PR que foge das peças públicas do padrão (`Block`, `ListBlock`, `SectionTabs`, ver "Peças de padrão" do `DESIGN.md`). Roda no `bun run test` e, portanto, no CI.
+
+```bash
+bunx vitest run --project node apps/web/scripts/ui-pattern-rules.test.ts
+```
+
+O que cada mensagem pede (o nome do arquivo vem antes dos dois pontos):
+
+- `…: fora do padrão (R2) e fora da lista` (a regra pode ser R1 a R4): o arquivo quebra a regra e não está na lista de dívida. Corrija a tela com a peça do padrão; não ponha o arquivo na lista.
+- `…: limpo em R2 e ainda na lista de dívida: tire-o da lista`: a tela já cumpre a regra. Tire o arquivo da lista `DEBT` da regra no mesmo PR; deixe a linha de comentário da pasta.
+- `…: exceção de R3 sem uso no ALLOWLIST: tire-a da lista`: a exceção não é mais usada. Tire a entrada do `ALLOWLIST`.
+- `…: Block com .map de linhas fora de um ListBlock (R5, aviso): use o ListBlock`: só avisa, não reprova; a lista desenhada à mão deve virar `ListBlock`.
+
+A dívida só encolhe. `DEBT` guarda, por regra, os arquivos de antes do padrão, com uma linha de comentário por pasta (`// catalog`, `// sales`…) que separa os grupos; arquivo novo fora do padrão reprova, e quem migra uma tela tira o arquivo da lista no mesmo PR. O `ALLOWLIST` guarda as exceções que ficam, cada uma com o motivo `chart-bubble` ou `thumbnail` e a razão, e só vale para R3. Lista e tabela nunca são exceção: o teste reprova a entrada cujo arquivo desenha `<ul>`, `<ol>`, `<Table>`, `<table>`, `role="list"` ou `divide-y`; a tela usa o `Block` ou o `ListBlock`. A entrada também reprova com o motivo fora dessa lista fechada (`motivo "…" fora da lista fechada`) ou com a razão de 20 caracteres ou menos (`a razão da exceção está curta demais`).
 
 ## Regressão visual
 
@@ -138,6 +156,7 @@ O que a medida mostra:
 5. **CSS da tela**: cada arquivo `.tsx` da tela entra em `@source` de `src/styles/index.css` (o teste `src/styles/source-coverage.test.ts` reprova o que ficou de fora, inclusive o arquivo que só importa de outro arquivo da interface nova e o componente que só tem classes do Tailwind, sem importar nada de `src/ui`, quando uma tela o importa) e em `sourceDirs`; cor só por token; folha CSS nova só dentro de uma camada do Tailwind.
 6. **Tela que abre no shell** ou numa página fora dele: acrescente-a a `SCREENS` de `e2e-pwa/ui-shell-isolation.e2e.ts`, aberta pela rota do app com a sessão respondida pelo teste (a verificação 7).
 7. Rode as suítes acima (fonte, navegador e a verificação 7) e inclua o resultado na seção Verificação do PR.
+8. **A tela usa as peças do padrão** (`Block`, `ListBlock`, `SectionTabs`): rode a trava (`bunx vitest run --project node apps/web/scripts/ui-pattern-rules.test.ts`) e, se ela reprovar, corrija a tela; a lista de dívida só perde linhas.
 
 Se a tela tem um padrão que a medida lê como falha de forma legítima (por exemplo um contêiner que corta de propósito), a saída certa é o jeito de marcar a intenção em CSS (`overflow-x: auto`, reticências) e não relaxar a medida; se a medida mesmo está errada, corrija em `ui-guardrails/measures.ts` e acrescente o caso de controle que prova a correção.
 
