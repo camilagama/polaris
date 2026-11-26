@@ -512,6 +512,69 @@ test("Produtos e Categorias: o título do bloco igual à aba aberta não se vê 
   });
 });
 
+const CATEGORIES_VIEWPORTS = [
+  { height: 800, name: "1280", width: 1280 },
+  { height: 740, name: "360", width: 360 },
+] as const;
+/** The gap of the page grid of a screen (`gap-4`): the header of Categorias to the block after it. */
+const CATEGORIES_HEADER_GAP = 16;
+/** `sr-only` leaves the heading 1 px wide and high: more than that is a title that is drawn. */
+const SR_ONLY_SIDE = 1;
+
+for (const viewport of CATEGORIES_VIEWPORTS) {
+  test(`Categorias na aba de Produtos: o título fica só para o leitor de tela, a linha é contents e o cabeçalho está a 16 px do primeiro bloco · ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({
+      height: viewport.height,
+      width: viewport.width,
+    });
+    await openServerScreen(page, {
+      lists: [answerByStatus({ active: [product(1, "Produto 01")] })],
+      path: "/products?aba=categorias",
+    });
+    const title = page.getByRole("heading", {
+      exact: true,
+      level: 2,
+      name: "Categorias",
+    });
+    await expect(title).toHaveCount(1);
+    const shape = await title.evaluate((heading) => {
+      const line = heading.closest("[data-title-line]") as HTMLElement;
+      const header = line.parentElement as HTMLElement;
+      const intro = header.querySelector("p") as HTMLElement;
+      const next = header.nextElementSibling as HTMLElement;
+      const rect = (element: Element) => element.getBoundingClientRect();
+      return {
+        gapToBlock: rect(next).top - rect(header).bottom,
+        headerHeight: rect(header).height,
+        headingHeight: rect(heading).height,
+        headingWidth: rect(heading).width,
+        introHeight: rect(intro).height,
+        introTop: rect(intro).top,
+        headerTop: rect(header).top,
+        lineDisplay: getComputedStyle(line).display,
+        nextRole: next.getAttribute("role") ?? next.tagName,
+      };
+    });
+    expect(
+      shape.headingWidth,
+      "título só para o leitor de tela"
+    ).toBeLessThanOrEqual(SR_ONLY_SIDE);
+    expect(shape.headingHeight).toBeLessThanOrEqual(SR_ONLY_SIDE);
+    expect(shape.lineDisplay, "a linha não ocupa lugar").toBe("contents");
+    expect(
+      shape.headerHeight,
+      "o cabeçalho é só a frase de apoio, sem espaço extra da linha"
+    ).toBeCloseTo(shape.introHeight, 0);
+    expect(shape.introTop).toBeCloseTo(shape.headerTop, 0);
+    expect(
+      shape.gapToBlock,
+      `do cabeçalho ao primeiro bloco (${shape.nextRole})`
+    ).toBeCloseTo(CATEGORIES_HEADER_GAP, 0);
+  });
+}
+
 // ---- the addresses: ?produto=<uuid> and ?novo=1 ----------------------------------------------------------------
 
 const variantsOf = {

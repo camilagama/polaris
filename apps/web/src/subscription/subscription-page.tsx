@@ -48,18 +48,13 @@ import {
   PixWaiting,
   WaitingLine,
 } from "./subscription-waiting";
-import {
-  ScreenTitle,
-  TitleLine,
-  useTitleHidden,
-} from "../app-shell/screen-title";
+import { ScreenTitle, TitleLine } from "../app-shell/screen-title";
 
 function Title() {
   const phone = useIsMobile();
-  const titleHidden = useTitleHidden(!phone);
   return (
-    <TitleLine titleHidden={titleHidden}>
-      <ScreenTitle tabNamesIt={!phone}>Assinatura</ScreenTitle>
+    <TitleLine tabNamesIt={!phone}>
+      <ScreenTitle>Assinatura</ScreenTitle>
     </TitleLine>
   );
 }
