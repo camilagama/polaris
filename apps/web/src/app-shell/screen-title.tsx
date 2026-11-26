@@ -46,10 +46,8 @@ export function useInTab(): boolean {
   return useContext(InTabContext);
 }
 
-/** Whether `ScreenTitle` with `tabNamesIt` is only for a screen reader here: the line of the title then holds no height. */
-export function useTitleHidden(tabNamesIt: boolean): boolean {
-  return useContext(InTabContext) && tabNamesIt;
-}
+/** Set by `TitleLine`: the tab it is drawn in already carries the name of the screen, so the title is not drawn twice. */
+const TabNamesTitleContext = createContext(false);
 
 /**
  * The title of a screen: the `h1` of the page when it stands alone, and a section title under the screen's `h1` when it
@@ -57,14 +55,12 @@ export function useTitleHidden(tabNamesIt: boolean): boolean {
  */
 export function ScreenTitle({
   className,
-  tabNamesIt = false,
   ...props
 }: Omit<ComponentProps<"h1">, "className"> & {
   className?: string;
-  /** The tab it is drawn in already carries this name: the heading stays for a screen reader and is not drawn twice. */
-  tabNamesIt?: boolean;
 }) {
   const inTab = useContext(InTabContext);
+  const tabNamesIt = useContext(TabNamesTitleContext);
   let base = inTab ? "text-section" : "text-title";
   if (inTab && tabNamesIt) {
     base = `${base} sr-only`;
@@ -121,39 +117,45 @@ export function TitleLine({
   action,
   back,
   children,
-  titleHidden = false,
+  tabNamesIt = false,
 }: {
   action?: ReactNode;
   back?: TitleBack | undefined;
   children: ReactNode;
-  /** The title is only for a screen reader (the tab names the screen) and there is no action: the line draws no box, so it takes no room in the grid of the page. */
-  titleHidden?: boolean;
+  /**
+   * The tab this screen is drawn in already carries its name: the `ScreenTitle` inside stays for a screen reader only,
+   * and without an action the line draws no box, so it takes no room in the grid of the page. Outside a tab it does nothing.
+   */
+  tabNamesIt?: boolean;
 }) {
+  const titleHidden = useContext(InTabContext) && tabNamesIt;
   return (
-    <div
-      className={
-        titleHidden && !action
-          ? "contents"
-          : "grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3"
-      }
-      data-title-line=""
-    >
-      {back ? (
-        <div className="flex min-w-0 items-center gap-1">
-          <BackButton {...back} />
-          <div className="min-w-0">{children}</div>
-        </div>
-      ) : (
-        children
-      )}
-      {action ? (
-        <div
-          className="grid gap-3 min-[47.5rem]:ml-auto min-[47.5rem]:flex min-[47.5rem]:min-w-0 min-[47.5rem]:items-start min-[47.5rem]:gap-2"
-          data-title-actions=""
-        >
-          {action}
-        </div>
-      ) : null}
-    </div>
+    <TabNamesTitleContext.Provider value={tabNamesIt}>
+      <div
+        className={
+          titleHidden && !action
+            ? "contents"
+            : "grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3"
+        }
+        data-title-line=""
+      >
+        {back ? (
+          <div className="flex min-w-0 items-center gap-1">
+            <BackButton {...back} />
+            <div className="min-w-0">{children}</div>
+          </div>
+        ) : (
+          children
+        )}
+        {action ? (
+          <div
+            className="grid gap-3 min-[47.5rem]:ml-auto min-[47.5rem]:flex min-[47.5rem]:min-w-0 min-[47.5rem]:items-start min-[47.5rem]:gap-2"
+            data-title-actions=""
+          >
+            {action}
+          </div>
+        ) : null}
+      </div>
+    </TabNamesTitleContext.Provider>
   );
 }
