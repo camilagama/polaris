@@ -19,7 +19,7 @@ const STORE_ID = CLOSED_STORE_ID;
 const PATH = `/loja-encerrada?loja=${STORE_ID}`;
 const RPC_PREFIX = /^.*\/rpc\//;
 const DOWNLOAD = /^Baixar dados\.json \(820 KB\)$/;
-/** What `READY_COPY` reads as on the screen: a change in the shared answer that the screen does not follow fails here. */
+/** What the fields of `READY_COPY` that the screen shows read as: a change in one of them fails here. */
 const READY_COPY_ON_SCREEN = [
   "Pedida em 30/10/2026 11:10",
   "JSON e planilha",
