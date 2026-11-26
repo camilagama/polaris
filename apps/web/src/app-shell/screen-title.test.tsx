@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ScreenTitle, TabPanelScope, TitleLine } from "./screen-title";
+import {
+  ScreenTitle,
+  TabPanelScope,
+  TitleLine,
+  useTitleHidden,
+} from "./screen-title";
 
 const BACK = { href: "/sales/history", label: "Voltar para o histórico" };
 const WORD_ON_SCREEN = />\s*Voltar/;
@@ -116,5 +121,65 @@ describe("ScreenTitle", () => {
     expect(html.split("Assinatura")).toHaveLength(2);
     expect(html).toContain('id="titulo-assinatura"');
     expect(html.endsWith(">Assinatura</h2>")).toBe(true);
+  });
+});
+
+const LINE_TAG = /<div class="([^"]*)" data-title-line=""/;
+
+function lineClasses(html: string) {
+  return (LINE_TAG.exec(html)?.[1] ?? "").split(" ");
+}
+
+describe("TitleLine with a title only for a screen reader", () => {
+  it("takes no room in the grid of the page when it has no action", () => {
+    const classes = lineClasses(
+      renderToStaticMarkup(
+        <TitleLine titleHidden>
+          <h2 className="sr-only">Categorias</h2>
+        </TitleLine>
+      )
+    );
+    expect(classes).toEqual(["contents"]);
+  });
+
+  it("keeps the height of a control when the title is drawn or when there is an action", () => {
+    const drawn = lineClasses(
+      renderToStaticMarkup(
+        <TitleLine>
+          <h2>Seus dados</h2>
+        </TitleLine>
+      )
+    );
+    const withAction = lineClasses(
+      renderToStaticMarkup(
+        <TitleLine action={<button type="button">Novo</button>} titleHidden>
+          <h2 className="sr-only">Produtos</h2>
+        </TitleLine>
+      )
+    );
+    expect(drawn).toContain("min-[47.5rem]:min-h-ctl-md");
+    expect(withAction).toContain("min-[47.5rem]:min-h-ctl-md");
+    expect(drawn).not.toContain("contents");
+    expect(withAction).not.toContain("contents");
+  });
+});
+
+function HiddenProbe({ tabNamesIt }: { tabNamesIt: boolean }) {
+  return <p>{String(useTitleHidden(tabNamesIt))}</p>;
+}
+
+describe("useTitleHidden", () => {
+  it("is true only in a tab that names the screen, as ScreenTitle draws it for a screen reader", () => {
+    const inTab = (tabNamesIt: boolean) =>
+      renderToStaticMarkup(
+        <TabPanelScope>
+          <HiddenProbe tabNamesIt={tabNamesIt} />
+        </TabPanelScope>
+      );
+    expect(inTab(true)).toBe("<p>true</p>");
+    expect(inTab(false)).toBe("<p>false</p>");
+    expect(renderToStaticMarkup(<HiddenProbe tabNamesIt />)).toBe(
+      "<p>false</p>"
+    );
   });
 });
