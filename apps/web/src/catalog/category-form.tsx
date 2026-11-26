@@ -23,7 +23,7 @@ interface CategoryFormProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
-const NAME_REQUIRED = "Informe o nome da categoria.";
+export const NAME_REQUIRED = "Informe o nome da categoria.";
 
 /** A new category: one field and its button on one line (they stack below 480 px). */
 export function CategoryForm({
