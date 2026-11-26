@@ -66,6 +66,54 @@ export function saleTotals(lines: SaleLine[], discountPercents: string[]) {
   return { discount, discounts, subtotal, total: subtotal - discount };
 }
 
+export type SaleAdjustment =
+  | { kind: "discount" | "surcharge"; percent: string }
+  | { kind: "discount" | "surcharge" | "freight"; cents: number };
+
+export interface AdjustedTotals {
+  amounts: number[];
+  discount: number;
+  discountExceedsSubtotal: boolean;
+  freight: number;
+  subtotal: number;
+  surcharge: number;
+  total: number;
+}
+
+/**
+ * Subtotal − discounts + surcharges + freight, with every percentage on the same subtotal (rounded half-up once,
+ * never on the result of another adjustment). `discountExceedsSubtotal` is the case the app refuses.
+ */
+export function adjustedTotals(
+  lines: SaleLine[],
+  adjustments: SaleAdjustment[]
+): AdjustedTotals {
+  const { subtotal } = saleTotals(lines, []);
+  const amounts = adjustments.map((adjustment) =>
+    "percent" in adjustment
+      ? percentOfCents(subtotal, adjustment.percent)
+      : adjustment.cents
+  );
+  const sumOf = (kind: SaleAdjustment["kind"]) =>
+    adjustments.reduce(
+      (sum, adjustment, index) =>
+        adjustment.kind === kind ? sum + (amounts[index] as number) : sum,
+      0
+    );
+  const discount = sumOf("discount");
+  const surcharge = sumOf("surcharge");
+  const freight = sumOf("freight");
+  return {
+    amounts,
+    discount,
+    discountExceedsSubtotal: discount > subtotal,
+    freight,
+    subtotal,
+    surcharge,
+    total: subtotal - discount + surcharge + freight,
+  };
+}
+
 /** Text for a money input of the app ("12,34"). */
 export function moneyInput(valueCents: number): string {
   return `${Math.trunc(valueCents / 100)},${String(valueCents % 100).padStart(2, "0")}`;

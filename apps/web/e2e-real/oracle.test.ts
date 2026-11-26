@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adjustedTotals,
   cents,
   moneyInput,
   numericCents,
@@ -44,5 +45,73 @@ describe("the oracle of the e2e journeys", () => {
       total: 11,
     });
     expect(percentOfCents(15, "20")).toBe(3);
+  });
+
+  it("sums discount in value, surcharge in percent and freight (AC-2.1)", () => {
+    // subtotal 24,90 + 9,99 = 34,89; 10% of 3489 = 348,9 → 349; 3489 − 500 + 349 + 1200 = 4538
+    const totals = adjustedTotals(
+      [
+        { chargedCents: 2490, quantity: 1 },
+        { chargedCents: 999, quantity: 1 },
+      ],
+      [
+        { cents: 500, kind: "discount" },
+        { kind: "surcharge", percent: "10" },
+        { cents: 1200, kind: "freight" },
+      ]
+    );
+    expect(totals).toEqual({
+      amounts: [500, 349, 1200],
+      discount: 500,
+      discountExceedsSubtotal: false,
+      freight: 1200,
+      subtotal: 3489,
+      surcharge: 349,
+      total: 4538,
+    });
+  });
+
+  it("takes a discount and a surcharge of 10% on the same subtotal (AC-2.2)", () => {
+    // 349 each on 3489 → the total goes back to 3489; composed it would be 3489 − 349 = 3140, + 314 = 3454
+    const totals = adjustedTotals(
+      [
+        { chargedCents: 2490, quantity: 1 },
+        { chargedCents: 999, quantity: 1 },
+      ],
+      [
+        { kind: "discount", percent: "10" },
+        { kind: "surcharge", percent: "10" },
+      ]
+    );
+    expect(totals.amounts).toEqual([349, 349]);
+    expect(totals.total).toBe(3489);
+    // 10% off and 20% on 1000: 100 and 200, not 200 on 900 (180)
+    expect(
+      adjustedTotals(
+        [{ chargedCents: 1000, quantity: 1 }],
+        [
+          { kind: "discount", percent: "10" },
+          { kind: "surcharge", percent: "20" },
+        ]
+      ).total
+    ).toBe(1100);
+  });
+
+  it("flags a discount above the subtotal, and accepts one equal to it", () => {
+    const lines = [{ chargedCents: 1000, quantity: 2 }];
+    expect(
+      adjustedTotals(lines, [{ cents: 2001, kind: "discount" }])
+        .discountExceedsSubtotal
+    ).toBe(true);
+    const equal = adjustedTotals(lines, [{ cents: 2000, kind: "discount" }]);
+    expect(equal.discountExceedsSubtotal).toBe(false);
+    expect(equal.total).toBe(0);
+    // two discounts that pass the subtotal only together
+    expect(
+      adjustedTotals(lines, [
+        { cents: 1500, kind: "discount" },
+        { kind: "discount", percent: "30" },
+      ]).discountExceedsSubtotal
+    ).toBe(true);
   });
 });
