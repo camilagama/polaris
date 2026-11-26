@@ -107,6 +107,10 @@ function BackButton({ href, label, onClick, ref }: TitleBack) {
   );
 }
 
+/** The line from 760 px: the title and the action side by side, at the height of a control even when the action is missing. */
+const WIDE_LINE =
+  "min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3";
+
 /**
  * The line of a screen's title with its main action: under the title, as wide as the screen, on a phone, and at the
  * right of the title from 760 px. The action is never inside a card and the first control after the title in the tab order.
@@ -123,8 +127,9 @@ export function TitleLine({
   action?: ReactNode;
   back?: TitleBack | undefined;
   /**
-   * The screen has an action in some state (Produtos has none on Arquivados): the line keeps its box when the action is
-   * missing, so what is under it does not move when the action comes and goes.
+   * The screen has an action in some state (Produtos has none on Arquivados): from 760 px the line keeps its box when the
+   * action is missing, so what is under it does not move when the action comes and goes. On a phone the action is a row
+   * of its own, so without it the line draws no box and leaves no gap in the grid.
    */
   canHaveAction?: boolean;
   children: ReactNode;
@@ -136,16 +141,13 @@ export function TitleLine({
   tabNamesIt?: boolean;
 }) {
   const titleHidden = useContext(InTabContext) && tabNamesIt;
+  let lineClass = `grid gap-3 ${WIDE_LINE}`;
+  if (titleHidden && !action) {
+    lineClass = canHaveAction ? `contents ${WIDE_LINE}` : "contents";
+  }
   return (
     <TabNamesTitleContext.Provider value={tabNamesIt}>
-      <div
-        className={
-          titleHidden && !action && !canHaveAction
-            ? "contents"
-            : "grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3"
-        }
-        data-title-line=""
-      >
+      <div className={lineClass} data-title-line="">
         {back ? (
           <div className="flex min-w-0 items-center gap-1">
             <BackButton {...back} />

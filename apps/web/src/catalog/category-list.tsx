@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
 } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -31,6 +32,7 @@ import {
   EMPTY_TEXT,
   STATUS_LABELS,
 } from "./categories-model";
+import { NAME_REQUIRED } from "./category-form";
 import { formatDate } from "./screen-parts";
 
 const BADGE_VARIANT = {
@@ -155,20 +157,32 @@ function RenameForm({
   value,
 }: RenameFormProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showRequired, setShowRequired] = useState(false);
   const tooLong = categoryNameIsTooLong(value);
   const id = `rename-category-${category.id}`;
+  const error = tooLong
+    ? categoryNameCountLabel(value)
+    : (showRequired && value.trim() === "" && NAME_REQUIRED) || undefined;
   useEffect(() => {
     focusLater(() => inputRef.current?.focus());
   }, []);
   const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setShowRequired(false);
+      onChange(event.target.value);
+    },
     [onChange]
   );
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      if (value.trim() === "") {
+        setShowRequired(true);
+        inputRef.current?.focus();
+        return;
+      }
       // offline nothing leaves and nothing typed is touched: the button says why
-      if (online && value.trim() !== "") {
+      if (online) {
         onSubmit(category);
       }
     },
@@ -181,14 +195,14 @@ function RenameForm({
       noValidate
       onSubmit={handleSubmit}
     >
-      <Field className="min-w-0" data-invalid={tooLong}>
+      <Field className="min-w-0" data-invalid={Boolean(error)}>
         <FieldLabel className="sr-only" htmlFor={id}>
           Novo nome para {category.name}
         </FieldLabel>
         <InputGroup>
           <InputGroupInput
             aria-describedby={`${id}-count`}
-            aria-invalid={tooLong ? true : undefined}
+            aria-invalid={error ? true : undefined}
             autoComplete="off"
             id={id}
             onChange={handleChange}
@@ -196,10 +210,8 @@ function RenameForm({
             value={value}
           />
         </InputGroup>
-        {tooLong ? (
-          <FieldError id={`${id}-count`}>
-            {categoryNameCountLabel(value)}
-          </FieldError>
+        {error ? (
+          <FieldError id={`${id}-count`}>{error}</FieldError>
         ) : (
           <FieldDescription id={`${id}-count`}>
             {categoryNameCountLabel(value)}
