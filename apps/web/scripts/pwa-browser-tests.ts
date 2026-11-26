@@ -199,7 +199,12 @@ async function main() {
   const browser = await startImageBrowser();
   try {
     return await playwright(
-      [],
+      [
+        "--project=chromium-visual",
+        "--repeat-each=3",
+        "--grep",
+        "peças do shell (falha da tela|loja que não abriu|acesso sem internet vencido)",
+      ],
       { ...process.env, [VISUAL_WS_ENV]: browser.wsEndpoint },
       browser.container
     );
