@@ -529,6 +529,63 @@ describe.each([
   );
 });
 
+const NOT_A_COLOR_CASES = [
+  "text-left",
+  "text-center",
+  "text-right",
+  "text-justify",
+  "text-start",
+  "text-end",
+  "text-wrap",
+  "text-nowrap",
+  "text-balance",
+  "text-pretty",
+  "text-ellipsis",
+  "text-clip",
+  "text-shadow-2xs",
+  "text-shadow-lg",
+  "text-shadow-none",
+  "bg-no-repeat",
+  "bg-repeat",
+  "bg-repeat-x",
+  "bg-repeat-y",
+  "bg-repeat-round",
+  "bg-repeat-space",
+  "bg-clip-border",
+  "bg-clip-padding",
+  "bg-clip-content",
+  "bg-clip-text",
+  "bg-origin-border",
+  "bg-origin-padding",
+  "bg-origin-content",
+  "bg-fixed",
+  "bg-local",
+  "bg-scroll",
+  "bg-auto",
+  "bg-cover",
+  "bg-contain",
+  "bg-none",
+  "bg-top",
+  "bg-bottom",
+  "bg-left",
+  "bg-right",
+  "bg-center",
+  "bg-top-left",
+  "bg-top-right",
+  "bg-bottom-left",
+  "bg-bottom-right",
+  "bg-left-top",
+  "bg-left-bottom",
+  "bg-right-top",
+  "bg-right-bottom",
+  "bg-size-cover",
+  "bg-size-[auto_10px]",
+  "bg-position-[top_left]",
+  "bg-position-center",
+  "bg-blend-multiply",
+  "bg-blend-color-dodge",
+] as const;
+
 const menuProgressSource = readFileSync(
   new URL("../app-shell/menu-progress.tsx", import.meta.url),
   "utf8"
@@ -624,7 +681,11 @@ describe("badgePair: a ordem das classes e as utilidades que não são cor", () 
         const expected = badgePair("bg-card text-foreground", palette, dark);
         expect(
           badgePair(`bg-card text-foreground ${size}`, palette, dark),
-          size
+          `${size} depois das cores`
+        ).toEqual(expected);
+        expect(
+          badgePair(`${size} bg-card text-foreground`, palette, dark),
+          `${size} antes das cores`
         ).toEqual(expected);
       }
       expect(
@@ -634,47 +695,42 @@ describe("badgePair: a ordem das classes e as utilidades que não são cor", () 
     }
   });
 
-  it("ignora utilidade text-*/bg-* que não é cor, sem erro de token", () => {
-    for (const dark of [false, true]) {
-      const expected = badgePair("bg-card text-foreground", palette, dark);
-      for (const other of [
-        "text-center",
-        "text-left",
-        "text-right",
-        "text-justify",
-        "text-start",
-        "text-end",
-        "text-ellipsis",
-        "text-clip",
-        "text-wrap",
-        "text-nowrap",
-        "text-balance",
-        "text-pretty",
-        "bg-no-repeat",
-        "bg-repeat-x",
-        "bg-clip-text",
-        "bg-origin-border",
-        "bg-fixed",
-        "bg-cover",
-        "bg-center",
-        "bg-top-left",
-        "bg-none",
-        "bg-left-bottom",
-        "bg-size-cover",
-        "dark:bg-no-repeat",
-        "dark:text-center",
-      ]) {
+  it.each(NOT_A_COLOR_CASES)(
+    "ignora %s, que não é cor, sem erro de token",
+    (other) => {
+      for (const dark of [false, true]) {
+        const expected = badgePair("bg-card text-foreground", palette, dark);
         expect(
           badgePair(`${other} bg-card text-foreground`, palette, dark),
-          other
+          `${other} antes das cores`
         ).toEqual(expected);
         expect(
           badgePair(`bg-card text-foreground ${other}`, palette, dark),
-          other
+          `${other} depois das cores`
+        ).toEqual(expected);
+        expect(
+          badgePair(`bg-card text-foreground dark:${other}`, palette, dark),
+          `dark:${other}`
         ).toEqual(expected);
       }
     }
-  });
+  );
+
+  it.each([
+    "text-leftover",
+    "text-end-foo",
+    "text-shadow",
+    "bg-cover-x",
+    "bg-top-leftish",
+    "bg-nonexistent",
+  ])(
+    "%s quase casa com uma utilidade que não é cor e segue recusada",
+    (near) => {
+      expect(() =>
+        badgePair(`bg-card text-foreground ${near}`, palette, false)
+      ).toThrow(`class "${near}" is not a`);
+    }
+  );
 
   it("a utilidade que não é cor não esconde a cor que vem depois", () => {
     expect(
@@ -748,16 +804,22 @@ describe.each([
     "Tema escuro",
     new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
   ],
-])("contraste do anel da confirmação destrutiva, %s", (_section, palette) => {
-  it("o anel destructive sobre --muted fica em pelo menos 3:1", () => {
+])("contraste do anel da confirmação destrutiva, %s", (section, palette) => {
+  it("o anel destructive sobre --muted está no mapa e fica em pelo menos 3:1", () => {
     const rings = [...insetSource.matchAll(DESTRUCTIVE_RING)].map(
       (match) => match[1] as string
     );
     expect(rings).toHaveLength(1);
-    const measured = ratio(
-      color(`\`destructive/${rings[0]} sobre muted\``, palette),
-      color("`muted`", palette)
+    const foreground = `\`destructive/${rings[0]} sobre muted\``;
+    const row = pairs(section).find(
+      (item) => item.foreground === foreground && item.background === "`muted`"
     );
-    expect(measured).toBeGreaterThanOrEqual(3);
+    expect(
+      row,
+      `${foreground} / muted is not in "${section}" of docs/design/contraste-v5.1.md; add the row with its measured ratio`
+    ).toBeDefined();
+    expect(
+      ratio(color(foreground, palette), color("`muted`", palette))
+    ).toBeGreaterThanOrEqual(3);
   });
 });
