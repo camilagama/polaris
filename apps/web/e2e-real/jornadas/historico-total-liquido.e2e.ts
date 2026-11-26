@@ -251,16 +251,20 @@ function zonedInstant(
   return guess - (wall - guess);
 }
 
-/** A sale is accepted up to 30 calendar days back: on the 31st the last day of last month is already out of reach. */
 const SALE_WINDOW_DAYS = 30;
 
+/**
+ * A sale is accepted up to 30 calendar days back, counted by the server's real clock, while the dates here come from
+ * T0. A run that crosses midnight in São Paulo would move the server a day past T0, so one day of margin is kept:
+ * on the 30th and 31st the last day of last month is out of reach.
+ */
 function lastDayOfLastMonthIsInReach(): boolean {
   const today = localDate(runT0(), ZONE);
   const lastEnd = addDays(monthStart(today), -1);
   return (
     (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${lastEnd}T12:00:00Z`)) /
       86_400_000 <=
-    SALE_WINDOW_DAYS
+    SALE_WINDOW_DAYS - 1
   );
 }
 
@@ -344,7 +348,7 @@ test("o total do Histórico e o do Resultado na virada do mês: aparelho às 23:
 }, testInfo) => {
   test.skip(
     !lastDayOfLastMonthIsInReach(),
-    "a venda do último dia do mês passado passou da janela retroativa de 30 dias"
+    "a venda do último dia do mês passado está na borda da janela retroativa de 30 dias (ou além dela), sem 1 dia de folga"
   );
   const journey = await openJourney(
     browser,
@@ -364,7 +368,7 @@ test("o total do Histórico e o do Resultado na virada do mês: aparelho logo de
 }, testInfo) => {
   test.skip(
     !lastDayOfLastMonthIsInReach(),
-    "a venda do último dia do mês passado passou da janela retroativa de 30 dias"
+    "a venda do último dia do mês passado está na borda da janela retroativa de 30 dias (ou além dela), sem 1 dia de folga"
   );
   const journey = await openJourney(
     browser,
