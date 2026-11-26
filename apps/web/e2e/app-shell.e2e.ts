@@ -1135,7 +1135,8 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     ).toBe(false);
     // the foot and the limit notice at the end of Produtos share the memory of the plan: one read for both (after the screen, hence expect.poll)
     await expect.poll(() => reads.plan).toBe(1);
-    // and no second one later: two frames, the page's clock 11 s ahead (a read late by a timer or by the 10 s of the memory fires), then the network idle, and the count is still 1
+    // and no second one later: the network idle first (a probe of /health still on its way when the clock jumps times out at its 4 s, twice, and the connection going off and back clears the memory), then two frames, the page's clock 11 s ahead (a read late by a timer or by the 10 s of the memory fires), then the network idle, and the count is still 1
+    await page.waitForLoadState("networkidle");
     await page.evaluate(
       () =>
         new Promise<void>((resolve) =>
