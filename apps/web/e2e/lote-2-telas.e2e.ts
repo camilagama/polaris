@@ -335,9 +335,13 @@ test("Categorias a 360 px: renomear com o nome em branco diz que falta o nome no
   const field = page.getByLabel("Novo nome para Camisetas");
   await expect(field).toBeFocused();
   await expect(page.getByText("9/100 caracteres")).toBeVisible();
+  const save = page.getByRole("button", { name: "Salvar" });
+  const cancel = page.getByRole("button", { name: "Cancelar" });
+  const saveBefore = await save.boundingBox();
+  expect(saveBefore).not.toBeNull();
 
   await field.fill("   ");
-  await page.getByRole("button", { name: "Salvar" }).click();
+  await save.click();
 
   const message = page.getByText("Informe o nome da categoria.");
   await expect(message).toBeVisible();
@@ -349,17 +353,93 @@ test("Categorias a 360 px: renomear com o nome em branco diz que falta o nome no
   const box = await message.boundingBox();
   expect(box).not.toBeNull();
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
+  const saveWithError = await save.boundingBox();
+  const cancelWithError = await cancel.boundingBox();
+  expect(saveWithError?.width).toBe(saveBefore?.width);
+  expect(saveWithError?.height).toBe(saveBefore?.height);
+  expect(saveWithError?.x).toBeGreaterThanOrEqual(0);
+  expect(
+    (saveWithError?.x ?? 0) + (saveWithError?.width ?? 0)
+  ).toBeLessThanOrEqual(cancelWithError?.x ?? 0);
+  expect(
+    (cancelWithError?.x ?? 0) + (cancelWithError?.width ?? 0)
+  ).toBeLessThanOrEqual(360);
+  expect(Math.abs((saveWithError?.y ?? 0) - (cancelWithError?.y ?? 99))).toBe(
+    0
+  );
+  await expectNoSidewaysScroll(page);
   expect(renamed).toEqual([]);
 
   await field.fill("Blusas");
   await expect(message).toHaveCount(0);
   await expect(field).not.toHaveAttribute("aria-invalid", "true");
-  await page.getByRole("button", { name: "Salvar" }).click();
+  await save.click();
   await expect(
     page.getByText("Categoria renomeada para “Blusas”.")
   ).toBeVisible();
   expect(renamed).toEqual([
     { id: id(41), name: "Blusas", organizationId: ORGANIZATION.id },
+  ]);
+});
+
+test("Categorias a 360 px: nome de 100 caracteres sem espaço quebra na linha, o Salvar fica à vista e clicável e o aviso não rola a página", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "a largura é a do teste"
+  );
+  await page.setViewportSize({ height: 740, width: 360 });
+  const longName = "A".repeat(100);
+  const newName = "B".repeat(100);
+  const renamed: unknown[] = [];
+  await openScreen(page, "/categories", "Categorias", {
+    "category/list": reply({ categories: [category(1, longName)] }),
+    "category/rename": (route) => {
+      renamed.push((route.request().postDataJSON() as { json: unknown }).json);
+      return route.fulfill(
+        rpc({ category: category(1, newName), changed: true })
+      );
+    },
+  });
+  const row = page.locator("[data-category-id]").first();
+  const name = row.getByText(longName);
+  await expect(name).toBeVisible();
+  const nameBox = await name.boundingBox();
+  expect((nameBox?.x ?? 0) + (nameBox?.width ?? 0)).toBeLessThanOrEqual(360);
+  expect(nameBox?.height).toBeGreaterThan(40);
+  await expectNoSidewaysScroll(page);
+
+  await menuOf(page, longName).click();
+  await page.getByRole("menuitem", { exact: true, name: "Renomear" }).click();
+  const form = page.locator("form[data-category-id]");
+  const field = form.getByRole("textbox");
+  await expect(field).toHaveValue(longName);
+  await expect(form.getByText("100/100 caracteres")).toBeVisible();
+  const save = form.getByRole("button", { name: "Salvar" });
+  const cancel = form.getByRole("button", { name: "Cancelar" });
+  await expect(save).toBeVisible();
+  await expect(save).toBeEnabled();
+  const saveBox = await save.boundingBox();
+  const cancelBox = await cancel.boundingBox();
+  expect(saveBox?.x).toBeGreaterThanOrEqual(0);
+  expect((cancelBox?.x ?? 0) + (cancelBox?.width ?? 0)).toBeLessThanOrEqual(
+    360
+  );
+  expect(saveBox?.y).toBe(cancelBox?.y);
+  await expectNoSidewaysScroll(page);
+
+  await field.fill(newName);
+  await save.click();
+  const notice = page.getByText(`Categoria renomeada para “${newName}”.`);
+  await expect(notice).toBeVisible();
+  const noticeBox = await notice.boundingBox();
+  expect((noticeBox?.x ?? 0) + (noticeBox?.width ?? 0)).toBeLessThanOrEqual(
+    360
+  );
+  await expectNoSidewaysScroll(page);
+  expect(renamed).toEqual([
+    { id: id(41), name: newName, organizationId: ORGANIZATION.id },
   ]);
 });
 
