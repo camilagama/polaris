@@ -47,7 +47,7 @@ import {
 } from "./session-ended";
 import { leaveSessionOver } from "./session-over";
 import { tabHref } from "../../app-shell/navigation-model";
-import { ScreenTitle } from "../../app-shell/screen-title";
+import { ScreenTitle, TitleLine } from "../../app-shell/screen-title";
 
 const DEVICES_PATH = tabHref("account", "aparelhos");
 /** The lines of the screen that say why the buttons of the rows are off. */
@@ -513,14 +513,16 @@ export function DevicesPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
-        <ScreenTitle
-          className="focus-ring"
-          id={DEVICES_HEADING_ID}
-          ref={headingRef}
-          tabIndex={-1}
-        >
-          Aparelhos
-        </ScreenTitle>
+        <TitleLine>
+          <ScreenTitle
+            className="focus-ring"
+            id={DEVICES_HEADING_ID}
+            ref={headingRef}
+            tabIndex={-1}
+          >
+            Aparelhos
+          </ScreenTitle>
+        </TitleLine>
         <p className="text-muted-foreground text-support">
           Os aparelhos em que você usa o Polaris offline. Se perdeu um celular
           ou computador, revogue o aparelho: o servidor deixa de aceitar o que

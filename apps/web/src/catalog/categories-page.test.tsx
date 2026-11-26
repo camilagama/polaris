@@ -26,6 +26,7 @@ vi.mock("../lib/browser-connection", async (importOriginal) => ({
   useConnectionOnline: () => true,
 }));
 
+import { TabPanelScope } from "../app-shell/screen-title";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { CategoriesPage } from "./categories-page";
 
@@ -46,7 +47,8 @@ function category(name: string): CategoryReadModel {
   };
 }
 
-function renderPage() {
+function renderPage(inTab = false) {
+  const page = <CategoriesPage />;
   return render(
     <StaticOrganizationProvider
       organization={{
@@ -56,7 +58,7 @@ function renderPage() {
         timezone: "America/Sao_Paulo",
       }}
     >
-      <CategoriesPage />
+      {inTab ? <TabPanelScope>{page}</TabPanelScope> : page}
     </StaticOrganizationProvider>
   );
 }
@@ -109,5 +111,27 @@ describe("the categories screen with an empty list", () => {
     expect(
       await screen.findByText("Categoria “Acessórios” criada.")
     ).toBeTruthy();
+  });
+});
+
+describe("the title of the categories screen", () => {
+  it("is the h1 of the page, drawn on a line of its own, when the screen stands alone", async () => {
+    const { container } = renderPage();
+    await screen.findByText("Nenhuma categoria ativa.");
+    const title = screen.getByRole("heading", { level: 1, name: "Categorias" });
+    expect(title.className).not.toContain("sr-only");
+    expect(title.closest("[data-title-line]")?.className).not.toContain(
+      "contents"
+    );
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+  });
+
+  it("stays only for a screen reader in the tab of Produtos, and its line takes no room", async () => {
+    const { container } = renderPage(true);
+    await screen.findByText("Nenhuma categoria ativa.");
+    const title = screen.getByRole("heading", { level: 2, name: "Categorias" });
+    expect(title.className).toContain("sr-only");
+    expect(title.closest("[data-title-line]")?.className).toBe("contents");
+    expect(container.querySelectorAll("h1")).toHaveLength(0);
   });
 });

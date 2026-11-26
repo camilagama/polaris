@@ -16,6 +16,12 @@ const PHONE_MARGIN = 48;
 const BIG_LETTER = 20;
 /** The space between the heading block and what comes after it: the gap of the page grid of a screen (`gap-4`). */
 const HEADER_GAP = 16;
+/** The gap of a header between its title line and the line of text under it (`gap-1`). */
+const INTRO_GAP = 4;
+/** The height of the title line from 760 px: one control of the medium size (`min-h-ctl-md`). */
+const TITLE_LINE_MIN = 32;
+/** `sr-only` leaves the heading 1 px wide and high: more than that is a title that is drawn. */
+const SR_ONLY_SIDE = 1;
 const PERIOD_BUTTON = /^Período/;
 const METAS_TAB = /^Metas/;
 const GOALS_REFRESH = /^Atualizar metas/;
@@ -398,4 +404,149 @@ for (const context of CONTEXTS.slice(0, 2)) {
       });
     });
   }
+}
+
+/**
+ * Categorias, Aparelhos, Seus dados, Assinatura and Ajuda have no action, but draw their title in `TitleLine` too: the line
+ * is as tall as the one of the screens that have an action, and what follows it is at the distance of its header. A title
+ * a tab already names stays for a screen reader only and its line holds no height.
+ */
+const WITHOUT_ACTION: readonly {
+  afterTitle: number;
+  heading: string;
+  hiddenFrom1280: boolean;
+  screen: string;
+}[] = [
+  {
+    afterTitle: INTRO_GAP,
+    heading: "Categorias",
+    hiddenFrom1280: false,
+    screen: "categorias lista",
+  },
+  {
+    afterTitle: INTRO_GAP,
+    heading: "Aparelhos",
+    hiddenFrom1280: false,
+    screen: "aparelhos lista",
+  },
+  {
+    afterTitle: HEADER_GAP,
+    heading: "Seus dados",
+    hiddenFrom1280: false,
+    screen: "seus dados com cópias",
+  },
+  {
+    afterTitle: HEADER_GAP,
+    heading: "Assinatura",
+    hiddenFrom1280: true,
+    screen: "assinatura oferta com Pix",
+  },
+  {
+    afterTitle: INTRO_GAP,
+    heading: "Ajuda e contato",
+    hiddenFrom1280: false,
+    screen: "ajuda",
+  },
+];
+
+interface LineShape {
+  afterLine: number;
+  headingBox: Box;
+  headingVisible: boolean;
+  headings: number;
+  line: Box;
+  lineDisplay: string;
+  scrollWidth: number;
+  titleRight: number;
+  viewportWidth: number;
+}
+
+function lineOf(page: Page, heading: string): Promise<LineShape> {
+  return page.evaluate(
+    ([headingText, srOnlySide]) => {
+      const box = (element: Element): Box => {
+        const { bottom, height, left, right, top, width } =
+          element.getBoundingClientRect();
+        return { bottom, height, left, right, top, width };
+      };
+      const title = [...document.querySelectorAll<HTMLElement>("h1, h2")].find(
+        (candidate) => candidate.textContent?.trim() === headingText
+      ) as HTMLElement;
+      const line = title.closest("[data-title-line]") as HTMLElement;
+      return {
+        afterLine:
+          (line.nextElementSibling as HTMLElement).getBoundingClientRect().top -
+          line.getBoundingClientRect().bottom,
+        headingBox: box(title),
+        headingVisible:
+          title.getBoundingClientRect().width > srOnlySide &&
+          title.getBoundingClientRect().height > srOnlySide,
+        headings: [...document.querySelectorAll("h1")].filter((shown) =>
+          shown.checkVisibility()
+        ).length,
+        line: box(line),
+        lineDisplay: getComputedStyle(line).display,
+        scrollWidth: document.documentElement.scrollWidth,
+        titleRight: title.getBoundingClientRect().right,
+        viewportWidth: innerWidth,
+      };
+    },
+    [heading, SR_ONLY_SIDE] as const
+  );
+}
+
+for (const entry of WITHOUT_ACTION) {
+  for (const context of CONTEXTS) {
+    test.describe(`sem ação · ${entry.screen} · ${context.name}`, () => {
+      test.use({
+        hasTouch: context.touch,
+        isMobile: context.touch,
+        viewport: context.viewport,
+      });
+
+      test("o título está na linha do título, a uma distância do que vem depois, sem rolagem lateral", async ({
+        page,
+      }) => {
+        await screenOf(entry.screen).open(page, page.context());
+        const shape = await lineOf(page, entry.heading);
+        expect(shape.headings, "um h1 por página").toBe(1);
+        expect(shape.scrollWidth, "rolagem lateral").toBeLessThanOrEqual(
+          shape.viewportWidth
+        );
+        const hidden = entry.hiddenFrom1280 && !context.touch;
+        expect(shape.headingVisible, "título à vista").toBe(!hidden);
+        if (hidden) {
+          expect(
+            shape.lineDisplay,
+            "a linha não ocupa lugar na grade da página"
+          ).toBe("contents");
+        } else {
+          expect(shape.lineDisplay).not.toBe("contents");
+          expect(shape.line.height, "altura da linha do título").toBeCloseTo(
+            context.touch ? shape.headingBox.height : TITLE_LINE_MIN,
+            0
+          );
+          expect(shape.afterLine, "depois do título").toBeCloseTo(
+            entry.afterTitle,
+            0
+          );
+        }
+      });
+    });
+  }
+
+  test.describe(`sem ação · ${entry.screen} · 320 com letra de ${BIG_LETTER} px`, () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: VIEWPORTS["320"] });
+
+    test("nada é cortado nem passa da borda", async ({ page }) => {
+      await screenOf(entry.screen).open(page, page.context());
+      await page.evaluate((pixels) => {
+        document.documentElement.style.fontSize = `${pixels}px`;
+      }, BIG_LETTER);
+      const shape = await lineOf(page, entry.heading);
+      expect(shape.scrollWidth).toBeLessThanOrEqual(shape.viewportWidth);
+      expect(shape.titleRight).toBeLessThanOrEqual(shape.viewportWidth);
+      expect(shape.headingBox.left).toBeGreaterThanOrEqual(0);
+    });
+  });
 }

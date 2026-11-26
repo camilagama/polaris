@@ -23,7 +23,11 @@ import {
 import { CategoryForm } from "./category-form";
 import { CategoryList } from "./category-list";
 import { ActionFeedback, LoadErrorNotice } from "./products-page-parts";
-import { ScreenTitle } from "../app-shell/screen-title";
+import {
+  ScreenTitle,
+  TitleLine,
+  useTitleHidden,
+} from "../app-shell/screen-title";
 
 /**
  * Categorias on the interface v5.1 (components of `src/ui`, no sheet of its own). It works only with a connection:
@@ -237,15 +241,18 @@ export function CategoriesPage() {
     setNotice(null);
   }, []);
 
+  const titleHidden = useTitleHidden(true);
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <div className="grid gap-1">
-        <ScreenTitle tabNamesIt>Categorias</ScreenTitle>
+      <header className="grid gap-1">
+        <TitleLine titleHidden={titleHidden}>
+          <ScreenTitle tabNamesIt>Categorias</ScreenTitle>
+        </TitleLine>
         <p className="text-muted-foreground text-support">
           Agrupam os produtos do catálogo. As categorias de despesa ficam em
           Despesas.
         </p>
-      </div>
+      </header>
       <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />
       <SegmentedFilter
         disabled={pendingAction !== null}
