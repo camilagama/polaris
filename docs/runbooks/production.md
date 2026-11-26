@@ -34,7 +34,7 @@ Espelho do [Staging fixo](./staging.md): a mesma estrutura de recursos, na conta
 | Build de produção recusa marcador `[preencher: ...]` ou `VITE_LEGAL_*` faltando | **Automático**: `legal-build-guard-plugin.ts`, quando o build roda com `CLOUDFLARE_ENV=production` | [item 20 do checklist](./release-checklist.md#20-deploy-de-produção-com-cloudflare_envproduction-block) |
 | Valor `"false"` de `CLOSURE_AUTO_PURGE_ENABLED`, `ACTIVATION_EMAILS_ENABLED`, `CLOSURE_NOTICE_EMAIL_ENABLED` e `BILLING_SELF_SERVICE_ENABLED` em `env.production` | **Automático**: testes `privacy/maintenance.test.ts` e `billing/activation-sweep.test.ts` de `apps/web/src/server` e `verify-staging-isolation.test.mjs` (seção 9) | seção 9 |
 | Deploy de produção (construir e verificar, migrar, publicar, conferir o SHA) | `deploy-production.yml`, por dispatch, desligado até o responsável criar o Environment `production`, os segredos e a variável `PRODUCTION_DEPLOY_ENABLED`; segue a ordem da seção 7; o smoke fica de fora por ora (seção 6). Candidato em `scripts/deploy-production.workflow.yml`; o arquivo em `.github/workflows/` depende do patch (pendente). Quem dispara e quem aprova: o responsável | a confirmar em produção |
-| Decidir reverter ou consertar para frente (seção 8) | Responsável pelo projeto (papel; o nome é do usuário, [item 7 do checklist](./release-checklist.md#7-critérios-de-rollback-e-responsável-block)) | seção 8 |
+| Decidir reverter ou consertar para frente (seção 8) | Responsável pelo projeto (o Arrascaeta, com o usuário no escalonamento; [item 7 do checklist](./release-checklist.md#7-critérios-de-rollback-e-responsável-block)) | seção 8 |
 | Ligar cada flag da seção 9 | Responsável, depois da decisão do usuário sobre o quando | seção 9 |
 
 ## 2. Banco: marcador, papéis e migrations (responsável)
@@ -155,7 +155,7 @@ Primeiro deploy, além disso: nenhuma flag da seção 9 ligada e **sem** o `OUTB
 
 **Ferramenta:** `wrangler rollback --env production`, por Worker, para a versão anterior. **Ele não volta o schema**: o banco migrado tem de servir a versão revertida, o que a regra expand/contract garante para migration compatível ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md); [item 7 do checklist](./release-checklist.md#7-critérios-de-rollback-e-responsável-block)). Migration nunca é editada depois de aplicada.
 
-**Quem decide:** o responsável pelo projeto (papel). Quem executa é quem fez o deploy, com o perfil autorizado. Segurança, RLS, tenancy, cobrança e privacidade: o revisor de segurança é ouvido antes de escolher o caminho. O nome da pessoa é decisão do usuário e fica no relatório da execução, não neste arquivo (item 7, decisão pendente).
+**Quem decide:** o responsável pelo projeto, o Arrascaeta, com o usuário no escalonamento (decidido em 26/11/2026, [item 7 do checklist](./release-checklist.md#7-critérios-de-rollback-e-responsável-block)). Quem executa é quem fez o deploy, com o perfil autorizado. Segurança, RLS, tenancy, cobrança e privacidade: o revisor de segurança é ouvido antes de escolher o caminho. O plano de rollback do release registra o responsável no relatório da execução.
 
 **Reverter o Worker** (o Worker anterior no ar é mais seguro que o atual) quando:
 - o defeito está só no código, e todas as migrations do release são compatíveis (só adicionam);
