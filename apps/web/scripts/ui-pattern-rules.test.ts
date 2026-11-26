@@ -301,7 +301,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
   R1: [],
   R2: [
     // app-shell
-    "src/app-shell/state-panel.tsx",
     // catalog
     // customers
     // data-export
