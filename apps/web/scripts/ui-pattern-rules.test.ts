@@ -376,6 +376,8 @@ export function listingFaults(
   return faults;
 }
 
+const TESTING_FILE = /\.testing\.tsx?$/;
+
 const isScanned = (name: string) => SOURCE.test(name) && !TEST_FILE.test(name);
 
 const sourcesUnder = (dir: string): string[] =>
@@ -479,6 +481,16 @@ describe("a trava lê os .ts e não lê os testes (controles)", () => {
     "esquema.js",
   ])("%s não é fonte varrida", (name) => {
     expect(isScanned(name)).toBe(false);
+  });
+
+  it("o único arquivo *.testing.* da árvore, que a varredura deixa de fora, é o da configuração do Worker", () => {
+    const testing = (
+      readdirSync(join(web, "src"), { recursive: true }) as string[]
+    )
+      .filter((path) => TESTING_FILE.test(path))
+      .map((path) => `src/${path}`)
+      .sort();
+    expect(testing).toEqual(["src/server/wrangler-config.testing.ts"]);
   });
 
   it("uma moldura à mão numa constante de .ts reprova em R3 e fora da dívida", () => {
