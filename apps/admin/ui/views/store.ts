@@ -100,7 +100,7 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
  */
 function billingSection(tools: ScreenTools) {
   const { can, dom } = tools;
-  const refund = refundWindowView(tools);
+  const refund = refundWindowView(tools, "inside-card");
   const element = dom.el(
     "section",
     { "aria-labelledby": "cobranca-titulo", class: "area" },

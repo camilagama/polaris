@@ -67,6 +67,12 @@
     @apply font-semibold text-sm;
   }
 
+  /* an h4 that stands in for an h3 (the outline goes one level down inside a block set back) keeps the h3's size */
+  .section-title {
+    /* dash: apps/web/src/ui/card.tsx */
+    @apply text-section;
+  }
+
   .content :where(code) {
     /* dash: apps/web/src/app-shell/not-found-page.tsx apps/web/src/ui/table.tsx */
     @apply font-mono text-xs;
@@ -146,6 +152,13 @@
     margin-bottom: 0;
   }
 
+  /* a card inside a card is the block set back, not a second card: the full --muted fill, no ring and no shadow, with the card's own spacing */
+  .area .area {
+    /* dash: apps/web/src/ui/inset-block.tsx */
+    @apply rounded-lg bg-muted;
+    box-shadow: none;
+  }
+
   /* the button */
   button {
     /* dash: apps/web/src/ui/button.tsx */
@@ -160,6 +173,12 @@
   button.secondary {
     /* dash: apps/web/src/ui/button.tsx */
     @apply bg-secondary text-secondary-foreground hover:bg-accent aria-expanded:bg-accent;
+  }
+
+  /* the secondary button is almost the grey of the block it sits in, so it takes the outline button's border and fill */
+  .area .area button.secondary {
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply border-border bg-card text-foreground shadow-xs hover:bg-accent aria-expanded:bg-accent dark:bg-secondary/60 dark:hover:bg-accent;
   }
 
   button.ghost {
@@ -369,7 +388,7 @@
 
   .facts {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
     gap: 0.5rem 1rem;
     margin: 0;
   }
@@ -573,6 +592,74 @@
       min-width: 7.5rem;
       max-width: 7.5rem;
       overflow-wrap: normal;
+    }
+  }
+
+  /* these rules come after the stacking above and tie with it in specificity, so the order is what makes them win. The quotas stack to one line each (name, then "used of limit" and the status) instead of four labelled lines; the labels stay for a screen reader, out of sight */
+  @container (max-width: 40rem) {
+    .grid.quotas tr {
+      display: grid;
+      grid-template-columns: minmax(6rem, 1fr) auto auto auto;
+      align-items: baseline;
+      row-gap: 0.125rem;
+    }
+
+    .grid.quotas td {
+      display: block;
+      padding: 0;
+      white-space: nowrap;
+    }
+
+    .grid.quotas td::before {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+
+    .grid.quotas td:first-child {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .grid.quotas td:nth-child(2),
+    .grid.quotas td:nth-child(3) {
+      /* dash: apps/web/src/ui/figure.tsx */
+      @apply tabular-nums;
+    }
+
+    .grid.quotas td:nth-child(2) {
+      margin-left: 0.375rem;
+    }
+
+    .grid.quotas td:nth-child(2)::after {
+      content: "\a0 de\a0";
+    }
+
+    .grid.quotas td:nth-child(4) {
+      margin-left: 0.25rem;
+      text-align: right;
+      white-space: normal;
+    }
+
+    .grid.quotas .quota-status {
+      /* dash: apps/web/src/ui/button.tsx */
+      @apply font-medium text-foreground;
+    }
+
+    .grid.quotas .quota-ok {
+      /* dash: apps/web/src/ui/table.tsx */
+      @apply text-muted-foreground text-support;
+      font-weight: 400;
+    }
+
+    @container (max-width: 18rem) {
+      .grid.quotas td:nth-child(4) {
+        grid-column: 1 / -1;
+        margin-left: 0;
+        text-align: left;
+      }
     }
   }
 

@@ -27,6 +27,8 @@ export interface DiagnosticsView {
 }
 
 const NO_VALUE = "—";
+/** The one situation that stays quiet on a phone (`quota-ok`); any other, an unknown one too, is one to read. */
+const OK_STATUS = "ok";
 
 /** A fact the server has no value for is left out: a dash says nothing, and a row of dashes is noise. */
 function withValue(pairs: readonly (readonly [string, string])[]) {
@@ -92,8 +94,18 @@ function quotaTable(dom: Dom, report: OrganizationDiagnostics) {
       quotaText(quota.key),
       String(quota.used),
       String(quota.limit),
-      quotaStatusText(quota.status),
-    ])
+      dom.el(
+        "span",
+        {
+          class:
+            quota.status === OK_STATUS
+              ? "quota-status quota-ok"
+              : "quota-status",
+        },
+        quotaStatusText(quota.status)
+      ),
+    ]),
+    "quotas"
   );
 }
 
