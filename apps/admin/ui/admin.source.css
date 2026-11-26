@@ -388,7 +388,7 @@
 
   .facts {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
     gap: 0.5rem 1rem;
     margin: 0;
   }
@@ -630,7 +630,7 @@
     }
 
     .grid.quotas td:nth-child(2) {
-      margin-left: 0.5rem;
+      margin-left: 0.375rem;
     }
 
     .grid.quotas td:nth-child(2)::after {
@@ -638,7 +638,7 @@
     }
 
     .grid.quotas td:nth-child(4) {
-      margin-left: 0.5rem;
+      margin-left: 0.25rem;
       text-align: right;
       white-space: normal;
     }
@@ -650,7 +650,7 @@
 
     .grid.quotas .quota-ok {
       /* dash: apps/web/src/ui/table.tsx */
-      @apply text-muted-foreground;
+      @apply text-muted-foreground text-support;
       font-weight: 400;
     }
 
