@@ -3,6 +3,7 @@ import config from "../../playwright.e2e-real.config";
 import { closedEnvironment } from "../closed-environment";
 import { createJourneyUser, expect, test } from "../fixtures";
 import { journeyName } from "../journey-names";
+import { selectedPreviews } from "../previews";
 import {
   assertRunHyperdrives,
   ensureRunEnvironment,
@@ -43,7 +44,7 @@ test("os 7 bindings do wrangler.jsonc chegam a cada preview como os logins do ru
   // what each web server of the config really gets: Playwright's merge of the process environment and the
   // config's `env`, closed by serve.ts (closed-environment.ts)
   const servers = config.webServer as { env: Record<string, string> }[];
-  expect(servers).toHaveLength(2);
+  expect(servers).toHaveLength(selectedPreviews().length);
   for (const server of servers) {
     const effective = closedEnvironment(
       { ...process.env, ...server.env },
