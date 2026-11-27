@@ -20,7 +20,6 @@ const COUNT_WITH_DIFFERENCE =
   /Contagem registrada \(\+2 unidades\)\. Saldo atual: 7/;
 const COUNT_WITHOUT_DIFFERENCE =
   /Contagem registrada, sem diferença\. Saldo atual: 7/;
-const UNIT_COST_16_447368 = /^16\.447368$/;
 
 const ZONE = "America/Sao_Paulo";
 
@@ -593,8 +592,9 @@ test("estoque: contagem substitui o saldo e a sem diferença fica no histórico"
 
 /**
  * A receipt dated yesterday does not rewrite the cost snapshot of a sale already made: 10 units at R$ 12,50, one sold
- * (snapshot 12,50), then 10 at R$ 20,00 with yesterday's date. The snapshot stays and the new average is
- * (9 × 1250 + 10 × 2000) / 19 half-up to six places, computed here in integers.
+ * (snapshot 12,50), then 10 at R$ 20,03 with yesterday's date. The snapshot stays and the new average is
+ * (9 × 1250 + 10 × 2003) / 19 = 16.4631578947… which half-up makes 16.463158; truncating would give 16.463157, so
+ * the case tells the two roundings apart. The helper computes it in integers.
  */
 test("estoque: recebimento com data de ontem não reescreve o custo da venda anterior", async ({
   browser,
@@ -639,18 +639,19 @@ test("estoque: recebimento com data de ontem não reescreve o custo da venda ant
   await page.goto("/inventory");
   await openStockPanel(page, "Receber", product.productName);
   await page.getByLabel("Quantidade recebida").fill("10");
-  await page.getByLabel("Custo unitário (R$)").fill("20,00");
+  await page.getByLabel("Custo unitário (R$)").fill("20,03");
   await pickDate(page, "Data", yesterday);
   await reviewAndConfirm(page, "Confirmar recebimento");
   await expect(
     successMessage(page, "Recebimento registrado. Saldo atual: 19")
   ).toBeVisible();
+  await expect(successMessage(page, "Custo médio: R$ 16,46.")).toBeVisible();
 
   const expectedAverage = averageCostText(
     { cents: 1250, units: 9 },
-    { cents: 2000, units: 10 }
+    { cents: 2003, units: 10 }
   );
-  expect(expectedAverage).toMatch(UNIT_COST_16_447368);
+  expect(expectedAverage).toBe("16.463158");
   await expect
     .poll(() => balanceOf(sql, product.variantId))
     .toEqual({ cost: expectedAverage, quantity: 19 });
