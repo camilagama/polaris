@@ -1,12 +1,13 @@
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { ListBlock } from "@/ui/list-block";
+import { RetryButton } from "@/ui/retry-button";
 import {
   dropNavigationState,
   navigateInApp,
@@ -298,19 +299,13 @@ export function SaleHistoryPage() {
       {resultPeriod ? <ResultLink period={resultPeriod} /> : null}
       {more.refreshFailed ? (
         <Alert variant="warning">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <AlertDescription className="grid justify-items-start gap-2">
             {LIST_REFRESH_FAILED_TEXT}
-            <Button
+            <RetryButton
               onBlur={focus.onBlur}
               onClick={reload}
               onFocus={focus.onFocus}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-              Tentar novamente
-            </Button>
+            />
           </AlertDescription>
         </Alert>
       ) : null}
@@ -323,19 +318,13 @@ export function SaleHistoryPage() {
       ) : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {view.message}
-            <Button
+          <AlertDescription className="grid justify-items-start gap-2">
+            {withoutRetryAsk(view.message)}
+            <RetryButton
               onBlur={focus.onBlur}
               onClick={reload}
               onFocus={focus.onFocus}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-              Tentar novamente
-            </Button>
+            />
           </AlertDescription>
         </Alert>
       ) : null}

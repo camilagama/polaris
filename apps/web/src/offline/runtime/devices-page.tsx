@@ -2,7 +2,6 @@ import type { DeviceReadModel } from "@polaris/contracts";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -11,6 +10,7 @@ import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
 import { EmptyState } from "@/ui/empty-state";
 import { ListBlock } from "@/ui/list-block";
+import { RetryButton } from "@/ui/retry-button";
 import { orpcClient } from "../../lib/orpc";
 import { signInPath } from "../../lib/sign-in-path";
 import { loadAuthMethods } from "../../sign-in/sign-in-model";
@@ -286,12 +286,9 @@ export function ListSection({
       {loadFailed && online && !panel ? (
         <Alert variant="destructive">
           <CircleAlertIcon aria-hidden="true" />
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <AlertDescription className="grid justify-items-start gap-2">
             {loadFailed}
-            <Button onClick={onRetry} size="sm" type="button" variant="link">
-              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-              Tentar novamente
-            </Button>
+            <RetryButton onClick={onRetry} />
           </AlertDescription>
         </Alert>
       ) : null}

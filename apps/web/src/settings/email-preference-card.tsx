@@ -5,10 +5,11 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
-import { Button } from "@/ui/button";
 import { FieldError } from "@/ui/field";
 import { Label } from "@/ui/label";
+import { RetryButton } from "@/ui/retry-button";
 import { Separator } from "@/ui/separator";
 import { Skeleton } from "@/ui/skeleton";
 import { Switch } from "@/ui/switch";
@@ -229,18 +230,13 @@ export function EmailPreferenceCard({
         {preference || loadError ? null : <Skeleton className="h-10 w-full" />}
         {loadError ? (
           <div className="grid justify-items-start gap-2">
-            <FieldError>{loadError}</FieldError>
-            <Button
+            <FieldError>{withoutRetryAsk(loadError)}</FieldError>
+            <RetryButton
               aria-busy={readingNow}
               onClick={handleRetry}
               ref={retryButton}
-              size="sm"
-              type="button"
-              variant="outline"
               {...connectionControlProps(online)}
-            >
-              Tentar novamente
-            </Button>
+            />
           </div>
         ) : null}
         {preference && preference.sent > 0 ? (

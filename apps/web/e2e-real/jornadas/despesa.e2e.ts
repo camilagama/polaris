@@ -612,9 +612,7 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
   ).toBeVisible();
   const row = panel.locator("[data-category-id]").filter({ hasText: name });
   await expect(row).toHaveCount(0);
-  await panel
-    .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
-    .check();
+  await panel.getByRole("checkbox", { name: "Incluir arquivadas" }).check();
   await expect(row.getByText("Arquivada", { exact: true })).toBeVisible();
   await expect
     .poll(async () => categoriesOf(sql, organizationId))
@@ -720,9 +718,7 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
   // restoring brings the same row back with the mark off
   await page.goto("/expenses");
   await page.getByRole("tab", { name: "Categorias" }).click();
-  await panel
-    .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
-    .check();
+  await panel.getByRole("checkbox", { name: "Incluir arquivadas" }).check();
   await panel
     .getByRole("button", { exact: true, name: `Restaurar categoria ${name}` })
     .click();

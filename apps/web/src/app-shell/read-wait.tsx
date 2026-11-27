@@ -1,9 +1,8 @@
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type ReactNode, useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
 import { SLOW_READ_TEXT, STALE_COPY_TITLE } from "../lib/read-wait-text";
+import { RetryButton } from "@/ui/retry-button";
 
 /** After this, a read still going is said on the screen (the tries of a read may take ~6 s more). */
 const SLOW_READ_MS = 3000;
@@ -54,16 +53,7 @@ export function StaleCopyNotice({
       <AlertDescription>
         <p>{shown}</p>
         {children}
-        <Button
-          className="mt-1.5"
-          onClick={onRetry}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-          Tentar novamente
-        </Button>
+        <RetryButton className="mt-1.5" onClick={onRetry} />
       </AlertDescription>
     </Alert>
   );

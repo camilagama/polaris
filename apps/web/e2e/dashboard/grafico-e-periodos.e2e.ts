@@ -885,7 +885,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     server.failure = { code: "INTERNAL_SERVER_ERROR", status: 500 };
     await choosePreset(page, "Últimos 30 dias");
     await expect(page.getByRole("alert")).toContainText(
-      "Não foi possível carregar o resultado. Tente novamente.",
+      "Não foi possível carregar o resultado.",
       { timeout: 15_000 }
     );
     await expect(kpiCards(page)).toHaveCount(0);

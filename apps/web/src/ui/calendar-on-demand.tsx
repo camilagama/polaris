@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useHasUnsentWork } from "@/lib/unsent-work";
+import { RetryButton } from "./retry-button";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import type { CalendarProps } from "./calendar";
@@ -222,11 +223,7 @@ export function CalendarFailure({
     return (
       <>
         <p>{offline ? OFFLINE_TEXT : FAILED_TEXT}</p>
-        {offline ? null : (
-          <Button onClick={onRetry} size="sm" variant="outline">
-            Tentar novamente
-          </Button>
-        )}
+        {offline ? null : <RetryButton onClick={onRetry} />}
       </>
     );
   }

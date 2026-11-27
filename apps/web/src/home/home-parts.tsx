@@ -1,4 +1,3 @@
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import {
@@ -9,6 +8,7 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import {
@@ -18,13 +18,13 @@ import {
   BlockLink,
   BlockPanel,
 } from "@/ui/block";
-import { Button } from "@/ui/button";
 import {
   CardFrame,
   CardFrameFooter,
   CardFrameHeader,
   CardFramePanel,
 } from "@/ui/card";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 
 /** The role of the person in the store: the foot of a block shows only for who has the capability of its destination. */
@@ -227,19 +227,10 @@ export function BlockError({
   return (
     <Alert className={className} variant="destructive">
       <TriangleAlertIcon aria-hidden="true" />
-      <AlertTitle>{message}</AlertTitle>
+      <AlertTitle>{onRetry ? withoutRetryAsk(message) : message}</AlertTitle>
       {onRetry ? (
         <AlertDescription>
-          <Button
-            className="mt-1.5"
-            onClick={onRetry}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-            Tentar novamente
-          </Button>
+          <RetryButton className="mt-1.5" onClick={onRetry} />
         </AlertDescription>
       ) : null}
     </Alert>

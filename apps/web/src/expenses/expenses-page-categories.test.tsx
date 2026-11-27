@@ -200,7 +200,7 @@ describe("the Categorias part is a list block per group", () => {
     await screen.findByText(FIRST_ROW);
     await openCategories(user);
     await user.click(
-      screen.getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
+      screen.getByRole("checkbox", { name: "Incluir arquivadas" })
     );
 
     const region = await screen.findByRole("region", {
@@ -369,9 +369,7 @@ describe("a rename while the page is moving", () => {
 
     await renameFrete(user, "Transporte");
 
-    await screen.findByText(
-      "Não foi possível carregar as despesas. Tente novamente."
-    );
+    await screen.findByText("Não foi possível carregar as despesas.");
     expect(screen.getByText(THIRD_ROW)).toBeTruthy();
     expect(screen.getByText(FIRST_ROW)).toBeTruthy();
   });
@@ -548,14 +546,10 @@ describe("a failed re-read of the list", () => {
 
     await renameFrete(user, "Transporte");
     await user.click(screen.getByRole("tab", { name: "Lançamentos" }));
-    await screen.findByText(
-      "Não foi possível carregar as despesas. Tente novamente."
-    );
+    await screen.findByText("Não foi possível carregar as despesas.");
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     await waitFor(() => expect(cursorsRead().length).toBeGreaterThan(2));
-    await screen.findByText(
-      "Não foi possível carregar as despesas. Tente novamente."
-    );
+    await screen.findByText("Não foi possível carregar as despesas.");
     list.mockImplementation((input: ListInput) =>
       Promise.resolve(answer(input))
     );
@@ -610,9 +604,7 @@ describe("a failed re-read after Carregar mais", () => {
     await waitFor(() =>
       expect(list.mock.calls.length).toBeGreaterThan(beforeRetry)
     );
-    await screen.findByText(
-      "Não foi possível carregar as despesas. Tente novamente."
-    );
+    await screen.findByText("Não foi possível carregar as despesas.");
     list.mockImplementation((input: ListInput) =>
       Promise.resolve(threePages(input))
     );

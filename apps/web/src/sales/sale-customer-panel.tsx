@@ -1,4 +1,3 @@
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type ComponentProps,
   type FormEvent,
@@ -9,10 +8,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { BlockHeader as Heading } from "@/ui/block-header";
+import { RetryButton } from "@/ui/retry-button";
 import { TextLink } from "@/ui/text-link";
 import {
   Dialog,
@@ -733,17 +734,9 @@ function CustomerPanelBody({
     <>
       {currentView.kind === "error" ? (
         <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {currentView.label}
-            <Button
-              onClick={link.handleRetry}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-              Tentar novamente
-            </Button>
+          <AlertDescription className="grid justify-items-start gap-2">
+            {withoutRetryAsk(currentView.label)}
+            <RetryButton onClick={link.handleRetry} />
           </AlertDescription>
         </Alert>
       ) : (
@@ -755,23 +748,19 @@ function CustomerPanelBody({
             <dd
               className={
                 currentView.kind === "customer-error"
-                  ? "focus-ring flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm text-destructive"
+                  ? "focus-ring grid justify-items-start gap-2 rounded-sm text-destructive"
                   : "focus-ring rounded-sm font-medium [overflow-wrap:anywhere]"
               }
               ref={link.nameLine}
               tabIndex={-1}
             >
-              <span role="status">{currentView.label}</span>
+              <span role="status">
+                {currentView.kind === "customer-error"
+                  ? withoutRetryAsk(currentView.label)
+                  : currentView.label}
+              </span>
               {currentView.kind === "customer-error" ? (
-                <Button
-                  onClick={link.retryName}
-                  size="sm"
-                  type="button"
-                  variant="link"
-                >
-                  <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-                  Tentar novamente
-                </Button>
+                <RetryButton onClick={link.retryName} />
               ) : null}
             </dd>
           </div>

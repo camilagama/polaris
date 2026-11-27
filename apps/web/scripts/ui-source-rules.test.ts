@@ -2151,3 +2151,151 @@ describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * "Tentar novamente" (DESIGN.md "Tentar novamente é o RetryButton"): the button of a notice that says a read failed is
+ * `RetryButton` (`ui/retry-button.tsx`), the only file with that label, as JSX text or as a string of its own,
+ * besides the exact list below, each entry with its reason. `variant="link"` is for a link inside a paragraph
+ * (rule 9), so a "Tentar novamente" written by hand fails here in any variant. "Tentar novamente (seguro)" is another
+ * action, and a sentence that mentions the button is neither the JSX text nor the whole string of one.
+ */
+const RETRY_COMPONENT = "src/ui/retry-button.tsx";
+export const RETRY_ELSEWHERE: readonly { file: string; why: string }[] = [
+  {
+    file: "src/app-shell/app-shell.tsx",
+    why: "a falha do app: botão de tinta, a única ação do painel (DESIGN.md, estado de falha do app)",
+  },
+  {
+    file: "src/app-shell/error-boundary.tsx",
+    why: "a falha da tela: botão de tinta, a única ação do painel (DESIGN.md, estado de falha do app)",
+  },
+  {
+    file: "src/home/home-page.tsx",
+    why: "a linha de apoio ao lado do período, não um aviso: botão só texto (`ghost`), como a regra 9 pede",
+  },
+  {
+    file: "src/legal/legal-frame.tsx",
+    why: "o texto legal é uma página fora do shell, com o botão de contorno grande da página",
+  },
+  {
+    file: "src/offline-poc/outbox-lab.tsx",
+    why: "laboratório do outbox, feito de `<button>` crus: não é uma tela do produto",
+  },
+  {
+    file: "src/offline/attention-panel.tsx",
+    why: "a ação de um comando guardado na fila de pendências, que o envia de novo: não relê uma tela",
+  },
+  {
+    file: "src/sign-in/password-texts.ts",
+    why: "o rótulo do botão de contorno do login e do desafio (`EntryRetry`), página fora do shell",
+  },
+  {
+    file: "src/sign-in/sign-in-texts.ts",
+    why: "o rótulo do botão de contorno do login com o Google desligado, página fora do shell",
+  },
+];
+
+const RETRY_TEXT = />\s*Tentar novamente\s*</;
+const RETRY_STRING = /(["'`])Tentar novamente\1/;
+const RETRY_SCOPE = sourcesUnder("src").filter((path) => TS_OR_TSX.test(path));
+const writesRetryLabel = (source: string) => {
+  const code = withoutComments(source);
+  return RETRY_TEXT.test(code) || RETRY_STRING.test(code);
+};
+
+export function retryButtonFaults(
+  files: readonly string[],
+  source: (path: string) => string
+): string[] {
+  const allowed = new Set([
+    RETRY_COMPONENT,
+    ...RETRY_ELSEWHERE.map((entry) => entry.file),
+  ]);
+  return files
+    .filter((path) => !allowed.has(path) && writesRetryLabel(source(path)))
+    .map(
+      (path) =>
+        `${path}: "Tentar novamente" escrito à mão: use <RetryButton> (contorno, pequeno, sem ícone, sob a frase), nunca variant="link"`
+    );
+}
+
+describe('"Tentar novamente" é o RetryButton', () => {
+  it("a árvore de src foi lida e a peça está nela", () => {
+    expect(RETRY_SCOPE.length).toBeGreaterThan(500);
+    expect(RETRY_SCOPE).toContain(RETRY_COMPONENT);
+    expect(RETRY_SCOPE).toContain("src/inventory/inventory-page.tsx");
+  });
+
+  it("nenhum .tsx de src escreve 'Tentar novamente' fora da peça e da lista", () => {
+    expect(retryButtonFaults(RETRY_SCOPE, read)).toEqual([]);
+  });
+
+  it("a peça é o botão de contorno pequeno, sem ícone, com o rótulo e sem variant link", () => {
+    const code = withoutComments(read(RETRY_COMPONENT));
+    expect(code).toContain('size="sm"');
+    expect(code).toContain('variant="outline"');
+    expect(writesRetryLabel(code)).toBe(true);
+    expect(code).not.toContain("Icon");
+    expect(code).not.toContain("link");
+  });
+
+  it("a lista é exata e ordenada: cada arquivo dela ainda escreve o texto e a razão está escrita", () => {
+    const files = RETRY_ELSEWHERE.map((entry) => entry.file);
+    expect(files).toEqual([...files].sort());
+    for (const entry of RETRY_ELSEWHERE) {
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(writesRetryLabel(read(entry.file)), entry.file).toBe(true);
+    }
+  });
+
+  it.each([
+    [
+      '<Button onClick={retry} size="sm" type="button" variant="link">\n  Tentar novamente\n</Button>',
+      1,
+    ],
+    [
+      '<Button onClick={() => retry()} variant="link">\n  <RefreshCwIcon data-icon="inline-start" />\n  Tentar novamente\n</Button>',
+      1,
+    ],
+    ['<Button variant="outline">Tentar novamente</Button>', 1],
+    ['<Button variant="ghost">{"Tentar novamente"}</Button>', 1],
+    ["<a href={url}>Tentar novamente</a>", 1],
+    ['export const RETRY = "Tentar novamente";', 1],
+    ["const retry = { label: 'Tentar novamente' };", 1],
+    ["const label = busy ? `Tentando…` : `Tentar novamente`;", 1],
+  ])("%s reprova num arquivo qualquer (controle plantado)", (text, count) => {
+    expect(
+      retryButtonFaults(["src/sales/sale-detail-page.tsx"], () => text)
+    ).toHaveLength(count);
+  });
+
+  it("a exceção vale para o caminho exato: o mesmo nome em outra pasta reprova (controle plantado)", () => {
+    const plant = '<Button variant="link">\n  Tentar novamente\n</Button>';
+    expect(retryButtonFaults(["src/ui/retry-button.tsx"], () => plant)).toEqual(
+      []
+    );
+    expect(
+      retryButtonFaults(["src/legal/legal-frame.tsx"], () => plant)
+    ).toEqual([]);
+    expect(
+      retryButtonFaults(["src/x/legal-frame.tsx"], () => plant)
+    ).toHaveLength(1);
+    expect(
+      retryButtonFaults(["src/legal/legal-frame.tsx.bak"], () => plant)
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    "<RetryButton onClick={retry} />",
+    "<Button>Tentar novamente (seguro)</Button>",
+    "{/* <Button>Tentar novamente</Button> */}",
+    '// <Button variant="link">Tentar novamente</Button>',
+    "<p>Regularize o plano e toque em Tentar novamente.</p>",
+    'const label = "Tentar novamente (seguro)";',
+    'const sentence = "Regularize o plano e toque em Tentar novamente.";',
+  ])("%s passa (controle plantado)", (text) => {
+    expect(
+      retryButtonFaults(["src/sales/sale-detail-page.tsx"], () => text)
+    ).toEqual([]);
+  });
+});

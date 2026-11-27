@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
-import { Button } from "@/ui/button";
 import { CardFrame, CardFrameHeader, CardFramePanel } from "@/ui/card";
 import { Progress } from "@/ui/progress";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 import {
   keptLine,
@@ -179,11 +179,7 @@ export function PlanLoadError({
       <AlertTitle>Não foi possível carregar a assinatura.</AlertTitle>
       <AlertDescription className="grid justify-items-start gap-2">
         {refusal.text}
-        {refusal.retry ? (
-          <Button onClick={onRetry} size="sm" type="button" variant="outline">
-            Tentar novamente
-          </Button>
-        ) : null}
+        {refusal.retry ? <RetryButton onClick={onRetry} /> : null}
       </AlertDescription>
     </Alert>
   );
