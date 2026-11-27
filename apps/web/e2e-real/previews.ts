@@ -1,6 +1,6 @@
 import { E2E_REAL_PORTS } from "../e2e/run-settings";
 
-export type Preview = keyof typeof E2E_REAL_PORTS;
+type Preview = keyof typeof E2E_REAL_PORTS;
 
 const ALL = Object.keys(E2E_REAL_PORTS) as Preview[];
 
