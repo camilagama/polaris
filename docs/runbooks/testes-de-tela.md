@@ -89,6 +89,7 @@ Os três configs de navegador de `apps/web` abrem o próprio servidor (build e s
   | `E2E_OFFLINE_POC_PORT` | `playwright.offline-poc.config.ts` (`vite preview`) | 4173 |
   | `E2E_PWA_PORT` | `playwright.pwa.config.ts` (`scripts/serve-static.mjs`) | 4174 |
   | `E2E_REAL_PORT_ONLINE`, `E2E_REAL_PORT_RUNTIME` | `playwright.e2e-real.config.ts` | 4321, 4322 |
+  | `E2E_REAL_PREVIEWS` | `playwright.e2e-real.config.ts` (quais previews sobem) | `online` e `runtime-ligado` |
 
   A segunda sessão escolhe portas livres, por exemplo `E2E_OFFLINE_POC_PORT=4273 E2E_PWA_PORT=4274 bun run test:offline-browser`. Os testes leem a mesma variável (`apps/web/e2e/run-settings.ts`), então a origem que eles conferem acompanha a porta. Os testes de atualização (`update*.e2e.ts`) não usam porta fixa: cada worker builda em `dist/pwa-e2e-update-<n>` e serve de um servidor em porta livre (`e2e-pwa/support.ts`).
 - Cada árvore tem o próprio `dist` e o próprio `node_modules`; o que as sessões ainda dividem é a CPU. Servidor que sobrou de uma execução interrompida (um `timeout` que matou o Playwright e deixou o `vite preview`) continua escutando e faz a próxima falhar com a mensagem acima: ache o PID com `ss -ltnp | grep :<porta>` e encerre só o seu.

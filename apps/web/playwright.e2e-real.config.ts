@@ -1,6 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 import { E2E_REAL_PORTS as PORTS } from "./e2e/run-settings";
 import {
+  ONLINE_B_JOURNEYS,
+  RUNTIME_ONLY_JOURNEYS,
+} from "./e2e-real/journey-parts.list";
+import { selectedPreviews } from "./e2e-real/previews";
+import {
   ensureRunEnvironment,
   ownerDatabaseUrl,
   previewEnvironment,
@@ -72,15 +77,14 @@ export default defineConfig({
         "harness/chave-do-runtime.e2e.ts",
       ],
       // the closure journeys need the preview with the lease and sync keys (the runtime one)
-      testIgnore: [
-        "jornadas/encerramento.e2e.ts",
-        "jornadas/encerramento-aparelho.e2e.ts",
-        "jornadas/resultado-historico-offline.e2e.ts",
-        "jornadas/venda-saldo-curto-sem-conexao.e2e.ts",
-        "jornadas/venda-dividida-sem-conexao.e2e.ts",
-        "jornadas/sair-e-recarregar.e2e.ts",
-        "jornadas/estoque-produto-sem-conexao.e2e.ts",
-      ],
+      testIgnore: [...RUNTIME_ONLY_JOURNEYS, ...ONLINE_B_JOURNEYS],
+      use: { ...desktop, baseURL: origin("online") },
+    },
+    // the second half of the online journeys, same preview as `online`: the CI runs it as a part of its own
+    {
+      dependencies: ["pilha"],
+      name: "online-b",
+      testMatch: [...ONLINE_B_JOURNEYS],
       use: { ...desktop, baseURL: origin("online") },
     },
     {
@@ -89,13 +93,7 @@ export default defineConfig({
       testMatch: [
         "jornadas/cliente.e2e.ts",
         "jornadas/venda.e2e.ts",
-        "jornadas/venda-saldo-curto-sem-conexao.e2e.ts",
-        "jornadas/venda-dividida-sem-conexao.e2e.ts",
-        "jornadas/estoque-produto-sem-conexao.e2e.ts",
-        "jornadas/encerramento.e2e.ts",
-        "jornadas/encerramento-aparelho.e2e.ts",
-        "jornadas/sair-e-recarregar.e2e.ts",
-        "jornadas/resultado-historico-offline.e2e.ts",
+        ...RUNTIME_ONLY_JOURNEYS,
         "harness/chave-do-runtime.e2e.ts",
       ],
       use: { ...desktop, baseURL: origin("runtime-ligado") },
@@ -118,22 +116,21 @@ export default defineConfig({
   testMatch: "**/*.e2e.ts",
   timeout: 60_000,
   use: { trace: "retain-on-failure" },
-  // one after another: each preview reads its own build before the next build rewrites the deploy pointer (serve.ts)
-  webServer: (owner ? (Object.keys(PORTS) as (keyof typeof PORTS)[]) : []).map(
-    (project) => ({
-      command: `node e2e-real/serve.ts ${project} ${PORTS[project]}`,
-      env: previewEnvironment(
-        owner as URL,
-        run,
-        origin(project),
-        project === "runtime-ligado"
-      ),
-      gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5000 },
-      reuseExistingServer: false,
-      stdout: "ignore" as const,
-      timeout: 180_000,
-      url: `${origin(project)}/health`,
-    })
-  ),
+  // one after another: each preview reads its own build before the next build rewrites the deploy pointer (serve.ts);
+  // E2E_REAL_PREVIEWS brings up only some of them (the parts of the CI job), and with it unset both come up
+  webServer: (owner ? selectedPreviews() : []).map((project) => ({
+    command: `node e2e-real/serve.ts ${project} ${PORTS[project]}`,
+    env: previewEnvironment(
+      owner as URL,
+      run,
+      origin(project),
+      project === "runtime-ligado"
+    ),
+    gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5000 },
+    reuseExistingServer: false,
+    stdout: "ignore" as const,
+    timeout: 180_000,
+    url: `${origin(project)}/health`,
+  })),
   workers: 1, // SQLite WASM is memory-intensive and there is one Worker and one PostgreSQL: serial.
 });
