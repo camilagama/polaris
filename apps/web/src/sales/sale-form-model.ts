@@ -1202,7 +1202,7 @@ function describeSettlementDays(days: number | null): string {
   if (days === null) {
     return "prazo desconhecido — não é zero";
   }
-  return `prazo estimado de ${days} ${days === 1 ? "dia" : "dias"} — estimativa, não data de liquidação`;
+  return `${days} ${days === 1 ? "dia" : "dias"} (estimativa, não é a data de liquidação)`;
 }
 
 export interface FeePreview {

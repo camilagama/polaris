@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeePreview } from "./sale-form-model";
+import type { FeePreview, SplitEvaluation } from "./sale-form-model";
 
 const state = vi.hoisted(() => ({ hidden: false }));
 
@@ -9,7 +9,9 @@ vi.mock("@/lib/hidden-values", async (importOriginal) => ({
   useHiddenValues: () => [state.hidden, () => undefined],
 }));
 
-const { FeePreviewDetails, Money } = await import("./sale-summary-panel");
+const { FeePreviewDetails, Money, partsSentence } = await import(
+  "./sale-summary-panel"
+);
 
 const PREVIEW: FeePreview = {
   anticipation: { text: "não solicitada", tone: "not_applicable" },
@@ -79,5 +81,27 @@ describe("the amounts of the Resumo, with Esconder valores", () => {
     const html = renderToStaticMarkup(<FeePreviewDetails preview={PREVIEW} />);
     expect(html).toContain("2,5% (<span");
     expect(html).toContain("R$ 2,50");
+  });
+});
+
+describe("a frase falada das partes", () => {
+  const split = (settlementText: string) =>
+    ({
+      feesTotal: null,
+      partPreviews: [{ ...PREVIEW, settlementText }, null],
+    }) as unknown as SplitEvaluation;
+
+  it("diz 'prazo' antes do valor conhecido, que na tela vem sem o rótulo", () => {
+    expect(
+      partsSentence(split("30 dias (estimativa, não é a data de liquidação)"))
+    ).toBe(
+      "Parte 1: taxa 2,5% (R$ 2,50), prazo 30 dias (estimativa, não é a data de liquidação)."
+    );
+  });
+
+  it("não repete 'prazo' quando o prazo é desconhecido", () => {
+    expect(partsSentence(split("prazo desconhecido — não é zero"))).toBe(
+      "Parte 1: taxa 2,5% (R$ 2,50), prazo desconhecido — não é zero."
+    );
   });
 });

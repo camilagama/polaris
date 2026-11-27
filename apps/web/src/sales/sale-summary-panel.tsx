@@ -243,12 +243,17 @@ export function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
   );
 }
 
+/** The visible value has no "prazo" (the row label carries it); the spoken sentence has no label, so it says it. */
+function spokenSettlement(text: string): string {
+  return text.startsWith(UNKNOWN_SETTLEMENT) ? text : `prazo ${text}`;
+}
+
 /** What the live region of the parts reads once the person leaves an amount: each part's fee and term, then the sum. */
-function partsSentence(split: SplitEvaluation): string {
+export function partsSentence(split: SplitEvaluation): string {
   const parts = split.partPreviews.map((preview, index) =>
     preview === null
       ? null
-      : `Parte ${index + 1}: taxa ${preview.processing.text}, ${preview.settlementText}.`
+      : `Parte ${index + 1}: taxa ${preview.processing.text}, ${spokenSettlement(preview.settlementText)}.`
   );
   const total =
     split.feesTotal === null
