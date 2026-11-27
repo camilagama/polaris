@@ -8,6 +8,7 @@ import {
 } from "../app-shell/navigation-model";
 import { PageLoading } from "../app-shell/page-loading";
 import { ScreenTabs, type TabPanel } from "../app-shell/screen-tabs";
+import { SCREEN_TITLE_CLASS } from "../app-shell/screen-title";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { accountTabsShown, usePasswordOn } from "./settings-tabs";
 
@@ -70,7 +71,7 @@ export function AccountScreen() {
   if (waiting) {
     return (
       <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-        <h1 className="text-title">{ACCOUNT_LABEL}</h1>
+        <h1 className={SCREEN_TITLE_CLASS}>{ACCOUNT_LABEL}</h1>
         <PageLoading />
       </div>
     );

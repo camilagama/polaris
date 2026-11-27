@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ScreenTitle, TabPanelScope, TitleLine } from "./screen-title";
+import {
+  SCREEN_TITLE_CLASS,
+  SECTION_TITLE_CLASS,
+  ScreenTitle,
+  TabPanelScope,
+  TitleLine,
+} from "./screen-title";
 
 const BACK = { href: "/sales/history", label: "Voltar para o histórico" };
 const WORD_ON_SCREEN = />\s*Voltar/;
@@ -132,6 +138,27 @@ describe("ScreenTitle", () => {
         expect.arrayContaining(["min-w-0", "[overflow-wrap:anywhere]"])
       );
     }
+  });
+
+  it("a classe exportada do título hifeniza e quebra por letra só em último caso, e é a que o ScreenTitle usa", () => {
+    for (const exported of [SCREEN_TITLE_CLASS, SECTION_TITLE_CLASS]) {
+      expect(exported.split(" ")).toEqual(
+        expect.arrayContaining(["hyphens-auto", "[overflow-wrap:anywhere]"])
+      );
+    }
+    expect(
+      titleTag(renderToStaticMarkup(<ScreenTitle>Produtos</ScreenTitle>))
+        .classes
+    ).toEqual(SCREEN_TITLE_CLASS.split(" "));
+    expect(
+      titleTag(
+        renderToStaticMarkup(
+          <TabPanelScope>
+            <ScreenTitle>Metas</ScreenTitle>
+          </TabPanelScope>
+        )
+      ).classes
+    ).toEqual(SECTION_TITLE_CLASS.split(" "));
   });
 
   it("leva o texto como filho, uma só vez, e repassa os atributos ao título", () => {

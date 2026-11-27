@@ -14,6 +14,7 @@ import {
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { RefreshButton } from "@/ui/refresh-button";
 import { deviceSaleKept } from "../app-shell/first-steps";
+import { SCREEN_TITLE_CLASS } from "../app-shell/screen-title";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
@@ -1127,7 +1128,7 @@ export function SalePage() {
       : null;
   return (
     <div className="@container/sale grid gap-4 font-sans text-foreground text-sm antialiased">
-      <h1 className="text-title">Nova venda</h1>
+      <h1 className={SCREEN_TITLE_CLASS}>Nova venda</h1>
       <SaleDraftBar
         canClear={!locked}
         count={chosen}

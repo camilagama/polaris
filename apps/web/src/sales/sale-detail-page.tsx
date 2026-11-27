@@ -14,7 +14,11 @@ import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { HelpTip } from "@/ui/help-tip";
 import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
-import { type TitleBack, TitleLine } from "../app-shell/screen-title";
+import {
+  SCREEN_TITLE_CLASS,
+  type TitleBack,
+  TitleLine,
+} from "../app-shell/screen-title";
 import { invalidatePreviousWindow } from "../home/previous-window-copy";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
@@ -115,7 +119,7 @@ interface DetailContentProps {
 function DetailTitle() {
   return (
     <div className="flex items-center gap-1">
-      <h1 className="text-title">Detalhe da venda</h1>
+      <h1 className={SCREEN_TITLE_CLASS}>Detalhe da venda</h1>
       <HelpTip about="Detalhe da venda">
         A venda confirmada é um registro que não muda. Cancelamento e cliente
         são registros à parte.
