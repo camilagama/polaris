@@ -384,7 +384,7 @@ export function ProductList({
         icon={TagIcon}
         title={
           status === "active"
-            ? "Nenhum produto ainda"
+            ? "Nenhum produto ainda."
             : "Nenhum produto arquivado."
         }
       />
