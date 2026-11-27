@@ -50,10 +50,10 @@ export function OperationFailureNotice({
                 type="button"
                 variant="destructive"
               >
-                Sim, descartar esta tentativa
+                Descartar tentativa
               </Button>
               <Button onClick={onDiscardCancel} type="button" variant="outline">
-                Voltar
+                Manter tentativa
               </Button>
             </div>
           </>
