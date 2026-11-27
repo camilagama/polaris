@@ -409,7 +409,7 @@ export function AddItemButton({
   }
   return (
     <Button
-      className="w-full sm:w-auto sm:justify-self-start"
+      className="justify-self-start max-md:w-full"
       disabled={total >= MAX_SALE_ITEMS}
       onClick={onAdd}
       type="button"

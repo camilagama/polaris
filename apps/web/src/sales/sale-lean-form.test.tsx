@@ -201,6 +201,19 @@ describe("o contador e o Adicionar item da venda", () => {
     expect(html).toContain("Adicionar item");
   });
 
+  it("o botão ocupa a largura toda abaixo de 760 px (max-md), o mesmo ponto das outras ações de formulário", () => {
+    const form: SaleFormState = {
+      ...createBlankSaleForm(ids()),
+      items: [{ ...chosenItem, draftId: "d1" }],
+    };
+    const html = renderItemsChrome(form);
+    expect(html).toContain("max-md:w-full");
+    expect(html).toContain("justify-self-start");
+    expect(html).not.toContain("sm:w-auto");
+    expect(html).not.toContain(" w-full");
+    expect(html).not.toContain('"w-full');
+  });
+
   it("1 escolhida e 1 linha vazia: o contador diz '1 linha · 1 unidade'", () => {
     const form: SaleFormState = {
       ...createBlankSaleForm(ids()),
