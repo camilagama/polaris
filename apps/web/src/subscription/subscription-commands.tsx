@@ -433,7 +433,7 @@ function OverduePayment({
       <p className="m-0 text-muted-foreground">{overdueText(plan)}</p>
       <Button
         aria-disabled={pending || undefined}
-        className={cn(OFF, WRAPS)}
+        className={cn(OFF, WRAPS, "max-md:w-full")}
         onClick={pending ? undefined : open}
         type="button"
       >
