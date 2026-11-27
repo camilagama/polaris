@@ -229,6 +229,37 @@ describe("the Categorias part is a list block per group", () => {
   });
 });
 
+describe("the Categorias part has no card around the list blocks", () => {
+  it("puts no plain block or card above a group's region, while loaded and while loading", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText(FIRST_ROW);
+    await openCategories(user);
+
+    const region = await screen.findByRole("region", {
+      name: "Operacional/Administrativa",
+    });
+    expect(region.closest('[data-block="plain"]')).toBeNull();
+    expect(region.parentElement?.closest('[data-slot="card"]')).toBeNull();
+    const controls = screen.getByRole("button", { name: "Nova categoria" });
+    expect(controls.closest('[data-slot="card"]')).toBeNull();
+    expect(controls.closest('[data-block="plain"]')).toBeNull();
+  });
+
+  it("keeps the loading block outside any card", async () => {
+    listCategories.mockImplementation(() => new Promise(() => undefined));
+    const user = userEvent.setup();
+    renderPage();
+    await openCategories(user);
+
+    const block = await screen.findByRole("region", {
+      name: "Categorias de despesa",
+    });
+    expect(block.closest('[data-block="plain"]')).toBeNull();
+    expect(block.parentElement?.closest('[data-slot="card"]')).toBeNull();
+  });
+});
+
 describe("the Categorias part while the categories load", () => {
   it("draws the skeleton block, not the rows, and no group yet", async () => {
     listCategories.mockImplementation(() => new Promise(() => undefined));
