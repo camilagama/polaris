@@ -1646,6 +1646,60 @@ test.describe("o ritmo da meta na barra (no dia 14/10: 13 dos 31 dias do períod
     expect(Math.abs((a?.height ?? 0) - (b?.height ?? 0))).toBeLessThan(1);
   });
 
+  test("a 360 px as duas fileiras de ações ficam encostadas: o vão entre elas não passa o da barra à primeira, e as áreas de 44 px não se sobrepõem", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeGoalServer();
+    server.seed({
+      kind: "net_sales",
+      name: "Meta de outubro",
+      target: "1400.00",
+    });
+    await openGoals(page, server);
+    const goal = card(page, "Meta de outubro");
+    const edit = goal.getByRole("button", {
+      name: "Editar meta Meta de outubro",
+    });
+    const history = goal.getByRole("button", { name: "Histórico do alvo" });
+    const cancel = goal.getByRole("button", {
+      name: "Cancelar meta Meta de outubro",
+    });
+    const [track, first, second, last] = await Promise.all([
+      goal.locator("[data-slot=progress-track]").boundingBox(),
+      edit.boundingBox(),
+      history.boundingBox(),
+      cancel.boundingBox(),
+    ]);
+    if (!(track && first && second && last)) {
+      throw new Error("o cartão da meta não mediu");
+    }
+    expect(
+      last.y,
+      "o caso só vale com Cancelar meta numa segunda fileira"
+    ).toBeGreaterThan(first.y + first.height);
+    const rowGap = last.y - (first.y + first.height);
+    const barGap = first.y - (track.y + track.height);
+    expect(rowGap).toBeLessThanOrEqual(barGap);
+    expect(
+      rowGap,
+      "o vão é o mínimo que as áreas de 44 px pedem com toque"
+    ).toBeLessThanOrEqual(12);
+    const AREA = 44;
+    const overlap = AREA - first.height - rowGap;
+    expect(
+      overlap,
+      "as áreas de toque das duas fileiras não se encontram"
+    ).toBeLessThanOrEqual(0);
+    expect(Math.abs(first.y - second.y)).toBeLessThanOrEqual(1);
+    expect(first.x).toBeLessThan(second.x);
+    expect(last.x).toBeLessThanOrEqual(first.x + 1);
+  });
+
   test("abrir a aba não pede nada além do que pedia", async ({ page }) => {
     const server = new FakeGoalServer();
     server.seed({
