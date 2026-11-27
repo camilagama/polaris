@@ -2,8 +2,11 @@ import type { ProductVariantOptionName } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { planRoom } from "../subscription/limit-help-model";
 import {
+  ADD_AT_LIMIT,
+  ADD_NEEDS_VALUES,
   ALL_COMBINATIONS_PRESENT,
   addAllCombinations,
+  addCombinationReason,
   addAllCombinationsLabel,
   clearDefaultSkuLabel,
   clearedDefaultSkuNotice,
@@ -221,6 +224,38 @@ describe("validação das combinações", () => {
     const result = validateVariantDrafts([], values, []);
     expect(result.canAdd).toBe(false);
     expect(result.canSubmit).toBe(false);
+  });
+
+  it("o motivo de não poder adicionar: opção sem valor, 50 combinações, ou nenhum", () => {
+    const row = (index: number) => ({
+      values: { color: "Azul", size: String(index) },
+    });
+    const full = Array.from({ length: MAX_VARIANTS }, (_, index) => row(index));
+    const missingValues = { color: ["Azul"], model: [], size: [] };
+
+    expect(validateVariantDrafts([], values, []).addBlocker).toBe(
+      "missing_values"
+    );
+    expect(validateVariantDrafts(names, missingValues, []).addBlocker).toBe(
+      "missing_values"
+    );
+    expect(validateVariantDrafts(names, values, full).addBlocker).toBe("limit");
+    expect(
+      validateVariantDrafts(names, values, full.slice(1)).addBlocker
+    ).toBeNull();
+    expect(validateVariantDrafts(names, values, []).addBlocker).toBeNull();
+  });
+
+  it("as frases dos motivos: a do limite leva o número de MAX_VARIANTS", () => {
+    expect(addCombinationReason("missing_values")).toBe(ADD_NEEDS_VALUES);
+    expect(addCombinationReason("limit")).toBe(ADD_AT_LIMIT);
+    expect(addCombinationReason(null)).toBeNull();
+    expect(ADD_NEEDS_VALUES).toBe(
+      "Preencha os valores de cada opção para adicionar combinações."
+    );
+    expect(ADD_AT_LIMIT).toBe(
+      `O limite é de ${MAX_VARIANTS} combinações por produto.`
+    );
   });
 
   it("com opções válidas já se pode adicionar, mas salvar pede ao menos uma combinação completa", () => {

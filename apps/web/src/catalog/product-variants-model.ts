@@ -185,6 +185,18 @@ export function productOptionValues(
   };
 }
 
+export type AddCombinationBlocker = "missing_values" | "limit";
+
+function addBlocker(
+  optionsAreReady: boolean,
+  count: number
+): AddCombinationBlocker | null {
+  if (!optionsAreReady) {
+    return "missing_values";
+  }
+  return count < MAX_VARIANTS ? null : "limit";
+}
+
 export function validateVariantDrafts(
   optionNames: ProductVariantOptionName[],
   optionValues: Record<ProductVariantOptionName, string[]>,
@@ -222,6 +234,7 @@ export function validateVariantDrafts(
     tooLongOptions: optionNames.filter((name) =>
       hasTooLongOptionValue(optionValues[name])
     ),
+    addBlocker: addBlocker(optionsAreReady, variants.length),
     canAdd: optionsAreReady && variants.length < MAX_VARIANTS,
     canGenerate: optionsAreReady,
     canSubmit:
@@ -356,6 +369,20 @@ export function addAllCombinations(
 
 export const ALL_COMBINATIONS_PRESENT =
   "Todas as combinações já estão na lista.";
+
+export const ADD_NEEDS_VALUES =
+  "Preencha os valores de cada opção para adicionar combinações.";
+
+export const ADD_AT_LIMIT = `O limite é de ${MAX_VARIANTS} combinações por produto.`;
+
+export function addCombinationReason(
+  blocker: AddCombinationBlocker | null
+): string | null {
+  if (blocker === null) {
+    return null;
+  }
+  return blocker === "limit" ? ADD_AT_LIMIT : ADD_NEEDS_VALUES;
+}
 
 export function overCapMessage(total: number, cap: CombinationCap): string {
   const limit =
