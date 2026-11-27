@@ -61,7 +61,9 @@ export function ScreenTitle({
 }) {
   const inTab = useContext(InTabContext);
   const tabNamesIt = useContext(TabNamesTitleContext);
-  let base = inTab ? "text-section" : "text-title";
+  let base = inTab
+    ? "min-w-0 text-section [overflow-wrap:anywhere]"
+    : "min-w-0 text-title [overflow-wrap:anywhere]";
   if (inTab && tabNamesIt) {
     base = `${base} sr-only`;
   }

@@ -88,22 +88,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
-    clientWidth: 212,
-    reason:
-      'em Configurações no celular, dentro de uma aba, o título "Configurações" (221 px, uma palavra só) divide a linha com a seta de voltar e passa 9 px da borda direita da coluna',
-    screens: [
-      "assinatura oferta com Pix",
-      "assinatura Pix aguardando o banco",
-      "assinatura Pro ativo",
-      "assinatura em teste, com o pé do menu",
-      "assinatura cancelar a renovação",
-      "assinatura carência com o aviso",
-      "seus dados com uma cópia pronta e um pedido em andamento",
-    ],
-    scrollWidth: 221,
-    selector: "main#conteudo > h1",
-  },
-  {
     clientWidth: 272,
     reason:
       'na aba Recorrentes, o cartão tem 272 px e o conteúdo (o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra) mede 331 px: passa 59 px da borda direita do cartão',
