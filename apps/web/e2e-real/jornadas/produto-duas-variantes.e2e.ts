@@ -523,3 +523,62 @@ test("variantes: valores repetidos na mesma opção (P e p) são recusados no ca
   });
   expect(await productState(sql, organizationId, PRODUCT)).toEqual(before);
 });
+
+/** The balance comes from a receipt made on the Estoque screen after the product exists: it blocks the configuration like opening stock does. */
+test("variantes: o saldo da variante padrão vindo de uma entrada pelo Estoque também recusa a configuração", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "variantes-padrao-entrada-estoque",
+    {
+      organization: { timezone: ZONE },
+    }
+  );
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+
+  await createOnScreen(page, PRODUCT);
+  expect(await productState(sql, organizationId, PRODUCT)).toMatchObject({
+    balance: null,
+    configured: false,
+    movements: 0,
+  });
+
+  await page.goto("/inventory");
+  await receive(page, "Variante padrão", "4");
+  await expect(
+    termValue(stockRowOf(page, "Variante padrão"), "Saldo")
+  ).toHaveText("4");
+  await expect
+    .poll(() => productState(sql, organizationId, PRODUCT))
+    .toMatchObject({
+      audits: 0,
+      balance: 4,
+      configured: false,
+      movements: 1,
+      variants: [{ is_default: true, size: null, sku: null }],
+    });
+  const before = await productState(sql, organizationId, PRODUCT);
+
+  await page.goto("/products");
+  const dialog = await openVariants(page, PRODUCT);
+  await fillSizes(dialog, "P\nM");
+  await dialog
+    .getByRole("button", { name: "Adicionar todas as combinações (2)" })
+    .click();
+  const answered = page.waitForResponse((response) =>
+    response.url().includes("/rpc/product/configureVariants")
+  );
+  await dialog.getByRole("button", { name: "Salvar variantes" }).click();
+  expect((await answered).status()).toBe(409);
+  expect(await productState(sql, organizationId, PRODUCT)).toEqual(before);
+
+  expect(await configureRefusal(journey, before)).toEqual({
+    code: "CONFLICT",
+    reason: "product_default_variant_stock_history_conflict",
+  });
+  expect(await productState(sql, organizationId, PRODUCT)).toEqual(before);
+});
