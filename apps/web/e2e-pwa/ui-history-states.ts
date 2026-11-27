@@ -95,7 +95,8 @@ async function openHistoryLab(
   page: Page,
   answers: boolean,
   hold = false,
-  sales: readonly unknown[] = SALES
+  sales: readonly unknown[] = SALES,
+  hasMore = true
 ) {
   await page.clock.setFixedTime(CLOCK);
   if (hold) {
@@ -106,7 +107,7 @@ async function openHistoryLab(
     );
   } else if (answers) {
     await page.route("**/rpc/sale/list", (route: Route) =>
-      route.fulfill(rpc({ hasMore: true, sales }))
+      route.fulfill(rpc({ hasMore, sales }))
     );
   }
   await serveLabWorker(page);
@@ -147,12 +148,42 @@ async function openPeriod(page: Page) {
 
 export const WORST_CUSTOMER_NAME = WORST_NAME;
 
+/** The period alone, with the server's net total of the period in the footer (the other filters take it away). */
+async function openPeriodTotal(page: Page, hasMore: boolean) {
+  await page.route("**/rpc/report/periodSummary", (route: Route) =>
+    route.fulfill(rpc({ cards: { netSales: "123.40", salesCount: 3 } }))
+  );
+  await openHistoryLab(page, true, false, SALES, hasMore);
+  await page.getByText("Ângela Souza").waitFor();
+  const period = await openPeriod(page);
+  await period.locator('button[data-day="2026-10-12"]').click();
+  await period.locator('button[data-day="2026-10-05"]').click();
+  await period.waitFor({ state: "hidden" });
+  const footer = page.locator("[data-list-total]");
+  await footer.getByText("Vendas líquidas do período").waitFor();
+  await footer.locator("[data-list-total-skeleton]").waitFor({
+    state: "detached",
+  });
+  await showScreenAlone(page);
+}
+
 export const historyStates = {
   /** The server's list: every badge, a long name, and "Carregar mais". */
   async list(page: Page) {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
     await page.getByRole("button", { name: "Carregar mais" }).waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The server's list with nothing more to load: the count and the footer lose "· há mais". */
+  async listComplete(page: Page) {
+    await openHistoryLab(page, true, false, SALES, false);
+    await page.getByText("Ângela Souza").waitFor();
+    await page
+      .locator("[data-list-count]")
+      .getByText("4 vendas", { exact: true })
+      .waitFor();
     await showScreenAlone(page);
   },
 
@@ -184,22 +215,13 @@ export const historyStates = {
   },
 
   /** The period alone, with the server's net total of the period in the footer (the other filters take it away). */
-  async periodTotal(page: Page) {
-    await page.route("**/rpc/report/periodSummary", (route: Route) =>
-      route.fulfill(rpc({ cards: { netSales: "123.40", salesCount: 3 } }))
-    );
-    await openHistoryLab(page, true);
-    await page.getByText("Ângela Souza").waitFor();
-    const period = await openPeriod(page);
-    await period.locator('button[data-day="2026-10-12"]').click();
-    await period.locator('button[data-day="2026-10-05"]').click();
-    await period.waitFor({ state: "hidden" });
-    const footer = page.locator("[data-list-total]");
-    await footer.getByText("Vendas líquidas do período").waitFor();
-    await footer.locator("[data-list-total-skeleton]").waitFor({
-      state: "detached",
-    });
-    await showScreenAlone(page);
+  periodTotal(page: Page) {
+    return openPeriodTotal(page, true);
+  },
+
+  /** The same period total with nothing more to load in the list. */
+  periodTotalComplete(page: Page) {
+    return openPeriodTotal(page, false);
   },
 
   /** The period of the title line and the bar with two pills (Situação, Cliente) and "Limpar tudo", every editor closed. */

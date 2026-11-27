@@ -2,6 +2,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { expenseStates } from "./ui-expense-states";
+import { historyStates } from "./ui-history-states";
 import { customerStates } from "./ui-lot2-states";
 import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
@@ -226,4 +227,101 @@ test.describe("a contagem do cabeçalho da lista no celular", () => {
       Math.abs((edges?.countLeft ?? 0) - (edges?.titleLeft ?? 99))
     ).toBeLessThanOrEqual(TOLERANCE);
   });
+});
+
+/**
+ * The right edges the Histórico measures against each other: the drawn text of the count (a `Range`, not the box that
+ * reserves 112 px), that box, the chevron that ends the first row (its `svg` and the path it draws) and the figure of
+ * the footer.
+ */
+function historyEdges(page: Page) {
+  return page.evaluate(() => {
+    const count = document.querySelector("[data-list-count]");
+    const title = document.querySelector("[data-list-block] h2");
+    const chevron = document.querySelector(
+      "[data-list-block] li a > svg[aria-hidden='true']:last-child"
+    );
+    const figure = document.querySelector("[data-list-total] .text-right");
+    if (!(count && title && chevron && figure)) {
+      return null;
+    }
+    const drawnRight = (node: Node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getBoundingClientRect().right;
+    };
+    const drawn = document.createRange();
+    drawn.selectNodeContents(count);
+    const paths = Array.from(chevron.querySelectorAll("path"));
+    return {
+      boxRight: count.getBoundingClientRect().right,
+      boxWidth: count.getBoundingClientRect().width,
+      chevronDrawnRight: Math.max(
+        ...paths.map((path) => path.getBoundingClientRect().right)
+      ),
+      chevronRight: chevron.getBoundingClientRect().right,
+      countRight: drawn.getBoundingClientRect().right,
+      countLines: drawn.getClientRects().length,
+      countText: count.textContent,
+      countTop: drawn.getBoundingClientRect().top,
+      countWidth: drawn.getBoundingClientRect().width,
+      figureRight: drawnRight(figure),
+      titleBottom: title.getBoundingClientRect().bottom,
+    };
+  });
+}
+
+const HISTORY_COUNT_STATES = [
+  {
+    count: "4 vendas · há mais",
+    name: "com há mais",
+    open: historyStates.list,
+  },
+  { count: "4 vendas", name: "sem há mais", open: historyStates.listComplete },
+  {
+    count: "4 vendas · há mais",
+    name: "com há mais e o total do período",
+    open: historyStates.periodTotal,
+  },
+  {
+    count: "4 vendas",
+    name: "sem há mais e com o total do período",
+    open: historyStates.periodTotalComplete,
+  },
+];
+const CHEVRON_GUTTER = 24;
+
+test.describe("a contagem do Histórico a 360 px: linhas com seta e sem menu", () => {
+  for (const state of HISTORY_COUNT_STATES) {
+    test(`${state.name}: a contagem termina na borda do cabeçalho, na linha do título e inteira; a seta fica 2 px depois`, async ({
+      page,
+    }) => {
+      await state.open(page);
+      const edges = await historyEdges(page);
+      expect(edges).not.toBeNull();
+      expect(edges?.countText).toBe(state.count);
+      expect(edges?.countLines).toBe(1);
+      expect(edges?.countTop).toBeLessThan(edges?.titleBottom ?? 0);
+      expect(edges?.countWidth).toBeLessThanOrEqual(edges?.boxWidth ?? 0);
+      expect(
+        Math.abs((edges?.countRight ?? 0) - (edges?.boxRight ?? 99))
+      ).toBeLessThanOrEqual(TOLERANCE);
+      expect(
+        (edges?.chevronRight ?? 0) - (edges?.countRight ?? 0)
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        (edges?.chevronRight ?? 0) - (edges?.countRight ?? 0)
+      ).toBeLessThanOrEqual(2 + TOLERANCE);
+      expect(
+        Math.abs((edges?.countRight ?? 0) - (edges?.chevronDrawnRight ?? 0) - 4)
+      ).toBeLessThanOrEqual(TOLERANCE);
+      expect(
+        Math.abs(
+          (edges?.chevronRight ?? 0) -
+            CHEVRON_GUTTER -
+            (edges?.figureRight ?? 99)
+        )
+      ).toBeLessThanOrEqual(TOLERANCE);
+    });
+  }
 });
