@@ -142,7 +142,10 @@ function useCountPlace(active: boolean, rowCount: number, count: string) {
       const inset =
         glyph === undefined
           ? 0
-          : Math.max(0, Math.round((box.right + applied - glyph) * 10) / 10);
+          : Math.min(
+              box.width,
+              Math.max(0, Math.round((box.right + applied - glyph) * 10) / 10)
+            );
       element.style.setProperty("--count-inset", `${inset}px`);
       setOnOwnLine(onOwnLineNow);
     };

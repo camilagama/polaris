@@ -203,7 +203,6 @@ test.describe("a contagem do cabeçalho da lista no celular", () => {
     }) => {
       await list.open(page);
       const edges = await countAndMenuEdges(page);
-      console.log("EDGES", JSON.stringify(edges));
       expect(edges).not.toBeNull();
       expect(edges?.countTop).toBeLessThan(edges?.titleBottom ?? 0);
       expect(
