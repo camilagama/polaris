@@ -515,28 +515,6 @@ function containerLineRem(page: Page) {
   });
 }
 
-for (const width of [WIDE_WINDOW, 1024]) {
-  reflowTest(
-    `a ${width} px cada linha tem três colunas: o grupo de botões fica à direita dos valores, sem descer`,
-    async ({ page }) => {
-      await openStock(page, width, 16);
-      const rows = await rowPlacement(page);
-      expect(rows).toHaveLength(ENTRIES.length);
-      for (const row of rows) {
-        expect(
-          row.groupTop,
-          "o topo do grupo fica acima do fim dos valores"
-        ).toBeLessThan(row.figuresBottom);
-        expect(
-          row.groupLeft,
-          "o grupo começa depois do fim dos valores"
-        ).toBeGreaterThanOrEqual(row.figuresRight);
-      }
-    },
-    { coarse: false }
-  );
-}
-
 /** Per row, the three blocks of the row grid as the screen shows them: the name, the figures (`dl`) and the group of buttons. */
 function rowBlocks(page: Page) {
   return page.evaluate(() =>
@@ -547,13 +525,21 @@ function rowBlocks(page: Page) {
         const blocks = [...(figures?.parentElement?.children ?? [])];
         return blocks.map((block) => {
           const { bottom, left, right, top } = block.getBoundingClientRect();
-          return { bottom, left, right, top };
+          return {
+            bottom,
+            isButtonGroup: block.matches('[data-slot="button-group"]'),
+            left,
+            right,
+            top,
+          };
         });
       })
   );
 }
 
 const THREE_COLUMNS_TOLERANCE_PIXELS = 1;
+
+const FIGURES_TO_GROUP_TOLERANCE_PIXELS = 0;
 
 for (const width of [WIDE_WINDOW, 1024]) {
   reflowTest(
@@ -569,19 +555,21 @@ for (const width of [WIDE_WINDOW, 1024]) {
         ).toHaveLength(3);
         const [name, figures, group] = blocks;
         expect(
+          group?.isButtonGroup,
+          "o terceiro bloco da linha não é o grupo de botões: o markup mudou"
+        ).toBe(true);
+        expect(
           group?.top,
           "linha empilhou: o topo do grupo não fica acima do fim dos valores"
         ).toBeLessThan(figures?.bottom ?? Number.NaN);
-        for (const [before, after] of [
-          [name, figures],
-          [figures, group],
+        for (const [before, after, tolerance] of [
+          [name, figures, THREE_COLUMNS_TOLERANCE_PIXELS],
+          [figures, group, FIGURES_TO_GROUP_TOLERANCE_PIXELS],
         ] as const) {
           expect(
             after?.left,
             "linha empilhou: os blocos não estão em x crescente"
-          ).toBeGreaterThanOrEqual(
-            (before?.right ?? Number.NaN) - THREE_COLUMNS_TOLERANCE_PIXELS
-          );
+          ).toBeGreaterThanOrEqual((before?.right ?? Number.NaN) - tolerance);
         }
         for (const [one, other] of [
           [name, figures],

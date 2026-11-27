@@ -434,7 +434,7 @@ const WITHOUT_ACTION: readonly {
   {
     afterTitle: HEADER_GAP,
     heading: "Seus dados",
-    hiddenFrom1280: false,
+    hiddenFrom1280: true,
     screen: "seus dados com cópias",
   },
   {

@@ -114,18 +114,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'no Detalhe da venda, a data da linha do tempo ("15 out 09:00", 107 px, sem quebra) passa 2 px da borda direita do cartão "Linha do tempo"',
-    screens: [
-      "detalhe da venda aberto",
-      "detalhe da venda cliente da venda",
-      "detalhe da venda trocar o cliente",
-    ],
-    scrollWidth: 274,
-    selector: 'main > div[data-slot="card-frame"]',
-  },
-  {
-    clientWidth: 272,
-    reason:
       'no diálogo "Cancelar a renovação do Pro?", o diálogo tem 272 px e o conteúdo mede 298 px: passa 26 px da borda direita, e quem mais passa é o rodapé com "Continuar no Pro" e "Cancelar a renovação"',
     screens: ["assinatura cancelar a renovação"],
     scrollWidth: 298,
@@ -1054,7 +1042,10 @@ test.describe("o diálogo pequeno mais alto que a janela rola inteiro", () => {
     await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    const back = dialog.getByRole("button", { exact: true, name: "Voltar" });
+    const back = dialog.getByRole("button", {
+      exact: true,
+      name: "Manter meta",
+    });
     await expect(back).toBeFocused();
     await page.evaluate(
       () =>
