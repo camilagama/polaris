@@ -142,7 +142,7 @@ describe("planHeadline", () => {
     expect(all).not.toContain("7 dias");
   });
 
-  it("says Plano Pro, Ativo and the next charge when active", () => {
+  it("says Plano Pro and Ativo, with no support line, when active and the Pagamento block says the next charge", () => {
     const headline = planHeadline(
       plan({
         method: "card",
@@ -153,7 +153,32 @@ describe("planHeadline", () => {
     );
     expect(headline.title).toBe("Plano Pro");
     expect(headline.badge?.text).toBe("Ativo");
+    expect(headline.support).toBeNull();
+  });
+
+  it("keeps the next charge under the badge when active and there is no Pagamento block (method not ready)", () => {
+    const headline = planHeadline(
+      plan({
+        method: null,
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
+        state: "active",
+      }),
+      NOW
+    );
     expect(headline.support).toBe("Próxima cobrança em 23/11/2026, R$ 24,90.");
+  });
+
+  it("keeps the first charge and its promise under the badge while trialing, with the block on the screen", () => {
+    const view = plan({
+      cycleMonths: 1,
+      method: "card",
+      nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
+      state: "trialing",
+    });
+    expect(paymentLines(view)).not.toBeNull();
+    expect(planHeadline(view, NOW).support).toBe(
+      "A primeira cobrança é em 30/10/2026. Cancele antes e nada é cobrado."
+    );
   });
 
   it("names the last day of access when the renewal is cancelled", () => {
@@ -587,7 +612,7 @@ describe("paymentLines", () => {
     ).toBeNull();
   });
 
-  it("lists method, cycle and next charge when active", () => {
+  it("lists method, cycle alone and next charge when active: the day and the amount once", () => {
     expect(
       paymentLines(
         plan({
@@ -599,8 +624,40 @@ describe("paymentLines", () => {
       )
     ).toEqual([
       { label: "Como paga", value: "Cartão de crédito" },
-      { label: "Ciclo", value: "Mensal · R$ 24,90" },
+      { label: "Ciclo", value: "Mensal" },
       { label: "Próxima cobrança", value: "23/11/2026 · R$ 24,90" },
+    ]);
+  });
+
+  it("the annual cycle: Ciclo is Anual and the day and the amount stay in Próxima cobrança", () => {
+    const lines = paymentLines(
+      plan({
+        cycleMonths: 12,
+        method: "card",
+        nextCharge: { amount: "249.00", cycleMonths: 12, on: "2026-12-12" },
+        state: "active",
+      })
+    );
+    expect(lines).toEqual([
+      { label: "Como paga", value: "Cartão de crédito" },
+      { label: "Ciclo", value: "Anual" },
+      { label: "Próxima cobrança", value: "12/12/2026 · R$ 249,00" },
+    ]);
+  });
+
+  it("without an amount the day stays only in Próxima cobrança", () => {
+    const lines = paymentLines(
+      plan({
+        cycleMonths: 1,
+        method: "card",
+        nextCharge: { amount: null, cycleMonths: 1, on: "2026-11-23" },
+        state: "active",
+      })
+    );
+    expect(lines).toEqual([
+      { label: "Como paga", value: "Cartão de crédito" },
+      { label: "Ciclo", value: "Mensal" },
+      { label: "Próxima cobrança", value: "23/11/2026" },
     ]);
   });
 
@@ -608,16 +665,14 @@ describe("paymentLines", () => {
     const paid = (nextCharge: BillingPlanView["nextCharge"]) =>
       plan({ cycleMonths: 1, method: "card", nextCharge, state: "active" });
 
-    it("renewed at another amount in the same cycle: the amount in force beside the cycle and the day", () => {
+    it("renewed at another amount in the same cycle: the amount in force with the day, once", () => {
       const view = paid({ amount: "29.90", cycleMonths: 1, on: "2026-11-23" });
       expect(paymentLines(view)).toEqual([
         { label: "Como paga", value: "Cartão de crédito" },
-        { label: "Ciclo", value: "Mensal · R$ 29,90" },
+        { label: "Ciclo", value: "Mensal" },
         { label: "Próxima cobrança", value: "23/11/2026 · R$ 29,90" },
       ]);
-      expect(planHeadline(view, NOW).support).toBe(
-        "Próxima cobrança em 23/11/2026, R$ 29,90."
-      );
+      expect(planHeadline(view, NOW).support).toBeNull();
     });
 
     it("of another cycle with its amount: the cycle line has no amount, the next charge names its cycle", () => {
@@ -643,10 +698,21 @@ describe("paymentLines", () => {
           value: "12/12/2026 · Anual · valor na renovação",
         },
       ]);
+      expect(planHeadline(view, NOW).support).toBeNull();
+      expect(JSON.stringify(paymentLines(view))).not.toContain("R$");
+    });
+
+    it("of another cycle without an amount and no Pagamento block: the line under the badge keeps the day and the new cycle", () => {
+      const view = plan({
+        cycleMonths: 1,
+        method: null,
+        nextCharge: { amount: null, cycleMonths: 12, on: "2026-12-12" },
+        state: "active",
+      });
+      expect(paymentLines(view)).toBeNull();
       expect(planHeadline(view, NOW).support).toBe(
         "Próxima cobrança em 12/12/2026, já no ciclo Anual; o valor aparece na renovação."
       );
-      expect(JSON.stringify(paymentLines(view))).not.toContain("R$");
     });
 
     it("a Worker that sends no cycle in the next charge reads as the current cycle, as before", () => {
@@ -656,7 +722,11 @@ describe("paymentLines", () => {
       } as BillingPlanView["nextCharge"]);
       expect(paymentLines(view)?.[1]).toEqual({
         label: "Ciclo",
-        value: "Mensal · R$ 24,90",
+        value: "Mensal",
+      });
+      expect(paymentLines(view)?.[2]).toEqual({
+        label: "Próxima cobrança",
+        value: "23/11/2026 · R$ 24,90",
       });
     });
   });
@@ -686,6 +756,7 @@ describe("paymentLines", () => {
         state: "active",
       })
     );
+    expect(lines?.[1]).toEqual({ label: "Ciclo", value: "Mensal · R$ 24,90" });
     expect(lines?.[2]).toEqual({ label: "Próxima cobrança", value: "Nenhuma" });
   });
 
