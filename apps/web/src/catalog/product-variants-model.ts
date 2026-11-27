@@ -185,6 +185,35 @@ export function productOptionValues(
   };
 }
 
+export type AddCombinationBlocker =
+  | "no_options"
+  | "missing_values"
+  | "invalid_values"
+  | "limit";
+
+function addBlocker(
+  optionNames: ProductVariantOptionName[],
+  optionValues: Record<ProductVariantOptionName, string[]>,
+  count: number
+): AddCombinationBlocker | null {
+  if (optionNames.length === 0) {
+    return "no_options";
+  }
+  if (optionNames.some((name) => optionValues[name].length === 0)) {
+    return "missing_values";
+  }
+  if (
+    optionNames.some(
+      (name) =>
+        hasTooLongOptionValue(optionValues[name]) ||
+        hasRepeatedOptionValue(optionValues[name])
+    )
+  ) {
+    return "invalid_values";
+  }
+  return count < MAX_VARIANTS ? null : "limit";
+}
+
 export function validateVariantDrafts(
   optionNames: ProductVariantOptionName[],
   optionValues: Record<ProductVariantOptionName, string[]>,
@@ -197,6 +226,7 @@ export function validateVariantDrafts(
       hasRepeatedOptionValue(optionValues[name])
   );
   const optionsAreReady = optionNames.length > 0 && invalidOptions.length === 0;
+  const blocker = addBlocker(optionNames, optionValues, variants.length);
   const completeVariants = variants.every((variant) => {
     const keys = Object.keys(variant.values).filter((name) =>
       optionNames.includes(name as ProductVariantOptionName)
@@ -222,7 +252,8 @@ export function validateVariantDrafts(
     tooLongOptions: optionNames.filter((name) =>
       hasTooLongOptionValue(optionValues[name])
     ),
-    canAdd: optionsAreReady && variants.length < MAX_VARIANTS,
+    addBlocker: blocker,
+    canAdd: blocker === null,
     canGenerate: optionsAreReady,
     canSubmit:
       optionNames.length > 0 &&
@@ -356,6 +387,30 @@ export function addAllCombinations(
 
 export const ALL_COMBINATIONS_PRESENT =
   "Todas as combinações já estão na lista.";
+
+const ADD_NEEDS_OPTION =
+  "Marque ao menos uma opção para adicionar combinações.";
+
+export const ADD_NEEDS_VALUES =
+  "Preencha os valores de cada opção para adicionar combinações.";
+
+const ADD_FIX_VALUES =
+  "Corrija os valores das opções para adicionar combinações.";
+
+export const ADD_AT_LIMIT = `O limite é de ${MAX_VARIANTS} combinações por produto.`;
+
+const ADD_REASONS: Record<AddCombinationBlocker, string> = {
+  invalid_values: ADD_FIX_VALUES,
+  limit: ADD_AT_LIMIT,
+  missing_values: ADD_NEEDS_VALUES,
+  no_options: ADD_NEEDS_OPTION,
+};
+
+export function addCombinationReason(
+  blocker: AddCombinationBlocker | null
+): string | null {
+  return blocker === null ? null : ADD_REASONS[blocker];
+}
 
 export function overCapMessage(total: number, cap: CombinationCap): string {
   const limit =

@@ -537,6 +537,69 @@ for (const width of [WIDE_WINDOW, 1024]) {
   );
 }
 
+/** Per row, the three blocks of the row grid as the screen shows them: the name, the figures (`dl`) and the group of buttons. */
+function rowBlocks(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll("li")]
+      .filter((row) => row.querySelector("[data-stock-action]") !== null)
+      .map((row) => {
+        const figures = row.querySelector("dl");
+        const blocks = [...(figures?.parentElement?.children ?? [])];
+        return blocks.map((block) => {
+          const { bottom, left, right, top } = block.getBoundingClientRect();
+          return { bottom, left, right, top };
+        });
+      })
+  );
+}
+
+const THREE_COLUMNS_TOLERANCE_PIXELS = 1;
+
+for (const width of [WIDE_WINDOW, 1024]) {
+  reflowTest(
+    `a ${width} px os três blocos de cada linha (nome, valores e botões) ficam lado a lado, na mesma faixa vertical`,
+    async ({ page }) => {
+      await openStock(page, width, 16);
+      const rows = await rowBlocks(page);
+      expect(rows).toHaveLength(ENTRIES.length);
+      for (const blocks of rows) {
+        expect(
+          blocks,
+          "a linha não tem três blocos (nome, valores, botões): o markup mudou"
+        ).toHaveLength(3);
+        const [name, figures, group] = blocks;
+        expect(
+          group?.top,
+          "linha empilhou: o topo do grupo não fica acima do fim dos valores"
+        ).toBeLessThan(figures?.bottom ?? Number.NaN);
+        for (const [before, after] of [
+          [name, figures],
+          [figures, group],
+        ] as const) {
+          expect(
+            after?.left,
+            "linha empilhou: os blocos não estão em x crescente"
+          ).toBeGreaterThanOrEqual(
+            (before?.right ?? Number.NaN) - THREE_COLUMNS_TOLERANCE_PIXELS
+          );
+        }
+        for (const [one, other] of [
+          [name, figures],
+          [figures, group],
+          [name, group],
+        ] as const) {
+          expect(
+            Math.min(one?.bottom ?? Number.NaN, other?.bottom ?? Number.NaN) -
+              Math.max(one?.top ?? Number.NaN, other?.top ?? Number.NaN),
+            "linha empilhou: os blocos não dividem a mesma faixa vertical"
+          ).toBeGreaterThan(THREE_COLUMNS_TOLERANCE_PIXELS);
+        }
+      }
+    },
+    { coarse: false }
+  );
+}
+
 const LINE_OFFSET_PIXELS = 1;
 
 const CONTAINER_LINE_REM = 42;

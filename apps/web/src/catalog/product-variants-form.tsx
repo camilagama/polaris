@@ -44,6 +44,7 @@ import { ProductTextAreaField } from "./product-fields";
 import {
   ALL_COMBINATIONS_PRESENT,
   addAllCombinations,
+  addCombinationReason,
   addAllCombinationsLabel,
   clearDefaultSkuLabel,
   combinationCap,
@@ -358,6 +359,41 @@ interface ConfigurationFormProps {
   product: ProductReadModel;
 }
 
+interface AddCombinationRowProps {
+  busy: boolean;
+  onAdd: () => void;
+  productId: string;
+  reason: string | null;
+}
+
+/** Off for a reason that is written under it (aria-disabled, so it stays reachable and reads why); only the save in flight turns it really off. */
+function AddCombinationRow({
+  busy,
+  onAdd,
+  productId,
+  reason,
+}: AddCombinationRowProps) {
+  const reasonId = `product-variant-add-reason-${productId}`;
+  const blocked = reason !== null && !busy;
+  return (
+    <>
+      <AddRowButton
+        aria-describedby={blocked ? reasonId : undefined}
+        aria-disabled={blocked ? true : undefined}
+        disabled={busy}
+        onClick={reason === null ? onAdd : undefined}
+      >
+        Adicionar combinação
+      </AddRowButton>
+      {blocked ? (
+        <p className="text-muted-foreground text-support" id={reasonId}>
+          {reason}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 /** The first configuration of the options and of the sellable combinations of a product. */
 export function ProductVariantConfigurationForm({
   configuration,
@@ -434,6 +470,7 @@ export function ProductVariantConfigurationForm({
           .map((name) => `product-variant-values-${name}-error`)
           .join(" ")
       : undefined;
+  const addReason = addCombinationReason(validation.addBlocker);
   const defaultVariant = configuration.variants.find(
     (variant) => variant.isDefault
   );
@@ -740,12 +777,12 @@ export function ProductVariantConfigurationForm({
             Nenhuma combinação adicionada.
           </p>
         )}
-        <AddRowButton
-          disabled={!validation.canAdd || busy}
-          onClick={handleAddCombination}
-        >
-          Adicionar combinação
-        </AddRowButton>
+        <AddCombinationRow
+          busy={busy}
+          onAdd={handleAddCombination}
+          productId={product.id}
+          reason={addReason}
+        />
       </div>
 
       {!validation.combinationsAreUnique && variants.length > 1 ? (
