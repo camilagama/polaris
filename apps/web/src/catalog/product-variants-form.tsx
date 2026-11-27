@@ -44,6 +44,7 @@ import { ProductTextAreaField } from "./product-fields";
 import {
   ALL_COMBINATIONS_PRESENT,
   addAllCombinations,
+  type AddCombinationBlocker,
   addCombinationReason,
   addAllCombinationsLabel,
   clearDefaultSkuLabel,
@@ -190,7 +191,7 @@ function CombinationRow({
                 id: option,
                 label: option,
               }))}
-              placeholder="Selecione"
+              placeholder="Escolha um valor"
               value={variant.values[name] ?? ""}
             />
           ))}
@@ -359,33 +360,42 @@ interface ConfigurationFormProps {
   product: ProductReadModel;
 }
 
+const noOptionsSentenceId = (productId: string) =>
+  `product-variant-no-options-${productId}`;
+
 interface AddCombinationRowProps {
+  blocker: AddCombinationBlocker | null;
   busy: boolean;
   onAdd: () => void;
   productId: string;
   reason: string | null;
 }
 
-/** Off for a reason that is written under it (aria-disabled, so it stays reachable and reads why); only the save in flight turns it really off. */
+/** Off for a reason (aria-disabled, so it stays reachable and reads why): written under it, or, with no option checked, the sentence at the top that the button points to; only the save in flight turns it really off. */
 function AddCombinationRow({
+  blocker,
   busy,
   onAdd,
   productId,
   reason,
 }: AddCombinationRowProps) {
   const reasonId = `product-variant-add-reason-${productId}`;
-  const blocked = reason !== null && !busy;
+  const blocked = blocker !== null && !busy;
+  let describedBy: string | undefined;
+  if (blocked) {
+    describedBy = reason === null ? noOptionsSentenceId(productId) : reasonId;
+  }
   return (
     <>
       <AddRowButton
-        aria-describedby={blocked ? reasonId : undefined}
+        aria-describedby={describedBy}
         aria-disabled={blocked ? true : undefined}
         disabled={busy}
-        onClick={reason === null ? onAdd : undefined}
+        onClick={blocker === null ? onAdd : undefined}
       >
         Adicionar combinação
       </AddRowButton>
-      {blocked ? (
+      {blocked && reason !== null ? (
         <p className="text-muted-foreground text-support" id={reasonId}>
           {reason}
         </p>
@@ -737,7 +747,10 @@ export function ProductVariantConfigurationForm({
           ))}
         </div>
       ) : (
-        <p className="text-muted-foreground text-support">
+        <p
+          className="text-muted-foreground text-support"
+          id={noOptionsSentenceId(product.id)}
+        >
           Marque ao menos uma opção para começar.
         </p>
       )}
@@ -778,6 +791,7 @@ export function ProductVariantConfigurationForm({
           </p>
         )}
         <AddCombinationRow
+          blocker={validation.addBlocker}
           busy={busy}
           onAdd={handleAddCombination}
           productId={product.id}
