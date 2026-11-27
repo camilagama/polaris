@@ -458,51 +458,51 @@ export function numberFontFaults(path: string, text: string): string[] {
       ];
 }
 
-const PAGE_ACTION_WIDTH = /(?:^|:)(?:max-sm:w-full|sm:w-fit|sm:w-auto)$/;
+const PAGE_ACTION_WIDTH =
+  /(?:^|:)(?:max-sm:w-full|(?:min-)?sm:w-(?:fit|auto))$/;
 
-const PAGE_ACTION_ALLOWED: readonly { file: string; why: string }[] = [
+const PAGE_ACTION_ALLOWED: readonly {
+  file: string;
+  tokens: number;
+  why: string;
+}[] = [
   {
     file: "src/expenses/month-picker.tsx",
-    why: "controle de campo",
+    tokens: 1,
+    why: "controle de campo (seletor de mês), não é ação de página",
   },
   {
     file: "src/ui/date-picker.tsx",
-    why: "controle de campo",
+    tokens: 1,
+    why: "controle de campo (seletor de data), não é ação de página",
   },
   {
     file: "src/ui/date-range-picker.tsx",
-    why: "controle de campo",
+    tokens: 1,
+    why: "controle de campo (seletor de período), não é ação de página",
   },
 ];
 
 const pageActionWidthTokens = (path: string, text: string) =>
   TSX.test(path)
     ? classTokens(text).filter((token) =>
-        PAGE_ACTION_WIDTH.test(token.replace(IMPORTANT, ""))
+        PAGE_ACTION_WIDTH.test(token.replaceAll("!", ""))
       )
     : [];
 
 export function pageActionWidthFaults(
   path: string,
   text: string,
-  allowed: readonly { file: string }[] = PAGE_ACTION_ALLOWED
+  allowed: readonly { file: string; tokens: number }[] = PAGE_ACTION_ALLOWED
 ): string[] {
-  if (allowed.some((entry) => entry.file === path)) {
-    return [];
-  }
-  return [
-    ...new Set(
-      pageActionWidthTokens(path, text).map(
-        (token) =>
-          `${token}: ação da página: use \`max-md:w-full\` (DESIGN.md, Responsividade e toque)`
-      )
-    ),
-  ];
+  const tokens = pageActionWidthTokens(path, text);
+  const listed = allowed.find((entry) => entry.file === path)?.tokens ?? 0;
+  return tokens.length === listed
+    ? []
+    : [
+        `${tokens.length} classe(s) de largura de botão em sm (${[...new Set(tokens)].join(", ")}) e a lista diz ${listed}: ação da página: use \`max-md:w-full\` (DESIGN.md, Responsividade e toque)`,
+      ];
 }
-
-const PAGE_ACTION_SCOPE = MOTION_SCOPE.filter(
-  (path) => !path.startsWith("src/ui-gallery/")
-);
 
 /** An amount written by `{formatBrlAmount(…)}` as the child of an element, alone or after `?`, `&&`, `||`, `??` or `String(`, or as `children=`, skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks only when it is a prop (`text={`…`}`) or a variable, not when it is itself the child; a prop of a component (`text={…}`) reaches the mask. Only `.tsx` files are read: a model that returns text is not JSX. */
 const BRL_IN_JSX =
@@ -853,23 +853,24 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   );
 
-  it.each(PAGE_ACTION_SCOPE)(
+  it.each(MOTION_SCOPE)(
     "%s: o botão de ação da página não usa max-sm:w-full, sm:w-fit nem sm:w-auto",
     (path) => {
       expect(pageActionWidthFaults(path, read(path))).toEqual([]);
     }
   );
 
-  it("a lista de largura de botão está em ordem, tem o motivo escrito e cada arquivo dela ainda usa a classe (uma lista velha deixaria passar outra coisa)", () => {
+  it("a lista de largura de botão está em ordem, sem repetição, com o motivo escrito e cada arquivo dela ainda tem exatamente o que ela conta (uma lista velha deixaria passar outra coisa)", () => {
     const files = PAGE_ACTION_ALLOWED.map((entry) => entry.file);
     expect(files).toEqual([...files].sort());
+    expect(new Set(files).size).toBe(files.length);
     for (const entry of PAGE_ACTION_ALLOWED) {
-      expect(entry.why, entry.file).not.toBe("");
-      expect(PAGE_ACTION_SCOPE, entry.file).toContain(entry.file);
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(MOTION_SCOPE, entry.file).toContain(entry.file);
       expect(
-        pageActionWidthTokens(entry.file, read(entry.file)).length,
+        pageActionWidthTokens(entry.file, read(entry.file)),
         entry.file
-      ).toBeGreaterThan(0);
+      ).toHaveLength(entry.tokens);
     }
   });
 
@@ -954,6 +955,10 @@ describe("controle: a largura do botão de ação da página", () => {
     'className="touch:sm:w-fit"',
     'className="hover:max-sm:w-full p-2"',
     'className="sm:w-fit!"',
+    'className="!sm:w-fit"',
+    'className="sm:!w-fit"',
+    'className="min-sm:w-fit"',
+    'className="min-sm:w-auto"',
     'cn("w-full", open && "sm:w-fit")',
   ])("%s é reprovado", (text) => {
     expect(pageActionWidthFaults("src/home/x.tsx", text).join("\n")).toContain(
@@ -976,10 +981,14 @@ describe("controle: a largura do botão de ação da página", () => {
     const text = 'className="w-full sm:w-fit"';
     expect(pageActionWidthFaults("src/ui/date-picker.tsx", text)).toEqual([]);
     expect(pageActionWidthFaults("src/ui/outro.tsx", text)).toHaveLength(1);
+    expect(
+      pageActionWidthFaults("src/ui/date-picker.tsx", `${text} ${text}`)
+    ).toHaveLength(1);
+    expect(pageActionWidthFaults("src/ui/date-picker.tsx", "")).toHaveLength(1);
     expect(pageActionWidthFaults("src/home/x.ts", text)).toEqual([]);
     expect(
       pageActionWidthFaults("src/home/x.tsx", text, [
-        { file: "src/home/x.tsx" },
+        { file: "src/home/x.tsx", tokens: 1 },
       ])
     ).toEqual([]);
   });
