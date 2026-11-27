@@ -21,7 +21,11 @@ const MONO_CELL = /<(?:dd|span|p)\b[^>]*class="[^"]*font-mono[^"]*"[^>]*>/g;
 const TOTALS_STRIP = /<dl\b[^>]*\bdata-receipt-totals\b/;
 const DD = /<dd class="([^"]*)"/g;
 const ITEM_PRICES =
-  /<span class="[^"]*text-right font-mono[^"]*">2 × <span[^>]*>R\$ /;
+  /<p class="[^"]*justify-between[^"]*font-mono[^"]*"><span[^>]*><span class="whitespace-nowrap">2 × <span[^>]*>R\$ /;
+const ITEM_AMOUNTS = /114,95|139,90|229,90/;
+const ITEM_LINE = /<p class="[^"]*justify-between[^"]*font-mono[^"]*">.*?<\/p>/;
+const ID_LABEL =
+  /<span class="[^"]*text-support[^"]*">Identificador da venda<\/span>/;
 const PIX_CELL = /text-right text-sm[^"]*">Pix</;
 const NOT_APPLICABLE_CELL =
   /text-right text-sm[^"]*"><span class="text-muted-foreground">não se aplica/;
@@ -38,9 +42,11 @@ const sale: ConfirmedSaleView = {
   items: [
     {
       costText: "Custo desconhecido. Margem indeterminada.",
-      detail: "2 × R$ 114,95 (tabela R$ 139,90) = R$ 229,90",
+      chargedText: "2 × R$ 114,95",
       key: "0-v1",
       label: "Calça jeans — 42",
+      listedText: "tabela R$ 139,90",
+      totalText: "R$ 229,90",
     },
   ],
   note: "O método de pagamento registrado não comprova liquidação.",
@@ -103,10 +109,52 @@ describe("the sale as a receipt", () => {
     expect(markup.lastIndexOf(SALE_ID)).toBeGreaterThan(
       markup.indexOf("Pagamento")
     );
-    expect(markup).toContain('class="pt-1 font-mono');
+    expect(markup).toMatch(ID_LABEL);
+    expect(markup).toContain('class="font-mono text-muted-foreground text-xs');
     expect(markup.indexOf("Data da venda")).toBeLessThan(
       markup.indexOf(SALE_ID)
     );
+  });
+
+  it("writes the label of the identifier as visible text, once, and keeps the code unchanged", () => {
+    const markup = render();
+    expect(markup.split("Identificador da venda")).toHaveLength(2);
+    expect(markup).not.toContain('sr-only">Identificador');
+    expect(markup).toContain(`[overflow-wrap:anywhere]">${SALE_ID}</span>`);
+  });
+
+  it("writes an item with two ends: quantity and charged price at the left, the total of the item at the right, with no equals sign", () => {
+    const line = render().match(ITEM_LINE)?.[0] ?? "";
+    const text = line.replace(/<[^>]+>/g, "");
+    expect(text).toBe(
+      "2 × R$ 114,95, tabela R$ 139,90Total do item: R$ 229,90"
+    );
+    expect(text).not.toContain("=");
+    expect(line.indexOf("2 ×")).toBeLessThan(line.indexOf("tabela"));
+    expect(line.indexOf("tabela")).toBeLessThan(line.indexOf("Total do item"));
+    expect(line).toContain("justify-between");
+    expect(line).toContain("ml-auto");
+  });
+
+  it("writes 'tabela' only when the table price differs from the charged one", () => {
+    const same = renderToStaticMarkup(
+      <SaleReceipt
+        sale={{
+          ...sale,
+          items: sale.items.map((line) => ({ ...line, listedText: null })),
+        }}
+        status={<span>Confirmada</span>}
+      />
+    );
+    expect(same).not.toContain("tabela");
+    expect(render()).toContain("tabela");
+  });
+
+  it("masks the charged price, the table price and the total of the item with the values hidden", () => {
+    state.hidden = true;
+    const line = render().match(ITEM_LINE)?.[0] ?? "";
+    expect(line).not.toMatch(ITEM_AMOUNTS);
+    expect(line.match(/data-masked-money/g)).toHaveLength(3);
   });
 
   it("shows the total right under the title and the perforation after it, above the items and the adjustments", () => {

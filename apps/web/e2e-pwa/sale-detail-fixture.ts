@@ -42,10 +42,11 @@ const item = (
   position: number,
   productLabel: string,
   quantity: number,
-  price: string
+  price: string,
+  listedPrice = price
 ) => ({
   chargedUnitPrice: price,
-  listedUnitPrice: price,
+  listedUnitPrice: listedPrice,
   position,
   productId: id(0x7_20 + position),
   productLabel,
@@ -88,7 +89,7 @@ const SALE_DETAIL = {
   sale: {
     adjustments: [],
     items: [
-      item(0, "Calça jeans — 42", 2, "114.95"),
+      item(0, "Calça jeans — 42", 2, "114.95", "139.90"),
       item(
         1,
         "Camiseta básica de algodão orgânico com estampa exclusiva — G",
