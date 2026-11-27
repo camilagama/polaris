@@ -46,6 +46,8 @@ const farDraft: ExpenseDraft = {
   payee: "",
 };
 
+const COMPETENCE_BUTTON = /^Data de competência,/;
+
 const noop = () => undefined;
 
 function renderForm(
@@ -79,9 +81,14 @@ describe("the competence limit on the expense form", () => {
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: "Registrar despesa" }));
-    expect(
-      await screen.findByText(COMPETENCE_TOO_FAR_AHEAD_MESSAGE)
-    ).toBeTruthy();
+    const field = screen.getByRole("button", { name: COMPETENCE_BUTTON });
+    await waitFor(() =>
+      expect(field.getAttribute("aria-invalid")).toBe("true")
+    );
+    const described = (field.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent);
+    expect(described).toContain(COMPETENCE_TOO_FAR_AHEAD_MESSAGE);
     expect(onSave).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
+import { MAX_EXPENSE_COMPETENCE_DAYS_AHEAD } from "@polaris/domain/expenses/expense";
 import { expect, test } from "@playwright/test";
 import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
@@ -41,6 +42,15 @@ const TODAY = "2026-10-14";
 const TODAY_BR = "14/10/2026";
 const rpcPrefix = /^\/rpc\//;
 const TABULAR_NUMS = /tabular-nums/;
+const COMPETENCE_TOO_FAR_AHEAD =
+  "A data de competência pode ser no máximo um ano à frente.";
+const COMPETENCE_LABEL = "Data de competência";
+const daysAfterToday = (days: number) => {
+  const [year = 0, month = 1, day = 1] = TODAY.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days))
+    .toISOString()
+    .slice(0, 10);
+};
 
 interface FakeCategory {
   archivedAt: string | null;
@@ -810,6 +820,49 @@ test("o calendário da data de competência: o teclado abre, as setas andam, Ent
   await expect(
     datePickerButton(page, "Data de competência")
   ).toHaveAccessibleName("Data de competência, 13/10/2026");
+});
+
+test("a competência além de um ano à frente é recusada no campo da data e não vai ao servidor; no último dia da janela, salva", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await fillExpense(page, {
+    amount: "80",
+    category: "Aluguel",
+    description: "Conta de luz",
+  });
+  const lastDay = daysAfterToday(MAX_EXPENSE_COMPETENCE_DAYS_AHEAD);
+  const beyond = daysAfterToday(MAX_EXPENSE_COMPETENCE_DAYS_AHEAD + 1);
+  const callsBefore = server.calls.length;
+
+  await pickDate(page, COMPETENCE_LABEL, beyond);
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+
+  const field = datePickerButton(page, COMPETENCE_LABEL);
+  const message = page.getByText(COMPETENCE_TOO_FAR_AHEAD);
+  await expect(message).toBeVisible();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  const describedBy = (await field.getAttribute("aria-describedby")) ?? "";
+  await expect(
+    page
+      .locator(
+        describedBy
+          .split(" ")
+          .map((id) => `[id="${id}"]`)
+          .join(",")
+      )
+      .filter({ hasText: COMPETENCE_TOO_FAR_AHEAD })
+  ).toBeVisible();
+  expect(server.calls.slice(callsBefore)).not.toContain("expense/create");
+  expect(server.expenses).toHaveLength(0);
+
+  await pickDate(page, COMPETENCE_LABEL, lastDay);
+  await expect(message).toHaveCount(0);
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+  await expect(page.getByText("Despesa registrada.")).toBeVisible();
+  expect(server.expenses[0]?.competenceOn).toBe(lastDay);
 });
 
 test("um valor inválido é recusado na tela, sem chamar o servidor", async ({
