@@ -533,7 +533,7 @@ test("sem conexão: um só aviso, nada sai e a volta não lê sozinha (AC-7)", a
   const calls = await openScreen(page, { lists: [[READY]] });
   await expect(list(page)).toContainText("Sua cópia está pronta.");
   await page.context().setOffline(true);
-  await expect(page.getByText("Sem internet.")).toHaveCount(1);
+  await expect(page.getByText("Sem conexão.")).toHaveCount(1);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(askButton(page)).toHaveAttribute("aria-disabled", "true");
   await askButton(page).click({ force: true });
@@ -549,7 +549,7 @@ test("sem conexão: um só aviso, nada sai e a volta não lê sozinha (AC-7)", a
   expect(calls.downloads).toEqual([]);
   const { reads } = calls;
   await page.context().setOffline(false);
-  await expect(page.getByText("Sem internet.")).toHaveCount(0);
+  await expect(page.getByText("Sem conexão.")).toHaveCount(0);
   await expect(list(page)).toContainText("Sua cópia está pronta.");
   expect(calls.reads).toBe(reads);
   expect(calls.requests).toEqual([]);
