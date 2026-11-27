@@ -242,11 +242,12 @@ export function ExpenseRuleForm({
           </div>
         ) : null}
         <ExpenseTextField
+          addon="R$"
           disabled={disabled}
           error={errors.amount}
           id={fieldId("amount")}
           inputMode="decimal"
-          label="Valor de cada ocorrência (R$)"
+          label="Valor de cada ocorrência"
           name="amount"
           onChange={handleChange}
           placeholder="0,00"

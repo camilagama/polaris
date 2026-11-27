@@ -42,7 +42,7 @@ async function registerExpense(
     .and(page.locator("[data-expense-new]"))
     .click();
   const form = page.getByRole("dialog", { name: "Nova despesa" });
-  await form.getByLabel("Valor (R$)").fill(values.amount);
+  await form.getByLabel("Valor", { exact: true }).fill(values.amount);
   await choose(page, form, "Categoria", CATEGORY);
   await pickDate(form, "Data de competência", values.competenceOn);
   await form.getByLabel("Descrição").fill(DESCRIPTION);
@@ -117,8 +117,10 @@ test("despesa editada e anulada: o banco, a lista e o Resultado concordam em cen
   // edit to 120,50: the amount is in cents in the table, the version went up, list and Resultado say 120,50
   await page.goto("/expenses");
   const editForm = await openEdit(page);
-  await expect(editForm.getByLabel("Valor (R$)")).toHaveValue("100,00");
-  await editForm.getByLabel("Valor (R$)").fill("120,50");
+  await expect(editForm.getByLabel("Valor", { exact: true })).toHaveValue(
+    "100,00"
+  );
+  await editForm.getByLabel("Valor", { exact: true }).fill("120,50");
   await editForm.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("Despesa atualizada.")).toBeVisible();
@@ -204,7 +206,9 @@ test("despesa editada sobre uma versão antiga: a tela avisa e o banco guarda s�
 
   await page.goto("/expenses");
   const editForm = await openEdit(page);
-  await expect(editForm.getByLabel("Valor (R$)")).toHaveValue("100,00");
+  await expect(editForm.getByLabel("Valor", { exact: true })).toHaveValue(
+    "100,00"
+  );
 
   const other = await rpc.expense.update({
     amount: "130.00",
@@ -217,7 +221,7 @@ test("despesa editada sobre uma versão antiga: a tela avisa e o banco guarda s�
   });
   expect(other.expense.version).toBe(created.version + 1);
 
-  await editForm.getByLabel("Valor (R$)").fill("140,00");
+  await editForm.getByLabel("Valor", { exact: true }).fill("140,00");
   await editForm.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(
     page
