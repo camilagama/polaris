@@ -357,7 +357,7 @@ test("sem o teste disponível, 'Assinar o Pro' e 'Seu teste grátis já foi usad
 test("cada estado tem título e linha de apoio próprios (AS-9)", async ({
   page,
 }) => {
-  const cases: [Plan, string, string][] = [
+  const cases: [Plan, string, string | null][] = [
     [
       plan({
         state: "free_over_limit",
@@ -382,7 +382,7 @@ test("cada estado tem título e linha de apoio próprios (AS-9)", async ({
       "Pro, em teste",
       "A primeira cobrança é em 30/10/2026. Cancele antes e nada é cobrado.",
     ],
-    [ACTIVE, "Plano Pro", "Próxima cobrança em 23/11/2026, R$ 24,90."],
+    [ACTIVE, "Plano Pro", null],
     [
       {
         ...ACTIVE,
@@ -404,7 +404,9 @@ test("cada estado tem título e linha de apoio próprios (AS-9)", async ({
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await openScreen(page, { plans: [answer] });
     await expect(planTitle(page)).toHaveText(heading);
-    await expect(page.getByText(support, { exact: true })).toBeVisible();
+    if (support !== null) {
+      await expect(page.getByText(support, { exact: true })).toBeVisible();
+    }
   }
   // the cancelled renewal offers no "Assinar" before its end (AS-27)
   await expect(
@@ -420,8 +422,12 @@ test("Pro ativo e renovação cancelada: como paga, o ciclo, a próxima cobranç
   const payment = page.locator("dl");
   await expect(payment).toContainText("Como paga");
   await expect(payment).toContainText("Cartão de crédito");
-  await expect(payment).toContainText("Mensal · R$ 24,90");
+  await expect(payment).toContainText("Mensal");
+  await expect(payment).not.toContainText("Mensal · R$");
   await expect(payment).toContainText("23/11/2026 · R$ 24,90");
+  await expect(page.getByText("R$ 24,90")).toHaveCount(1);
+  await expect(page.getByText("23/11/2026")).toHaveCount(1);
+  await expect(page.getByText("Próxima cobrança em")).toHaveCount(0);
   await expect(page.getByRole("radiogroup")).toHaveCount(0);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -1066,13 +1072,14 @@ test("sem conexão a tela diz 'Sem internet' e não mostra o plano de antes; com
   await expect(page.getByText("Sem internet.")).toBeVisible();
   // hidden, not taken away (what was typed in the offer stays): nothing of the plan is seen nor read
   await expect(planTitle(page)).toBeHidden();
-  await expect(
-    page.getByText("Próxima cobrança em 23/11/2026, R$ 24,90.")
-  ).toBeHidden();
+  await expect(page.getByText("Próxima cobrança")).toBeHidden();
   const before = calls.reads;
   await page.context().setOffline(false);
   await expect(planTitle(page)).toHaveText("Plano Pro");
   await expect.poll(() => calls.reads).toBeGreaterThan(before);
+  await expect(
+    page.getByText("Próxima cobrança", { exact: true })
+  ).toBeVisible();
 
   // in grace, the notice at the top goes with the plan: nothing of before on the Assinatura
   await page.unrouteAll({ behavior: "ignoreErrors" });

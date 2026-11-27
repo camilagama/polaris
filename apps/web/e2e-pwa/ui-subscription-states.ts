@@ -152,7 +152,7 @@ export const subscriptionStates = {
   /** The Pro in force, in the window of the right of withdrawal: the plan, the use, how it pays, its two actions. */
   active: (page: Page) =>
     openSubscription(page, [ACTIVE_IN_WINDOW], (current) =>
-      current.getByText("Próxima cobrança em").first().waitFor()
+      current.getByText("Próxima cobrança", { exact: true }).first().waitFor()
     ),
   /** "Cancelar a renovação" open: the loss, what stays, the reason and the two buttons. */
   cancelDialog: (page: Page) =>

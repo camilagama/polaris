@@ -118,7 +118,10 @@ export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
   }
   return {
     badge: { text: "Ativo", tone: "ink" },
-    support: charge === null ? null : nextChargeSupport(plan, charge),
+    support:
+      charge === null || paymentLines(plan) !== null
+        ? null
+        : nextChargeSupport(plan, charge),
     title: "Plano Pro",
   };
 }
@@ -202,11 +205,17 @@ export function paymentLines(plan: BillingPlanView): ChargeLine[] | null {
   ];
   const charge = plan.nextCharge;
   if (plan.cycleMonths !== null) {
-    // the amount sits beside the cycle only when the next charge is of this cycle
+    // the amount sits beside the cycle only when the next charge is of this cycle and no line of the block says it
+    // again: an active, renewing store has its day and amount in "Próxima cobrança"
+    const chargeLineSaysIt =
+      plan.state === "active" && !plan.renewalCancelled && charge !== null;
     lines.push({
       label: "Ciclo",
       value:
-        charge === null || charge.amount === null || otherCycle(plan, charge)
+        charge === null ||
+        charge.amount === null ||
+        otherCycle(plan, charge) ||
+        chargeLineSaysIt
           ? cycleName(plan.cycleMonths)
           : `${cycleName(plan.cycleMonths)} · ${formatBrlAmount(charge.amount)}`,
     });
