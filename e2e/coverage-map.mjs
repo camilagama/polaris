@@ -762,6 +762,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-real/jornadas/estoque.e2e.ts": ["home", "sale", "inventory"],
   "apps/web/e2e-real/jornadas/excluir-produto-arquivado.e2e.ts": [
     "home",
+    "sale",
     "sale-history",
     "sale-detail",
     "products",
