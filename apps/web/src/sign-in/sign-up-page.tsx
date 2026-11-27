@@ -208,6 +208,7 @@ function SignUpForm({
     return (
       <ConfirmEmailPanel
         email={sentTo}
+        help
         intro={confirmSentText(sentTo)}
         siteKey={siteKey}
       />

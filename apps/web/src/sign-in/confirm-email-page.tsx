@@ -56,10 +56,13 @@ import { challengeToken, useChallenge } from "./turnstile";
  */
 export function ConfirmEmailPanel({
   email,
+  help = false,
   intro,
   siteKey,
 }: {
   email: string | null;
+  /** `/entrar` shows this panel without the line of help, as it always did. */
+  help?: boolean;
   intro: string;
   siteKey: string | null;
 }) {
@@ -112,7 +115,7 @@ export function ConfirmEmailPanel({
   );
 
   return (
-    <EntryScreen help support={intro} title={CONFIRM_TITLE}>
+    <EntryScreen help={help} support={intro} title={CONFIRM_TITLE}>
       {resent ? (
         // the same line for the address of the sign-up and the one typed here: the server may not have sent it
         <EntrySuccess>{RESENT}</EntrySuccess>
@@ -154,7 +157,7 @@ export function ConfirmEmailPanel({
 
 type Verification = "checking" | LinkOutcome;
 
-function VerifyLink({
+export function VerifyLink({
   siteKey,
   token,
 }: {
@@ -191,6 +194,7 @@ function VerifyLink({
     return (
       <ConfirmEmailPanel
         email={null}
+        help
         intro={state === "expired" ? CONFIRM_EXPIRED : CONFIRM_INVALID}
         siteKey={siteKey}
       />
@@ -232,6 +236,7 @@ export function ConfirmEmailPage() {
         ) : (
           <ConfirmEmailPanel
             email={null}
+            help
             intro={CONFIRM_NO_LINK}
             siteKey={methods.siteKey}
           />

@@ -47,7 +47,7 @@ import { challengeToken, useChallenge } from "./turnstile";
 
 type ResetPhase = "done" | "form" | "link-invalid";
 
-function ResetPasswordForm({
+export function ResetPasswordForm({
   siteKey,
   token,
 }: {
@@ -168,7 +168,7 @@ function ResetPasswordForm({
 }
 
 /** `neutral`: the page was opened without its link, which is an instruction and not a failure. */
-function ResetLinkMissing({
+export function ResetLinkMissing({
   neutral = false,
   text,
 }: {

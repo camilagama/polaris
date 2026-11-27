@@ -1,9 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
-import { ConfirmEmailPage, ConfirmEmailPanel } from "./confirm-email-page";
+import {
+  ConfirmEmailPage,
+  ConfirmEmailPanel,
+  VerifyLink,
+} from "./confirm-email-page";
 import { ForgotPasswordPage } from "./forgot-password-page";
-import { ResetPasswordPage } from "./reset-password-page";
+import {
+  ResetLinkMissing,
+  ResetPasswordForm,
+  ResetPasswordPage,
+} from "./reset-password-page";
 import { SignUpPage } from "./sign-up-page";
 
 const HELP_LINE = "Precisa de ajuda? Escreva para";
@@ -46,6 +54,7 @@ describe("a linha de ajuda nas telas de senha e de conta", () => {
       renderToStaticMarkup(
         <ConfirmEmailPanel
           email={null}
+          help
           intro="Este link venceu."
           siteKey={null}
         />
@@ -53,7 +62,33 @@ describe("a linha de ajuda nas telas de senha e de conta", () => {
     );
   });
 
+  it("Confirmar e-mail, confirmando o link", () => {
+    expectHelpLine(
+      renderToStaticMarkup(<VerifyLink siteKey={null} token="tok" />)
+    );
+  });
+
+  it("Redefinir senha, o formulário", () => {
+    expectHelpLine(
+      renderToStaticMarkup(<ResetPasswordForm siteKey={null} token="tok" />)
+    );
+  });
+
+  it("Redefinir senha, o link que falta e o link inválido", () => {
+    expectHelpLine(
+      renderToStaticMarkup(<ResetLinkMissing neutral text="Abra o link." />)
+    );
+    expectHelpLine(renderToStaticMarkup(<ResetLinkMissing text="Inválido." />));
+  });
+
   it("Redefinir senha, enquanto os métodos carregam", () => {
     expectHelpLine(renderToStaticMarkup(<ResetPasswordPage />));
+  });
+
+  it("o painel de 'Confirme seu e-mail' de /entrar segue sem a linha", () => {
+    const markup = renderToStaticMarkup(
+      <ConfirmEmailPanel email="a@b.co" intro="Confirme." siteKey={null} />
+    );
+    expect(markup).not.toContain(HELP_LINE);
   });
 });

@@ -340,6 +340,14 @@ async function expectNewPasswordField(
   await field.fill("abc");
 }
 
+async function expectHelpLine(page: Page) {
+  await expect(
+    page.getByRole("link", {
+      name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+    })
+  ).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
+}
+
 test.describe("a linha de ajuda sob o cartão", () => {
   const SCREENS = [
     {
@@ -620,6 +628,7 @@ test.describe("entrar com e-mail e senha", () => {
     await expect(
       page.getByRole("heading", { name: "Confirme seu e-mail" })
     ).toBeVisible();
+    await expect(page.getByText("Precisa de ajuda?")).toHaveCount(0);
     await shot(page, "entrar-email-nao-confirmado");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
     await expect(
@@ -869,6 +878,7 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   await expect(
     page.getByRole("heading", { name: "Confirme seu e-mail" })
   ).toBeVisible();
+  await expectHelpLine(page);
   await expect(
     page.getByText(
       "Enviamos um e-mail para nova@exemplo.com. Siga as instruções nele."
@@ -977,6 +987,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(
       page.getByText("Senha trocada. Entre com a nova senha.")
     ).toBeVisible();
+    await expectHelpLine(page);
     const [reset] = callsTo(server, "/api/auth/reset-password");
     expect(reset?.body).toEqual({
       newPassword: PASSWORD,
@@ -1021,6 +1032,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(
       page.getByRole("link", { name: "Pedir outro link" })
     ).toBeVisible();
+    await expectHelpLine(page);
     await expectFitsCard(page);
     await shot(page, "nova-senha-sem-link", true);
   });
@@ -1049,6 +1061,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await page.goto("about:blank");
     await page.goto("/confirmar-email#token=tok-velho");
     await expect(page.getByText("Este link venceu. Peça outro.")).toBeVisible();
+    await expectHelpLine(page);
     await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
     // the same line for the address typed here and for the one of the sign-up: no "Reenviamos"
