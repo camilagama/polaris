@@ -147,7 +147,7 @@ interface RuleListProps {
 function emptyRulesText(total: number): string {
   return total === 0
     ? "Nenhuma despesa recorrente. Crie uma para lançar aluguel, assinaturas e outros custos fixos sozinha."
-    : "Todas as despesas recorrentes estão pausadas. Marque “Mostrar pausadas” para vê-las.";
+    : "Todas as despesas recorrentes estão pausadas. Marque “Incluir pausadas” para vê-las.";
 }
 
 function RuleList({
@@ -271,7 +271,7 @@ function useRuleCommands({
               : await orpcClient.expense.restoreRule(input);
             upsert(result.rule);
             return pausing
-              ? "Despesa recorrente pausada. Nenhuma ocorrência nova será lançada até retomar; marque “Mostrar pausadas” para vê-la."
+              ? "Despesa recorrente pausada. Nenhuma ocorrência nova será lançada até retomar; marque “Incluir pausadas” para vê-la."
               : "Despesa recorrente retomada. Os períodos que passaram durante a pausa não são lançados.";
           }
         )
@@ -364,7 +364,7 @@ export function ExpenseRulesPanel({
             onCheckedChange={setShowPaused}
           />
           <FieldLabel htmlFor="expense-rules-paused">
-            Mostrar pausadas
+            Incluir pausadas
           </FieldLabel>
         </Field>
         <Button
