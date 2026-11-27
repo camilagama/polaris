@@ -47,8 +47,8 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   "email-preference-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "estoque-reflow.e2e.ts": {
     bare: 0,
-    coarse: 1,
-    why: "the window of 1280 px is not a phone",
+    coarse: 3,
+    why: "the window of 1280 px is not a phone, and the alignment of the columns and the stacking of a row narrower than 42 rem are measured with the mouse of the desktop",
   },
   "expenses.e2e.ts": {
     bare: 0,

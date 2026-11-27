@@ -403,6 +403,95 @@ for (const width of [360, WIDE_WINDOW]) {
   );
 }
 
+/** The x where "Saldo" and "Custo médio" start in each row, read from the labels of the rows as the screen shows them. */
+function figureColumns(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll("li")]
+      .filter((row) => row.querySelector("[data-stock-action]") !== null)
+      .map((row) => {
+        const left = (label: string) =>
+          [...row.querySelectorAll("dt")]
+            .find((term) => term.textContent === label)
+            ?.getBoundingClientRect().left ?? Number.NaN;
+        const buttons = [...row.querySelectorAll("[data-stock-action]")];
+        return {
+          balance: left("Saldo"),
+          cost: left("Custo médio"),
+          last: buttons.at(-1)?.getBoundingClientRect().right ?? Number.NaN,
+        };
+      })
+  );
+}
+
+for (const width of [WIDE_WINDOW, 1024]) {
+  reflowTest(
+    `a ${width} px Saldo e Custo médio começam no mesmo x em todas as linhas, qualquer que seja o grupo de botões`,
+    async ({ page }) => {
+      await openStock(page, width, 16);
+      const labels = await page
+        .locator(ACTIONS)
+        .evaluateAll((buttons) =>
+          buttons.map((button) => button.textContent?.trim())
+        );
+      expect(labels).toContain("Informar custo");
+      expect(labels).toContain("Dar entrada");
+      expect(labels).toContain("Contar");
+      const widest = await page
+        .locator('[data-slot="button-group"]')
+        .evaluateAll((groups) =>
+          Math.max(
+            ...groups.map((group) => group.getBoundingClientRect().width)
+          )
+        );
+      const rem = await page.evaluate(() =>
+        Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+      );
+      expect(
+        widest,
+        "o grupo mais largo cabe na coluna de 18,5 rem"
+      ).toBeLessThanOrEqual(18.5 * rem);
+      const rows = await figureColumns(page);
+      expect(rows).toHaveLength(ENTRIES.length);
+      for (const row of rows) {
+        expect(Math.abs(row.balance - (rows[0]?.balance ?? 0))).toBeLessThan(1);
+        expect(Math.abs(row.cost - (rows[0]?.cost ?? 0))).toBeLessThan(1);
+        expect(Math.abs(row.last - (rows[0]?.last ?? 0))).toBeLessThan(1);
+      }
+      await assertNoPageScroll(page);
+    },
+    { coarse: false }
+  );
+}
+
+reflowTest(
+  "numa linha de menos de 42 rem (a lateral aberta) o grupo desce para baixo dos valores, sem rolagem lateral",
+  async ({ page }) => {
+    await openStock(page, 900, 16);
+    await page.addStyleTag({
+      content: "body { box-sizing: border-box; padding-left: 16rem; }",
+    });
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll("li")]
+        .filter((row) => row.querySelector("[data-stock-action]") !== null)
+        .map((row) => ({
+          figuresBottom: row.querySelector("dl")?.getBoundingClientRect()
+            .bottom,
+          groupTop: row
+            .querySelector('[data-slot="button-group"]')
+            ?.getBoundingClientRect().top,
+          rowWidth: row.getBoundingClientRect().width,
+        }))
+    );
+    expect(rows).toHaveLength(ENTRIES.length);
+    for (const row of rows) {
+      expect(row.rowWidth).toBeLessThan(42 * 16);
+      expect(row.groupTop).toBeGreaterThanOrEqual(row.figuresBottom ?? 0);
+    }
+    await assertNoPageScroll(page);
+  },
+  { coarse: false }
+);
+
 const BAR = "Filtrar estoque";
 
 /** Turns a yes-or-no filter on from its own item in the "Filtrar" menu: two touches, no second panel; the menu closes and the focus goes back to "Filtrar". */

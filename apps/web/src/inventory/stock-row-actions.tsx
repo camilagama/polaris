@@ -33,7 +33,7 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
   return (
     <ButtonGroup
       aria-label={`Movimentos de ${row.productName}, ${row.variantText}`}
-      className={`w-full md:w-fit ${STACKED_GROUP}`}
+      className={`w-full md:@2xl:w-fit md:@2xl:justify-self-end ${STACKED_GROUP}`}
     >
       {stockRowActions(row.target).map(({ action, label, name }) => (
         // aria-disabled, not disabled: the button stays reachable and reads why it is off (the line in the open panel)
@@ -41,7 +41,7 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
           aria-describedby={disabled ? PANEL_OPEN_REASON_ID : undefined}
           aria-disabled={disabled || undefined}
           aria-label={name}
-          className={`flex-1 md:flex-none ${STACKED_BUTTON}`}
+          className={`flex-1 md:@2xl:flex-none ${STACKED_BUTTON}`}
           data-stock-action={action}
           data-variant-id={row.id}
           id={triggerId(row.id, action)}

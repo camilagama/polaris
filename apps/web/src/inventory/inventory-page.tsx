@@ -161,7 +161,8 @@ function StockItem({
       className="@container grid items-stretch gap-3"
       data-open={panelOpen ? "" : undefined}
     >
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.5fr)_auto] md:items-center md:gap-6">
+      {/* each row is its own grid: the actions column has the width of the widest group ("Dar entrada", "Informar custo", "Baixar": 18.4 rem), not the width of its own buttons, so Saldo and Custo médio start at the same x in every row; a row narrower than 42 rem (the side menu open on a tablet) stacks as on a phone, because the three columns would crush the name */}
+      <div className="grid gap-3 md:@2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.5fr)_18.5rem] md:@2xl:items-center md:@2xl:gap-6">
         <div className={thumbs ? "flex min-w-0 items-center gap-3" : "min-w-0"}>
           {thumbs ? (
             // the two text lines are 38 px tall: the 40 px box would lift the stacked row by 2 px, so it
