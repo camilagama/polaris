@@ -327,14 +327,14 @@ test("despesa recorrente vencida: aparece em Lançamentos sem abrir Recorrentes"
         [organizationId, rule.id]
       )
     ).rows.map((row) => row.competence_on);
-  expect(await occurrencesOf()).toEqual([]);
+  await expect.poll(occurrencesOf).toEqual([]);
 
   const moved = await sql.query(
     "UPDATE expense_recurring_rules SET starts_on = $1 WHERE id = $2 AND organization_id = $3",
     [today, rule.id, organizationId]
   );
   expect(moved.rowCount).toBe(1);
-  expect(await occurrencesOf()).toEqual([]);
+  await expect.poll(occurrencesOf).toEqual([]);
 
   let ruleReads = 0;
   page.on("request", (request) => {
@@ -353,7 +353,7 @@ test("despesa recorrente vencida: aparece em Lançamentos sem abrir Recorrentes"
     .filter({ hasText: "Mensalidade do sistema" });
   await expect(listed).toBeVisible();
   await expect(listed).toContainText("321,45");
-  expect(await occurrencesOf()).toEqual([today]);
+  await expect.poll(occurrencesOf).toEqual([today]);
   await settled(() => ruleReads);
   expect(ruleReads).toBe(0);
 
@@ -409,6 +409,45 @@ async function expensesOf(
   }));
 }
 
+async function editedExpensesOf(
+  sql: Sql,
+  organizationId: string
+): Promise<
+  {
+    amount: number;
+    category_id: string;
+    description: string;
+    version: number;
+  }[]
+> {
+  const { rows } = await sql.query<{
+    amount: string;
+    category_id: string;
+    description: string;
+    version: number;
+  }>(
+    "SELECT amount::text, category_id, description, version FROM expenses WHERE organization_id = $1 ORDER BY description",
+    [organizationId]
+  );
+  return rows.map((row) => ({
+    amount: numericCents(row.amount),
+    category_id: row.category_id,
+    description: row.description,
+    version: row.version,
+  }));
+}
+
+/** The one category the person made, once the database has it. */
+async function onlyCategoryOf(
+  sql: Sql,
+  organizationId: string
+): Promise<CategoryRow> {
+  await expect
+    .poll(async () => (await categoriesOf(sql, organizationId)).length)
+    .toBe(1);
+  return (await categoriesOf(sql, organizationId))[0] as CategoryRow;
+}
+
 const categoryAlert = (scope: Locator, text: string) =>
   scope.getByRole("alert").filter({ hasText: text });
 
@@ -430,7 +469,7 @@ test("categoria de despesa: nome repetido na loja (outra caixa, outro grupo) e r
 
   await page.goto("/expenses");
   await addCategory(page, first, "Operacional/Administrativa");
-  const [created] = await categoriesOf(sql, organizationId);
+  const created = await onlyCategoryOf(sql, organizationId);
   expect(created).toMatchObject({ group_key: "operational", name: first });
 
   const repeated = await openNewCategory(
@@ -440,11 +479,16 @@ test("categoria de despesa: nome repetido na loja (outra caixa, outro grupo) e r
   );
   await repeated.getByRole("button", { name: "Adicionar categoria" }).click();
   await expect(categoryAlert(repeated, CATEGORY_CONFLICT)).toBeVisible();
-  expect(await categoriesOf(sql, organizationId)).toEqual([created]);
+  await expect
+    .poll(async () => categoriesOf(sql, organizationId))
+    .toEqual([created]);
   await repeated.getByRole("button", { name: "Cancelar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await addCategory(page, second, "Comercial");
+  await expect
+    .poll(async () => (await categoriesOf(sql, organizationId)).length)
+    .toBe(2);
   const before = await categoriesOf(sql, organizationId);
   expect(before.map((row) => [row.name, row.group_key])).toEqual([
     [first, "operational"],
@@ -458,7 +502,9 @@ test("categoria de despesa: nome repetido na loja (outra caixa, outro grupo) e r
   await rename.getByLabel("Nome da categoria").fill(first.toLowerCase());
   await rename.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(categoryAlert(rename, CATEGORY_CONFLICT)).toBeVisible();
-  expect(await categoriesOf(sql, organizationId)).toEqual(before);
+  await expect
+    .poll(async () => categoriesOf(sql, organizationId))
+    .toEqual(before);
 });
 
 /** Renaming changes the name and nothing else: the id and the group are the ones from before. */
@@ -476,7 +522,7 @@ test("categoria de despesa: renomear muda o nome e o banco guarda o mesmo id e o
 
   await page.goto("/expenses");
   await addCategory(page, name, "Impostos");
-  const [created] = await categoriesOf(sql, organizationId);
+  const created = await onlyCategoryOf(sql, organizationId);
   expect(created).toMatchObject({ group_key: "taxes", name });
 
   await page
@@ -495,7 +541,7 @@ test("categoria de despesa: renomear muda o nome e o banco guarda o mesmo id e o
     .toEqual([
       expect.objectContaining({
         group_key: "taxes",
-        id: created?.id,
+        id: created.id,
         name: renamed,
       }),
     ]);
@@ -525,9 +571,9 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
 
   await page.goto("/expenses");
   await addCategory(page, name, "Comercial");
-  const [created] = await categoriesOf(sql, organizationId);
+  const created = await onlyCategoryOf(sql, organizationId);
   expect(created).toMatchObject({ archived: false, group_key: "commercial" });
-  const categoryId = created?.id as string;
+  const categoryId = created.id;
   await rpc.expense.create({
     amount: "321.45",
     categoryId,
@@ -566,9 +612,9 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
       .getByRole("region", { name: "Despesas do período" })
       .filter({ hasText: "Anuncio de antes" })
   ).toContainText(name);
-  expect(await expensesOf(sql, organizationId)).toEqual([
-    { amount: 32_145, category_id: categoryId },
-  ]);
+  await expect
+    .poll(async () => expensesOf(sql, organizationId))
+    .toEqual([{ amount: 32_145, category_id: categoryId }]);
   const filters = page.getByRole("search", {
     exact: true,
     name: "Filtrar despesas",
@@ -584,6 +630,33 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(chooser).toHaveCount(0);
+
+  // editing the expense from before keeps its archived category selected and marked; saving another field leaves it there
+  await page
+    .getByRole("region", { name: "Despesas do período" })
+    .getByRole("button", {
+      exact: true,
+      name: "Editar despesa Anuncio de antes",
+    })
+    .click();
+  const editForm = page.getByRole("dialog", { name: "Editar despesa" });
+  await expect(
+    editForm.getByRole("combobox", { exact: true, name: "Categoria" })
+  ).toContainText(`${name} (arquivada)`);
+  await editForm.getByLabel("Descrição").fill("Anuncio de antes, revisado");
+  await editForm.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Despesa atualizada.")).toBeVisible();
+  await expect
+    .poll(async () => editedExpensesOf(sql, organizationId))
+    .toEqual([
+      {
+        amount: 32_145,
+        category_id: categoryId,
+        description: "Anuncio de antes, revisado",
+        version: 2,
+      },
+    ]);
 
   // a new expense is not offered the archived category, and the server refuses it when a client sends it
   await page
@@ -611,9 +684,9 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
       })
     )
   ).toBe("CONFLICT");
-  expect(await expensesOf(sql, organizationId)).toEqual([
-    { amount: 32_145, category_id: categoryId },
-  ]);
+  await expect
+    .poll(async () => expensesOf(sql, organizationId))
+    .toEqual([{ amount: 32_145, category_id: categoryId }]);
 
   await page.goto("/dashboard");
   await expect(chainValue(page, EXPENSES_OF_PERIOD)).toHaveText(BRL_VALUE);

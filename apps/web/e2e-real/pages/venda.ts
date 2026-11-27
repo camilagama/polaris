@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { pickDate } from "../../e2e/date-pickers";
 
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
 const CONFIRMED_HEADLINE = /Venda confirmada|já estava confirmada/;
@@ -90,12 +91,22 @@ export type SaleAdjustmentInput =
   | { kind: "Desconto" | "Acréscimo"; mode: "percent"; value: string }
   | { kind: "Desconto" | "Acréscimo" | "Frete"; mode: "fixed"; value: string };
 
-/** `adjustments` come after the percentage discounts and are optional: the callers that pass two arguments stay as they are. */
+/** The "Data e hora da venda": the day on the calendar and the time typed beside it ("12:00"). */
+export interface SaleDateInput {
+  day: string;
+  time: string;
+}
+
+/**
+ * `adjustments` and `date` come after the percentage discounts and are optional: the callers that pass two arguments
+ * stay as they are.
+ */
 export async function fillSale(
   page: Page,
   lines: SaleLineInput[],
   discountPercents: string[],
-  adjustments: SaleAdjustmentInput[] = []
+  adjustments: SaleAdjustmentInput[] = [],
+  date?: SaleDateInput
 ): Promise<void> {
   for (const [index, line] of lines.entries()) {
     if (index > 0) {
@@ -117,13 +128,19 @@ export async function fillSale(
     }
     await item.getByLabel("Preço cobrado").fill(line.charged);
   }
-  if (discountPercents.length + adjustments.length > 0) {
+  if (discountPercents.length + adjustments.length > 0 || date) {
     // date and adjustments stay closed in one line until "Alterar"
     await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
     await expect(
       page.getByRole("button", { name: "Fechar data e ajustes" })
     ).toBeVisible();
     await animationsEnded(page);
+  }
+  if (date) {
+    await pickDate(page, "Dia", date.day);
+    const time = page.getByLabel("Hora", { exact: true });
+    await time.fill(date.time);
+    await expect(time).toHaveValue(date.time);
   }
   for (const [index, percent] of discountPercents.entries()) {
     // biome-ignore lint/performance/noAwaitInLoops: one adjustment after the other
