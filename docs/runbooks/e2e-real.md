@@ -35,7 +35,7 @@ Plano: Fase 13, T-125a (POL-60). As jornadas abrem o app de verdade no Chromium 
 | `harness/relogio-retry.e2e.ts` | T0 é o mesmo no retry, em outro processo (falha de propósito na 1ª tentativa; anotado `retry-proposital`) |
 | `harness/chave-do-runtime.e2e.ts` | cada projeto serve o seu build e tem a chave do runtime no estado certo (menu Aparelhos e registro do aparelho) |
 | `jornadas/onboarding.e2e.ts` | organização aberta na tela com nome e fuso extremo; uma só, com o usuário como dono; repetir não duplica |
-| `jornadas/produto.e2e.ts` | categoria e produto criados na tela e conferidos no banco e na venda; nome repetido, custo sem quantidade, preço negativo ou com três casas, caractere de controle no nome e remover categoria com produto são recusados, e quantidade 0 cria só o produto, sem movimento |
+| `jornadas/produto.e2e.ts` | categoria e produto criados na tela e conferidos no banco e na venda; nome de categoria repetido, custo sem quantidade, preço negativo ou com três casas, caractere de controle no nome e remover categoria com produto são recusados, e quantidade 0 cria só o produto, sem movimento |
 | `jornadas/produto-duas-variantes.e2e.ts` | produto com duas variantes (P e M) criado na tela, com estoque de cada uma; vender 1 de P baixa só P (de 7 para 6) e M segue com 3 |
 | `jornadas/estoque.e2e.ts` | entrada com custo, saída acima do saldo recusada, baixa com motivo ("Outro" pede observação), contagem que substitui o saldo, custo médio ao centavo e entrada com data de ontem que não reescreve o custo da venda anterior |
 | `jornadas/cliente.e2e.ts` | cadastro, lista e escolha na venda; duplicado sugerido na mesma loja e não na outra; arquivar, restaurar e anonimizar sem mudar a venda ligada |
