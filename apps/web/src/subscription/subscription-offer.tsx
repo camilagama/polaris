@@ -12,6 +12,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
@@ -467,7 +468,7 @@ export function OfferCard({
             <Button
               {...connectionControlProps(online)}
               aria-busy={pending || undefined}
-              className={WRAPS_XL}
+              className={cn(WRAPS_XL, "max-md:w-full")}
               disabled={pending}
               size="xl"
               type="submit"

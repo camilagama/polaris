@@ -237,7 +237,7 @@ export function ProfileForm(props: ProfileFormProps) {
             />
           </FieldSet>
           <div>
-            <div className="grid gap-2 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:gap-3">
+            <div className="grid gap-2 md:flex md:items-center md:gap-3">
               <Button
                 aria-describedby={reasonId}
                 aria-disabled={reasonId !== undefined || undefined}
