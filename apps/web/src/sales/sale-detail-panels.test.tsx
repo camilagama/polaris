@@ -164,6 +164,7 @@ describe("OperationFailureNotice", () => {
     });
     expect(first).toContain('role="alert"');
     expect(first).toContain("Descartar esta tentativa");
+    expect(first).not.toContain("Manter tentativa");
     expect(first).not.toContain("Sim, descartar");
 
     const second = renderFailure({
@@ -172,8 +173,9 @@ describe("OperationFailureNotice", () => {
       phase: "locked",
     });
     expect(second).toContain("O cancelamento pode já ter sido registrado.");
-    expect(second).toContain("Sim, descartar esta tentativa");
-    expect(second).toContain("Voltar");
+    expect(second).toContain("Descartar tentativa");
+    expect(second).toContain("Manter tentativa");
+    expect(second).not.toContain("Voltar");
   });
 });
 

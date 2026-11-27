@@ -302,7 +302,7 @@ test.describe("the customer of the sale", () => {
     const dialog = page.getByRole("dialog", {
       name: "Remover o cliente desta venda?",
     });
-    await dialog.getByRole("button", { name: "Cancelar" }).click();
+    await dialog.getByRole("button", { name: "Manter cliente" }).click();
     await expect(dialog).toBeHidden();
     await expect(actionsButton(page)).toBeFocused();
     expect(count(asked, "sale/unassignCustomer")).toBe(0);
@@ -313,7 +313,7 @@ test.describe("the customer of the sale", () => {
     expect(count(asked, "sale/unassignCustomer")).toBe(0);
 
     await openSaleAction(page, "Remover cliente");
-    await dialog.getByRole("button", { name: "Sim, remover cliente" }).click();
+    await dialog.getByRole("button", { name: "Remover cliente" }).click();
     await expect.poll(() => count(asked, "sale/unassignCustomer")).toBe(1);
     await expect(notice(page, "Cliente removido da venda.")).toBeFocused();
   });
@@ -545,7 +545,7 @@ test.describe("the Ações menu of the title", () => {
       name: "Remover o cliente desta venda?",
     });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "Sim, remover cliente" }).focus();
+    await dialog.getByRole("button", { name: "Remover cliente" }).focus();
     await page.keyboard.press("Enter");
     await expect(notice(page, "Cliente removido da venda.")).toBeFocused();
   });
