@@ -113,12 +113,23 @@ const renderReason = (reasonCode: string, note?: string) =>
     />
   );
 
+const REASON_SEAL = /Motivo <span[^>]*>Opcional<\/span>/;
+const NOTE_SEAL = /Observação <span[^>]*>Opcional<\/span>/;
+
 describe("ReasonFields", () => {
   it("starts on 'Sem motivo informado', with no note to write", () => {
     const html = renderReason("");
     expect(html).toContain("Motivo do cancelamento (opcional)");
     expect(html).toContain("Sem motivo informado");
     expect(html).not.toContain("sale-cancel-note");
+    expect(html).not.toContain("Motivo (opcional)");
+    expect(html).toMatch(REASON_SEAL);
+  });
+
+  it("puts the same 'Opcional' seal on the note of a reason that is not 'Outro'", () => {
+    const html = renderReason("entry_error");
+    expect(html).toMatch(NOTE_SEAL);
+    expect(html).not.toContain("Observação (opcional)");
   });
 
   it("asks for the note of 'Outro' and reads its counter and its error", () => {
