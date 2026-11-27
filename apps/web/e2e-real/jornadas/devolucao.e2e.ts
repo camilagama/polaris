@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { localDate } from "../calendar";
 import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
 import { cents } from "../oracle";
@@ -486,4 +486,146 @@ test("devolver e cancelar se excluem: venda com devolução não se cancela por 
   await expect(
     page.getByRole("menuitem", { exact: true, name: "Cancelar venda" })
   ).toHaveCount(0);
+});
+
+/** The cancellation of a sale and its inverse movements, read from the database. */
+async function cancellationOf(sql: Sql, saleId: string) {
+  const cancellations = (
+    await sql.query<{ reason_code: string | null; reason_note: string | null }>(
+      "SELECT reason_code, reason_note FROM sale_cancellations WHERE sale_id = $1",
+      [saleId]
+    )
+  ).rows;
+  const movements = (
+    await sql.query<{ quantity_delta: number }>(
+      `SELECT sm.quantity_delta::int AS quantity_delta
+         FROM stock_movements sm
+         JOIN sale_cancellations sc ON sc.command_id = sm.command_id AND sc.sale_id = $1
+         JOIN sale_items si ON si.variant_id = sm.variant_id AND si.sale_id = sc.sale_id
+        WHERE sm.movement_type = 'sale_cancellation'
+        ORDER BY si.position`,
+      [saleId]
+    )
+  ).rows.map((row) => row.quantity_delta);
+  return { cancellations, movements };
+}
+
+async function chooseCancelReason(panel: Locator, option: string) {
+  await panel
+    .getByRole("combobox", { exact: true, name: "Motivo (opcional)" })
+    .click();
+  await panel.page().getByRole("option", { exact: true, name: option }).click();
+}
+
+test('cancelamento com motivo "Outro": sem nota é recusado, com nota grava motivo e nota aparada, e cancelar de novo não devolve o estoque duas vezes', async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "cancelamento-outro", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const { organizationId, read, saleId, sell } = await seeded(journey, sql);
+  expect(await read()).toMatchObject({ bottle: 7, cancelled: 0, mug: 8 });
+
+  await page.goto(`/sales/detail?saleId=${saleId}`);
+  await openSaleAction(page, "Cancelar venda");
+  const panel = page.getByRole("dialog", { name: "Cancelar venda" });
+  await chooseCancelReason(panel, "Outro");
+  await panel.getByRole("button", { name: "Revisar cancelamento" }).click();
+  await expect(panel.getByText("Descreva o motivo em “Outro”.")).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Confirmar cancelamento" })
+  ).toHaveCount(0);
+  // nothing was written: the screen did not even send it
+  expect(await read()).toMatchObject({ bottle: 7, cancelled: 0, mug: 8 });
+  expect(await cancellationOf(sql, saleId)).toEqual({
+    cancellations: [],
+    movements: [],
+  });
+  // and the server refuses the same thing when the screen is bypassed
+  const refusedOther = async (reasonNote?: string) =>
+    (
+      await refusal(
+        journey.user.rpc.sale.cancel({
+          commandId: nextCommandId(),
+          commandVersion: 1,
+          organizationId,
+          reasonCode: "other",
+          ...(reasonNote === undefined ? {} : { reasonNote }),
+          saleId,
+        })
+      )
+    ).code;
+  expect(await refusedOther()).toMatch(BUSINESS_REFUSAL);
+  expect(await refusedOther("   ")).toMatch(BUSINESS_REFUSAL);
+  expect(await cancellationOf(sql, saleId)).toEqual({
+    cancellations: [],
+    movements: [],
+  });
+
+  await panel
+    .getByLabel("Observação (obrigatória para “Outro”)")
+    .fill("  Cliente trocou de ideia no balcão  ");
+  await panel.getByRole("button", { name: "Revisar cancelamento" }).click();
+  await panel.getByRole("button", { name: "Confirmar cancelamento" }).click();
+
+  await expect.poll(read).toMatchObject({ bottle: 10, cancelled: 1, mug: 10 });
+  const cancelled = await cancellationOf(sql, saleId);
+  expect(cancelled.cancellations).toEqual([
+    { reason_code: "other", reason_note: "Cliente trocou de ideia no balcão" },
+  ]);
+  expect(cancelled.movements).toEqual([3, 2]);
+
+  // the server trims the note by itself, whatever the screen sent: a second sale, cancelled by the RPC
+  const paddedSaleId = await sell();
+  await journey.user.rpc.sale.cancel({
+    commandId: nextCommandId(),
+    commandVersion: 1,
+    organizationId,
+    reasonCode: "other",
+    reasonNote: "  Erro no balcão \n",
+    saleId: paddedSaleId,
+  });
+  expect((await cancellationOf(sql, paddedSaleId)).cancellations).toEqual([
+    { reason_code: "other", reason_note: "Erro no balcão" },
+  ]);
+
+  // another commandId on the same sale: refused, and the stock does not come back a second time
+  const again = await refusal(
+    journey.user.rpc.sale.cancel({
+      commandId: nextCommandId(),
+      commandVersion: 1,
+      organizationId,
+      saleId,
+    })
+  );
+  expect(again.code).toMatch(BUSINESS_REFUSAL);
+  expect(again.reason).toBe("sale_already_cancelled");
+  expect(await read()).toMatchObject({ bottle: 10, cancelled: 1, mug: 10 });
+  expect(await cancellationOf(sql, saleId)).toEqual(cancelled);
+});
+
+test('cancelamento com motivo que não é "Outro": a nota é opcional', async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "cancelamento-motivo", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const { read, saleId } = await seeded(journey, sql);
+
+  await page.goto(`/sales/detail?saleId=${saleId}`);
+  await openSaleAction(page, "Cancelar venda");
+  const panel = page.getByRole("dialog", { name: "Cancelar venda" });
+  await chooseCancelReason(panel, "Cliente desistiu");
+  await panel.getByRole("button", { name: "Revisar cancelamento" }).click();
+  await panel.getByRole("button", { name: "Confirmar cancelamento" }).click();
+
+  await expect.poll(read).toMatchObject({ bottle: 10, cancelled: 1, mug: 10 });
+  expect(await cancellationOf(sql, saleId)).toEqual({
+    cancellations: [{ reason_code: "customer_request", reason_note: null }],
+    movements: [3, 2],
+  });
 });
