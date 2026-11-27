@@ -429,7 +429,7 @@ function FailureNotice({
                 type="button"
                 variant="destructive"
               >
-                Sim, descartar e começar outra
+                Descartar venda
               </Button>
               <Button
                 className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
@@ -438,7 +438,7 @@ function FailureNotice({
                 type="button"
                 variant="outline"
               >
-                Voltar
+                Manter venda
               </Button>
             </div>
           </>

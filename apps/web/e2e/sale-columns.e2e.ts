@@ -688,7 +688,7 @@ for (const [label, width, columns] of [
     await expect(discard).toBeVisible();
     await discard.click();
     const confirmDiscard = page.getByRole("button", {
-      name: "Sim, descartar e começar outra",
+      name: "Descartar venda",
     });
     await expect(confirmDiscard).toBeVisible();
     await confirmDiscard.scrollIntoViewIfNeeded();

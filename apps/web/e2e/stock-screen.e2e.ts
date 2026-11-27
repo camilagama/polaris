@@ -1356,7 +1356,7 @@ test("sem resposta do servidor, o botão seguro vem primeiro e o descarte vem po
   // the discard still asks twice: the question replaces the button, and the retry stays
   await discard.click();
   await expect(
-    page.getByRole("button", { name: "Sim, descartar e recomeçar" })
+    page.getByRole("button", { name: "Descartar movimento" })
   ).toBeVisible();
   await expect(discard).toHaveCount(0);
   await expect(retry).toBeVisible();
