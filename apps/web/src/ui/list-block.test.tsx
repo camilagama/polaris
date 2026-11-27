@@ -103,6 +103,21 @@ describe("ListBlock: o título e a contagem na árvore de acessibilidade", () =>
     }
   });
 
+  it("sem ação, abaixo de 760 px a contagem termina na borda da linha do título (alinhada à direita, com o recuo medido); com ação, não", () => {
+    const plain = draw({}, rows);
+    const count = COUNT_CLASS.exec(plain)?.[1]?.split(" ");
+    expect(count).toContain("max-md:text-right");
+    expect(count).toContain("max-md:right-(--count-inset)");
+    const withAction = draw(
+      { action: <button type="button">Exportar</button> },
+      rows
+    );
+    expect(COUNT_CLASS.exec(withAction)?.[1]).not.toContain(
+      "max-md:text-right"
+    );
+    expect(withAction).not.toContain("count-inset");
+  });
+
   it("sem count e sem ação, com linhas, não há contagem nem a reserva de largura", () => {
     const html = draw({ count: undefined, state: "rows" }, rows);
     expect(html).not.toContain("data-list-count");
