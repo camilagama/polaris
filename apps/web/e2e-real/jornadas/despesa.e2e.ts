@@ -604,7 +604,9 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
     .getByRole("button", { exact: true, name: `Arquivar categoria ${name}` })
     .click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Categoria arquivada." })
+    page
+      .getByRole("status")
+      .filter({ hasText: `Categoria “${name}” arquivada.` })
   ).toBeVisible();
   await expect(panel.getByText(name)).toHaveCount(0);
   await panel
@@ -723,7 +725,9 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
     .getByRole("button", { exact: true, name: `Restaurar categoria ${name}` })
     .click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Categoria restaurada." })
+    page
+      .getByRole("status")
+      .filter({ hasText: `Categoria “${name}” restaurada.` })
   ).toBeVisible();
   await expect
     .poll(async () => categoriesOf(sql, organizationId))

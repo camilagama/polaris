@@ -405,6 +405,7 @@ describe("archiving a category on the Categorias part", () => {
       expect(within(block).getByText("Frete (arquivada)")).toBeTruthy()
     );
     expect(screen.getByText(THIRD_ROW)).toBeTruthy();
+    expect(screen.getByText("Categoria “Frete” arquivada.")).toBeTruthy();
   });
 });
 
@@ -431,7 +432,7 @@ describe("creating a category on the Categorias part", () => {
     );
 
     await screen.findByText("Embalagens");
-    await screen.findByText("Categoria criada.");
+    await screen.findByText("Categoria “Embalagens” criada.");
     expect(createCategory).toHaveBeenCalledTimes(1);
     expect(list).toHaveBeenCalledTimes(before);
     expect(screen.getByText(THIRD_ROW)).toBeTruthy();
