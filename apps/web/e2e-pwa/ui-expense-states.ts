@@ -247,9 +247,7 @@ export const expenseStates = {
   async categories(page: Page) {
     await openExpensesLab(page);
     await page.getByRole("tab", { name: "Categorias" }).click();
-    await page
-      .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
-      .check();
+    await page.getByRole("checkbox", { name: "Incluir arquivadas" }).check();
     await page.getByText("Material de escritório").waitFor();
     await page
       .getByRole("button", { exact: true, name: "Nova categoria" })
