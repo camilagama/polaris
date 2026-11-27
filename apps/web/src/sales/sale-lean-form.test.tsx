@@ -5,6 +5,7 @@ import {
   evaluateSaleForm,
   type ItemDraft,
   joinSaleDate,
+  MAX_SALE_ITEMS,
   type SaleFormState,
   saleExtrasSummary,
   splitSaleDate,
@@ -201,17 +202,37 @@ describe("o contador e o Adicionar item da venda", () => {
     expect(html).toContain("Adicionar item");
   });
 
-  it("o botão ocupa a largura toda abaixo de 760 px (max-md), o mesmo ponto das outras ações de formulário", () => {
+  it("com variante escolhida, 'Adicionar item' é a última linha da lista: a peça tracejada de largura toda", () => {
     const form: SaleFormState = {
       ...createBlankSaleForm(ids()),
       items: [{ ...chosenItem, draftId: "d1" }],
     };
     const html = renderItemsChrome(form);
-    expect(html).toContain("max-md:w-full");
-    expect(html).toContain("justify-self-start");
-    expect(html).not.toContain("sm:w-auto");
-    expect(html).not.toContain(" w-full");
-    expect(html).not.toContain('"w-full');
+    expect(html).toContain("border-dashed");
+    expect(html).toContain("w-full");
+    expect(html).toContain("min-h-ctl-lg");
+    expect(html).toContain("Adicionar item</button>");
+    expect(html).not.toContain("justify-self-start");
+    expect(html).not.toContain('disabled=""');
+  });
+
+  it("com 50 itens o 'Adicionar item' fica desligado e continua tracejado", () => {
+    const items = Array.from({ length: MAX_SALE_ITEMS }, (_, index) => ({
+      ...chosenItem,
+      draftId: `d${index}`,
+    }));
+    const html = renderToStaticMarkup(
+      <AddItemButton chosen={items.length} onAdd={noop} total={items.length} />
+    );
+    expect(html).toContain('disabled=""');
+    expect(html).toContain("border-dashed");
+    expect(html).toContain("Adicionar item");
+  });
+
+  it("sem variante escolhida não desenha nada", () => {
+    expect(
+      renderToStaticMarkup(<AddItemButton chosen={0} onAdd={noop} total={1} />)
+    ).toBe("");
   });
 
   it("1 escolhida e 1 linha vazia: o contador diz '1 linha · 1 unidade'", () => {
