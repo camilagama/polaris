@@ -26,6 +26,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
+const PRODUCT_OPEN_FAILED =
+  /^Não foi possível abrir o produto\.\s*Tentar novamente$/;
 const THEMES = [
   { dark: false, name: "claro", stored: "claro" },
   { dark: true, name: "escuro", stored: "escuro" },
@@ -752,7 +754,7 @@ test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o 
   const alert = page.getByRole("alert");
   // three tries (~1.5 s and ~4 s between them) before the screen says it failed
   await expect(alert).toHaveCount(1, { timeout: 15_000 });
-  await expect(alert).toContainText("Não foi possível abrir o produto.");
+  await expect(alert).toHaveText(PRODUCT_OPEN_FAILED);
   await expect(page.getByText("Camiseta do teste")).toBeVisible();
   // the person is taken to the alert, which is where the button is
   await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);

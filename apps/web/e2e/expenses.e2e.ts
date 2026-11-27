@@ -574,7 +574,7 @@ async function fillExpense(
   if (!(await expenseForm(page).isVisible())) {
     await openNewExpense(page);
   }
-  await page.getByLabel("Valor (R$)").fill(values.amount);
+  await page.getByLabel("Valor", { exact: true }).fill(values.amount);
   await choose(page, expenseForm(page), "Categoria", values.category);
   await page.getByLabel("Descrição").fill(values.description);
 }
@@ -1095,7 +1095,7 @@ test("editar sobre uma versão antiga mostra o conflito e recarrega", async ({
     stored.version += 1;
     stored.amount = "75.00";
   }
-  await page.getByLabel("Valor (R$)").fill("60");
+  await page.getByLabel("Valor", { exact: true }).fill("60");
   await page.getByRole("button", { name: "Salvar alterações" }).click();
 
   await expect(page.getByRole("alert").first()).toBeVisible();
@@ -1145,7 +1145,7 @@ async function createMonthlyRule(page: Page, description: string) {
   await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
   // the form is a dialog, outside the panel
   const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
-  await form.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+  await form.getByLabel("Valor de cada ocorrência").fill("1.200");
   await choose(page, form, "Categoria", "Aluguel");
   await choose(page, form, "Frequência", "Todo mês");
   await pickDate(form, "Começa em", "2026-07-14");
@@ -1257,28 +1257,22 @@ for (const width of FORM_WIDTHS) {
       name: "Nova despesa recorrente",
     });
     await expect(dialog).toBeVisible();
-    await expect(
-      dialog.getByLabel("Valor de cada ocorrência (R$)")
-    ).toBeFocused();
+    await expect(dialog.getByLabel("Valor de cada ocorrência")).toBeFocused();
     await expectFormDialogLayout(dialog, width);
 
     // Esc sem digitar não guarda nada, nem o que foi digitado e apagado: reabrir traz o formulário como começou
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await openForm.click();
-    await expect(
-      dialog.getByLabel("Valor de cada ocorrência (R$)")
-    ).toHaveValue("");
-    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("7");
-    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("");
+    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
+    await dialog.getByLabel("Valor de cada ocorrência").fill("7");
+    await dialog.getByLabel("Valor de cada ocorrência").fill("");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await openForm.click();
-    await expect(
-      dialog.getByLabel("Valor de cada ocorrência (R$)")
-    ).toHaveValue("");
+    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
 
-    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+    await dialog.getByLabel("Valor de cada ocorrência").fill("1.200");
     if (width < 760) {
       await expectKeyboardKeepsMainButton(
         page,
@@ -1292,9 +1286,9 @@ for (const width of FORM_WIDTHS) {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(openForm).toBeFocused();
     await openForm.click();
-    await expect(
-      dialog.getByLabel("Valor de cada ocorrência (R$)")
-    ).toHaveValue("1.200");
+    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue(
+      "1.200"
+    );
 
     await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -1303,10 +1297,8 @@ for (const width of FORM_WIDTHS) {
 
     // o que foi digitado não fica para a próxima vez, e salvar fecha o formulário e diz o resultado
     await openForm.click();
-    await expect(
-      dialog.getByLabel("Valor de cada ocorrência (R$)")
-    ).toHaveValue("");
-    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
+    await dialog.getByLabel("Valor de cada ocorrência").fill("1.200");
     await choose(page, dialog, "Categoria", "Aluguel");
     await choose(page, dialog, "Frequência", "Todo mês");
     await pickDate(dialog, "Começa em", "2026-07-14");
@@ -1386,7 +1378,7 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   await expect(panel.getByText("Despesa recorrente pausada.")).toBeVisible();
   await expect(rule).toHaveCount(0);
 
-  await panel.getByRole("checkbox", { name: "Mostrar pausadas" }).check();
+  await panel.getByRole("checkbox", { name: "Incluir pausadas" }).check();
   await expect(rule.getByText("Pausada", { exact: true })).toBeVisible();
   await expect(rule).toContainText("Geração suspensa até retomar");
 
@@ -2140,12 +2132,12 @@ test("o segmentado Lançamentos · Recorrentes · Categorias: nome acessível, e
 
   // the address opens a part: what was ticked in another survives (the three stay mounted)
   await rulesPanel(page)
-    .getByRole("checkbox", { name: "Mostrar pausadas" })
+    .getByRole("checkbox", { name: "Incluir pausadas" })
     .check();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
   await page.getByRole("tab", { name: "Recorrentes" }).click();
   await expect(
-    rulesPanel(page).getByRole("checkbox", { name: "Mostrar pausadas" })
+    rulesPanel(page).getByRole("checkbox", { name: "Incluir pausadas" })
   ).toBeChecked();
 });
 
@@ -2266,20 +2258,20 @@ test("despesa no diálogo: Nova despesa e Editar abrem o formulário, Esc guarda
 
   await openNewExpense(page);
   const form = expenseForm(page);
-  await expect(form.getByLabel("Valor (R$)")).toBeFocused();
-  await form.getByLabel("Valor (R$)").fill("80");
+  await expect(form.getByLabel("Valor", { exact: true })).toBeFocused();
+  await form.getByLabel("Valor", { exact: true }).fill("80");
   // Esc closes keeping the draft (in memory): the focus goes back to "Nova despesa", and it brings the draft back
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(newExpenseButton(page)).toBeFocused();
   await openNewExpense(page);
-  await expect(form.getByLabel("Valor (R$)")).toHaveValue("80");
+  await expect(form.getByLabel("Valor", { exact: true })).toHaveValue("80");
   // "Cancelar" throws it away
   await form.getByRole("button", { exact: true, name: "Cancelar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(newExpenseButton(page)).toBeFocused();
   await openNewExpense(page);
-  await expect(form.getByLabel("Valor (R$)")).toHaveValue("");
+  await expect(form.getByLabel("Valor", { exact: true })).toHaveValue("");
 
   await fillExpense(page, {
     amount: "80",
@@ -2295,12 +2287,14 @@ test("despesa no diálogo: Nova despesa e Editar abrem o formulário, Esc guarda
   const edit = page.getByRole("button", { name: "Editar despesa Panfletos" });
   await edit.click();
   const editForm = page.getByRole("dialog", { name: "Editar despesa" });
-  await expect(editForm.getByLabel("Valor (R$)")).toHaveValue("80,00");
+  await expect(editForm.getByLabel("Valor", { exact: true })).toHaveValue(
+    "80,00"
+  );
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(edit).toBeFocused();
   await edit.click();
-  await editForm.getByLabel("Valor (R$)").fill("95");
+  await editForm.getByLabel("Valor", { exact: true }).fill("95");
   await editForm.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("Despesa atualizada.")).toBeVisible();

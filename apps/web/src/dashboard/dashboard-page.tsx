@@ -22,7 +22,7 @@ import {
   useAddress,
 } from "../app-shell/address";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
-import { TitleLine } from "../app-shell/screen-title";
+import { SCREEN_TITLE_CLASS, TitleLine } from "../app-shell/screen-title";
 import { useScreenTab } from "../app-shell/screen-tabs";
 import { LoadError } from "../expenses/expense-fields";
 import { monthOfDay } from "../expenses/expense-model";
@@ -73,7 +73,7 @@ function Heading({ action }: { action: ReactNode }) {
     <header>
       <TitleLine action={action}>
         <div className="flex items-center gap-1">
-          <h1 className="text-title">Resultado</h1>
+          <h1 className={SCREEN_TITLE_CLASS}>Resultado</h1>
           <HelpTip about="Resultado">
             Estimativa com as vendas confirmadas e as despesas do período. Não é
             lucro líquido nem dinheiro recebido.

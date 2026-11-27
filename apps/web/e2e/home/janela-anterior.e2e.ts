@@ -235,7 +235,7 @@ test.describe("janela anterior do Início: o que muda neste aparelho", () => {
 test.describe("janela anterior do Início: uma despesa neste aparelho", () => {
   const fillCompetence = async (page: Page, competenceOn: string) => {
     await pickDate(page, "Data de competência", competenceOn);
-    await page.getByLabel("Valor (R$)").fill("80");
+    await page.getByLabel("Valor", { exact: true }).fill("80");
     await page.getByLabel("Descrição").fill("Conta de luz");
   };
   const registerExpense = async (page: Page, competenceOn: string) => {

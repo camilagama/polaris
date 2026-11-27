@@ -46,6 +46,10 @@ const rpcPrefix = /^\/rpc\//;
 const goalActionName = /^(Editar|Cancelar) meta/;
 const fortyFivePercent = /45,0%/;
 const LAB_ADDRESS = /\/offline-screens-lab\?/;
+const GOALS_READ_FAILED =
+  /^Não foi possível carregar as metas\.\s*Tentar novamente$/;
+const GOALS_UNAVAILABLE =
+  /^As metas estão temporariamente indisponíveis\.\s*Tentar novamente$/;
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -1474,9 +1478,7 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
 
   const alert = page.getByRole("alert");
   // three tries (~1.5 s and ~4 s between them) before the screen says it failed
-  await expect(alert).toContainText("Não foi possível carregar as metas.", {
-    timeout: 15_000,
-  });
+  await expect(alert).toHaveText(GOALS_READ_FAILED, { timeout: 15_000 });
   await expect(
     page
       .locator("[data-slot=card]")
@@ -1610,10 +1612,9 @@ test("três 503 seguidos nas metas mostram o erro, depois de duas repetições",
   server.listUnavailable = 3;
   await openGoals(page, server);
 
-  await expect(page.getByRole("alert")).toContainText(
-    "As metas estão temporariamente indisponíveis.",
-    { timeout: 15_000 }
-  );
+  await expect(page.getByRole("alert")).toHaveText(GOALS_UNAVAILABLE, {
+    timeout: 15_000,
+  });
   expect(server.listCalls).toBe(3);
 });
 

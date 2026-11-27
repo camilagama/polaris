@@ -236,10 +236,10 @@ export const expenseStates = {
   async rules(page: Page) {
     await openExpensesLab(page);
     await page.getByRole("tab", { name: "Recorrentes" }).click();
-    await page.getByRole("checkbox", { name: "Mostrar pausadas" }).check();
+    await page.getByRole("checkbox", { name: "Incluir pausadas" }).check();
     await page.getByText("Assinatura do sistema").waitFor();
     await page.getByRole("button", { name: "Nova despesa recorrente" }).click();
-    await page.getByLabel("Valor de cada ocorrência (R$)").waitFor();
+    await page.getByLabel("Valor de cada ocorrência").waitFor();
     await showScreenAlone(page);
   },
 
