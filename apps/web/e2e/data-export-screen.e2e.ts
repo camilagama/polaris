@@ -245,6 +245,47 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
   expect(calls.downloads).toEqual([`/api/data-exports/${EXPORT_ID}/files/1`]);
 });
 
+test("o título só fica para o leitor de tela quando a aba nomeia a tela, e os cartões ficam a 16 px uns dos outros", async ({
+  page,
+}) => {
+  await openScreen(page, { lists: [[]] });
+  await expect(title(page)).toBeAttached();
+  const grid = title(page).locator("xpath=ancestor::div[@data-title-line]/..");
+  const measure = () =>
+    grid.evaluate((element) => {
+      const heading = element.querySelector("[data-title-line] h2");
+      const box = heading?.getBoundingClientRect();
+      const blocks = [...element.children]
+        .filter((child) => !child.matches("[data-title-line]"))
+        .map((child) => child.getBoundingClientRect());
+      return {
+        gaps: blocks.slice(1).map((rect, index) => {
+          const previous = blocks[index];
+          return Math.round(rect.top - (previous ? previous.bottom : 0));
+        }),
+        headingHeight: Math.round(box?.height ?? 0),
+        titleTop: Math.round(
+          element.querySelector("[data-title-line]")?.getBoundingClientRect()
+            .height ?? 0
+        ),
+        top: Math.round(blocks[0]?.top ?? 0),
+        gridTop: Math.round(element.getBoundingClientRect().top),
+      };
+    });
+  const measured = await measure();
+  expect(measured.gaps.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(measured.gaps)).toEqual(new Set([16]));
+  if (onPhone(page)) {
+    await expect(title(page)).toBeVisible();
+    expect(measured.headingHeight).toBeGreaterThan(8);
+    expect(measured.top).toBeGreaterThan(measured.gridTop);
+  } else {
+    expect(measured.headingHeight).toBeLessThanOrEqual(1);
+    expect(measured.titleTop).toBe(0);
+    expect(measured.top).toBe(measured.gridTop);
+  }
+});
+
 test("sem formato marcado o botão não envia e o campo diz o que falta (AC-2)", async ({
   page,
 }) => {
