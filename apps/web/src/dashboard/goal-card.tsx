@@ -59,9 +59,9 @@ interface GoalCardProps {
 const MUTED = "text-muted-foreground text-support";
 
 /**
- * The text actions of a card: 28 px (32 with touch) with a 44 px area, bled out to the card's padding so the words
- * align with the title. Between two lines of them the gap is what the areas need not to meet: 16 px with a mouse, 12
- * px with touch.
+ * The text actions of a card: bled out to the card's padding so the words align with the title. With touch they are
+ * 32 px with a 44 px area, so two lines need 12 px between them for the areas not to meet; with a mouse there is no
+ * such area and the gap stays 16 px.
  */
 const ACTIONS = "-mx-2 -mb-1 flex flex-wrap gap-x-1 gap-y-4 touch:gap-y-3";
 

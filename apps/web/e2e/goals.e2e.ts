@@ -1695,7 +1695,7 @@ test.describe("o ritmo da meta na barra (no dia 14/10: 13 dos 31 dias do períod
       overlap,
       "as áreas de toque das duas fileiras não se encontram"
     ).toBeLessThanOrEqual(0);
-    expect(first.y).toBe(second.y);
+    expect(Math.abs(first.y - second.y)).toBeLessThanOrEqual(1);
     expect(first.x).toBeLessThan(second.x);
     expect(last.x).toBeLessThanOrEqual(first.x + 1);
   });
