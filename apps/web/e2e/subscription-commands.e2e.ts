@@ -220,7 +220,7 @@ test("cancelar a renovação: 2 toques, a perda verdadeira, o que fica, o motivo
     // biome-ignore lint/performance/noAwaitInLoops: one line after the other, in the same dialog
     await expect(dialog.getByText(line, { exact: true })).toBeVisible();
   }
-  const reason = dialog.getByLabel("Por que está cancelando? (opcional)");
+  const reason = dialog.getByLabel("Por que está cancelando? Opcional");
   await expect(reason).toHaveAccessibleDescription(
     "Não escreva dados pessoais. O motivo fica guardado sem o nome da loja."
   );

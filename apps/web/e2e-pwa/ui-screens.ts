@@ -543,7 +543,7 @@ async function exerciseCancelReason(page: Page) {
   await page.getByRole("button", { name: "Voltar" }).click();
   await openAndClose(
     page,
-    { name: "Motivo (opcional)", role: "combobox" },
+    { name: "Motivo Opcional", role: "combobox" },
     { role: "listbox" }
   );
 }

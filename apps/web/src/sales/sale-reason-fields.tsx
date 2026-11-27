@@ -55,8 +55,9 @@ export function ReasonFields({
         disabled={disabled}
         error={errors.reason}
         id={`${prefix}-reason`}
-        label="Motivo (opcional)"
+        label="Motivo"
         onChange={handleReason}
+        optional
         options={[
           { id: NO_REASON, label: "Sem motivo informado" },
           ...reasons.map(([code, label]) => ({ id: code, label })),
@@ -67,9 +68,16 @@ export function ReasonFields({
       {reasonCode === "" ? null : (
         <Field className="min-w-0" data-invalid={Boolean(errors.note)}>
           <FieldLabel htmlFor={noteId}>
-            {reasonCode === "other"
-              ? "Observação (obrigatória para “Outro”)"
-              : "Observação (opcional)"}
+            {reasonCode === "other" ? (
+              "Observação (obrigatória para “Outro”)"
+            ) : (
+              <>
+                Observação{" "}
+                <span className="font-normal text-muted-foreground">
+                  Opcional
+                </span>
+              </>
+            )}
           </FieldLabel>
           <InputGroup className="h-auto touch:h-auto items-stretch">
             <InputGroupTextarea

@@ -520,7 +520,7 @@ async function cancellationOf(sql: Sql, saleId: string) {
 
 async function chooseCancelReason(panel: Locator, option: string) {
   await panel
-    .getByRole("combobox", { exact: true, name: "Motivo (opcional)" })
+    .getByRole("combobox", { exact: true, name: "Motivo Opcional" })
     .click();
   await panel.page().getByRole("option", { exact: true, name: option }).click();
 }
