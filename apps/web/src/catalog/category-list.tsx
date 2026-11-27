@@ -284,6 +284,7 @@ function DeleteConfirm({
       </p>
       <div className="flex flex-wrap gap-3">
         <Button
+          className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
           disabled={isPending}
           onClick={onCancel}
           type="button"
@@ -293,6 +294,7 @@ function DeleteConfirm({
         </Button>
         <Button
           {...connectionControlProps(online)}
+          className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
           disabled={isPending}
           onClick={handleConfirm}
           type="button"
