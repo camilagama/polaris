@@ -856,12 +856,20 @@ test("a competência além de um ano à frente é recusada no campo da data e n�
     )
     .filter({ hasText: COMPETENCE_TOO_FAR_AHEAD });
   await expect(message).toBeVisible();
+  await expect(
+    page.getByText(COMPETENCE_TOO_FAR_AHEAD),
+    "a frase da competência tem de aparecer uma só vez na página, no campo da data; se ela passou a aparecer em outro lugar de propósito (resumo de erros, aviso), aponte aqui o ponto novo e conte-o à parte"
+  ).toHaveCount(1);
   expect(server.calls.slice(callsBefore)).not.toContain("expense/create");
   expect(server.expenses).toHaveLength(0);
 
   await pickDate(page, COMPETENCE_LABEL, lastDay);
   await expect(field).not.toHaveAttribute("aria-invalid", "true");
   await expect(message).toHaveCount(0);
+  await expect(
+    page.getByText(COMPETENCE_TOO_FAR_AHEAD),
+    "a frase da competência continua na página depois de a data voltar à janela: ela sobrou em algum ponto fora do campo, apague-a de lá (ou, se é de propósito, conte esse ponto à parte)"
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Registrar despesa" }).click();
   await expect(page.getByText("Despesa registrada.")).toBeVisible();
   expect(server.expenses[0]?.competenceOn).toBe(lastDay);
