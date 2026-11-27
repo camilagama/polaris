@@ -240,7 +240,11 @@ describe("validação das combinações", () => {
 
     it("opção marcada sem valor", () => {
       const missingValues = { color: ["Azul"], model: [], size: [] };
-      const blocker = validateVariantDrafts(names, missingValues, []).addBlocker;
+      const blocker = validateVariantDrafts(
+        names,
+        missingValues,
+        []
+      ).addBlocker;
       expect(blocker).toBe("missing_values");
       expect(addCombinationReason(blocker)).toBe(
         "Preencha os valores de cada opção para adicionar combinações."
@@ -268,7 +272,11 @@ describe("validação das combinações", () => {
     });
 
     it("com mais de uma causa vale a ordem: nenhuma opção, sem valor, repetido ou longo, limite", () => {
-      const missingAndRepeated = { color: ["Azul", "azul"], model: [], size: [] };
+      const missingAndRepeated = {
+        color: ["Azul", "azul"],
+        model: [],
+        size: [],
+      };
       expect(
         validateVariantDrafts(names, missingAndRepeated, full).addBlocker
       ).toBe("missing_values");
@@ -282,10 +290,12 @@ describe("validação das combinações", () => {
     });
 
     it("sem causa, o botão pode adicionar", () => {
-      expect(validateVariantDrafts(names, values, full.slice(1))).toMatchObject({
-        addBlocker: null,
-        canAdd: true,
-      });
+      expect(validateVariantDrafts(names, values, full.slice(1))).toMatchObject(
+        {
+          addBlocker: null,
+          canAdd: true,
+        }
+      );
       expect(validateVariantDrafts(names, values, [])).toMatchObject({
         addBlocker: null,
         canAdd: true,
@@ -293,8 +303,6 @@ describe("validação das combinações", () => {
       expect(addCombinationReason(null)).toBeNull();
     });
   });
-
-
 
   it("com opções válidas já se pode adicionar, mas salvar pede ao menos uma combinação completa", () => {
     expect(validateVariantDrafts(names, values, []).canAdd).toBe(true);
