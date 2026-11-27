@@ -206,8 +206,8 @@ export function ExpenseForm({
           </div>
         ) : null}
         <ExpenseTextField
-          disabled={disabled}
           addon="R$"
+          disabled={disabled}
           error={errors.amount}
           id={fieldId("amount")}
           inputMode="decimal"
