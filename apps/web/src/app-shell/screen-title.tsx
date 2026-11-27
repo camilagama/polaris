@@ -49,6 +49,14 @@ export function useInTab(): boolean {
 /** Set by `TitleLine`: the tab it is drawn in already carries the name of the screen, so the title is not drawn twice. */
 const TabNamesTitleContext = createContext(false);
 
+/** The h1 of a screen: one wrap rule for every title, so a long word breaks with a hyphen (`lang` of the page is pt-BR) before it breaks by letter. */
+export const SCREEN_TITLE_CLASS =
+  "min-w-0 text-title [overflow-wrap:anywhere] hyphens-auto";
+
+/** The h2 of a screen drawn as a tab: same wrap rule as the title. */
+export const SECTION_TITLE_CLASS =
+  "min-w-0 text-section [overflow-wrap:anywhere] hyphens-auto";
+
 /**
  * The title of a screen: the `h1` of the page when it stands alone, and a section title under the screen's `h1` when it
  * is a tab, as the Metas of the Resultado (one `h1` a page).
@@ -61,9 +69,7 @@ export function ScreenTitle({
 }) {
   const inTab = useContext(InTabContext);
   const tabNamesIt = useContext(TabNamesTitleContext);
-  let base = inTab
-    ? "min-w-0 text-section [overflow-wrap:anywhere]"
-    : "min-w-0 text-title [overflow-wrap:anywhere]";
+  let base = inTab ? SECTION_TITLE_CLASS : SCREEN_TITLE_CLASS;
   if (inTab && tabNamesIt) {
     base = `${base} sr-only`;
   }
