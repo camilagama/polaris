@@ -55,7 +55,7 @@ async function choose(scope: Locator, label: string, option: string) {
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
 }
 
-async function openSplitSale(page: Page) {
+async function openSaleScreen(page: Page, price: string) {
   await page.clock.setFixedTime(NOW);
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill(rpc({ profiles: [PROFILE] }))
@@ -74,10 +74,14 @@ async function openSplitSale(page: Page) {
   await page.getByRole("option", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Rede disponível").check();
   await item.getByLabel("Quantidade").fill("1");
-  await item.getByLabel("Preço cobrado").fill("123456,78");
+  await item.getByLabel("Preço cobrado").fill(price);
   await page
     .getByRole("button", { exact: true, name: "Dividir pagamento" })
     .click();
+}
+
+async function openSplitSale(page: Page) {
+  await openSaleScreen(page, "123456,78");
   const first = page.getByRole("group", { exact: true, name: "Parte 1" });
   const second = page.getByRole("group", { exact: true, name: "Parte 2" });
   await choose(first, "Método", "Transferência");
@@ -125,3 +129,41 @@ reflowTest(
     await assertNothingClipped(summary);
   }
 );
+
+for (const fontPixels of [16, 20]) {
+  reflowTest(
+    `a 320 px com letra de ${fontPixels} px o valor da parte com nome curto fica na primeira linha do nome`,
+    async ({ page }) => {
+      await openReflowViewport(page, { fontPixels });
+      await openSaleScreen(page, "300,00");
+      await expectReflowFont(page, fontPixels);
+      const first = page.getByRole("group", { exact: true, name: "Parte 1" });
+      const second = page.getByRole("group", { exact: true, name: "Parte 2" });
+      await choose(first, "Método", "Pix");
+      await first.getByLabel("Valor").fill("100,00");
+      await choose(second, "Método", "Dinheiro");
+      await second.getByLabel("Valor").fill("200,00");
+      const summary = page.getByRole("region", { exact: true, name: "Resumo" });
+      const names = [1, 2].map((ordinal) =>
+        summary.locator("dt", { hasText: `Parte ${ordinal} ·` })
+      );
+      await expect(summary).toContainText("R$ 100,00");
+      await expect(summary).toContainText("R$ 200,00");
+      const boxes = await Promise.all(
+        names.flatMap((name) => [
+          name.boundingBox(),
+          name.locator("xpath=following-sibling::dd[1]").boundingBox(),
+        ])
+      );
+      for (const [name, amount] of [
+        [boxes[0], boxes[1]],
+        [boxes[2], boxes[3]],
+      ]) {
+        if (!(name && amount)) {
+          throw new Error("sem caixa para medir");
+        }
+        expect(amount.y).toBeLessThan(name.y + name.height / 2);
+      }
+    }
+  );
+}
