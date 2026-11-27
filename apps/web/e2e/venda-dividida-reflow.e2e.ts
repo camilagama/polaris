@@ -12,13 +12,14 @@ import {
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The sale paid in two parts read at 320 px with the browser font at 20 px (`./reflow`): one column, every field of
+ * The sale paid in two parts read at 320 px with the browser font at 20 px, and the summary also at 16 px (`./reflow`): one column, every field of
  * both parts whole (part 2 in credit, with installments, who pays them and anticipation), the state line with its
  * button wrapping instead of cutting, the summary with a group per part, and no sideways scroll of the page.
  */
 skipOutsideChromium();
 
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
+const FIRST_AMOUNT = /R\$\s100\.000,00/;
 const FALTA = /Falta R\$\s1\.234,56/;
 const TOUCH_HIT = /\btouch-hit\b/;
 const NOW = new Date("2026-10-01T12:00:00-03:00");
@@ -125,3 +126,56 @@ reflowTest(
     await assertNothingClipped(summary);
   }
 );
+
+const LONG_METHOD = "Transferência bancária";
+const FIRST_LINE_FRACTION = 1.2;
+
+for (const letter of [16, 20]) {
+  reflowTest(
+    `a 320 px com letra de ${letter} px o Resumo mostra o valor inteiro de "Parte 1 · ${LONG_METHOD}", sem cortar nem passar por cima do nome`,
+    async ({ page }) => {
+      await openReflowViewport(page, { fontPixels: letter });
+      await openSplitSale(page);
+      await expectReflowFont(page, letter);
+      const summary = page.getByRole("region", { exact: true, name: "Resumo" });
+      const name = summary.getByText(`Parte 1 · ${LONG_METHOD}`, {
+        exact: true,
+      });
+      const value = name.locator("xpath=following-sibling::dd[1]");
+      await expect(name).toBeVisible();
+      await expect(value).toHaveText(FIRST_AMOUNT);
+      const windowWidth = page.viewportSize()?.width ?? 0;
+      const [nameBox, valueBox, lineHeight, nameFits, valueFits] =
+        await Promise.all([
+          name.boundingBox(),
+          value.boundingBox(),
+          value.evaluate((element) =>
+            Number.parseFloat(getComputedStyle(element).lineHeight)
+          ),
+          name.evaluate(
+            (element) => element.scrollWidth <= element.clientWidth
+          ),
+          value.evaluate(
+            (element) => element.scrollWidth <= element.clientWidth
+          ),
+        ]);
+      if (!(nameBox && valueBox)) {
+        throw new Error("sem caixa para medir");
+      }
+      // the amount is whole: on one line, with all its text inside its box and inside the window
+      expect(valueFits).toBe(true);
+      expect(valueBox.height).toBeLessThan(lineHeight * FIRST_LINE_FRACTION);
+      expect(valueBox.x).toBeGreaterThanOrEqual(0);
+      expect(valueBox.x + valueBox.width).toBeLessThanOrEqual(windowWidth);
+      // the long name wraps inside its own box instead of running under the amount: its text is not wider than the box
+      expect(nameFits).toBe(true);
+      const apart =
+        valueBox.x >= nameBox.x + nameBox.width ||
+        valueBox.y >= nameBox.y + nameBox.height;
+      expect(apart).toBe(true);
+      expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(windowWidth);
+      await assertNothingClipped(summary);
+      await assertNoPageScroll(page);
+    }
+  );
+}
