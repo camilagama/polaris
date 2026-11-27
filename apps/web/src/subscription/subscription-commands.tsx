@@ -262,7 +262,8 @@ function CancelRenewalDialog({
         <WhatChanges plan={plan} />
         <Field>
           <FieldLabel htmlFor="subscription-cancel-reason">
-            Por que está cancelando? (opcional)
+            Por que está cancelando?{" "}
+            <span className="font-normal text-muted-foreground">Opcional</span>
           </FieldLabel>
           <Textarea
             aria-describedby="subscription-cancel-reason-hint"

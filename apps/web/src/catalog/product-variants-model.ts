@@ -388,9 +388,6 @@ export function addAllCombinations(
 export const ALL_COMBINATIONS_PRESENT =
   "Todas as combinações já estão na lista.";
 
-const ADD_NEEDS_OPTION =
-  "Marque ao menos uma opção para adicionar combinações.";
-
 export const ADD_NEEDS_VALUES =
   "Preencha os valores de cada opção para adicionar combinações.";
 
@@ -399,17 +396,22 @@ const ADD_FIX_VALUES =
 
 export const ADD_AT_LIMIT = `O limite é de ${MAX_VARIANTS} combinações por produto.`;
 
-const ADD_REASONS: Record<AddCombinationBlocker, string> = {
+const ADD_REASONS: Record<
+  Exclude<AddCombinationBlocker, "no_options">,
+  string
+> = {
   invalid_values: ADD_FIX_VALUES,
   limit: ADD_AT_LIMIT,
   missing_values: ADD_NEEDS_VALUES,
-  no_options: ADD_NEEDS_OPTION,
 };
 
+/** The sentence under the button; `null` when nothing is blocked or when no option is checked, which the sentence at the top of the form already says. */
 export function addCombinationReason(
   blocker: AddCombinationBlocker | null
 ): string | null {
-  return blocker === null ? null : ADD_REASONS[blocker];
+  return blocker === null || blocker === "no_options"
+    ? null
+    : ADD_REASONS[blocker];
 }
 
 export function overCapMessage(total: number, cap: CombinationCap): string {

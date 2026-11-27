@@ -200,7 +200,7 @@ describe("the Categorias part is a list block per group", () => {
     await screen.findByText(FIRST_ROW);
     await openCategories(user);
     await user.click(
-      screen.getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
+      screen.getByRole("checkbox", { name: "Incluir arquivadas" })
     );
 
     const region = await screen.findByRole("region", {

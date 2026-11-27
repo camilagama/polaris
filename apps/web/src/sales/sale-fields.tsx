@@ -364,6 +364,8 @@ interface SelectFieldProps {
   id: string;
   label: string;
   onChange: (value: string) => void;
+  /** "Opcional" beside the label, in the same words on every form. */
+  optional?: boolean | undefined;
   options: readonly ChoiceOption[];
   placeholder: string;
   /** "" is no choice yet. */
@@ -380,6 +382,7 @@ export function SelectField({
   id,
   label,
   onChange,
+  optional,
   options,
   placeholder,
   value,
@@ -395,7 +398,15 @@ export function SelectField({
   const labelId = `${id}-label`;
   return (
     <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
-      <FieldLabel id={labelId}>{label}</FieldLabel>
+      <FieldLabel id={labelId}>
+        {label}
+        {optional ? (
+          <>
+            {" "}
+            <span className="font-normal text-muted-foreground">Opcional</span>
+          </>
+        ) : null}
+      </FieldLabel>
       <Select
         disabled={disabled}
         items={items}

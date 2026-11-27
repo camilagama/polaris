@@ -162,7 +162,7 @@ export const subscriptionStates = {
         .click();
       await current
         .getByRole("dialog")
-        .getByLabel("Por que está cancelando? (opcional)")
+        .getByLabel("Por que está cancelando? Opcional")
         .waitFor();
     }),
   /** The grace: the notice at the top, the plan's own title and the page of the charge that failed. */
