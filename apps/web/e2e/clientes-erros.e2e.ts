@@ -257,15 +257,18 @@ test("Clientes: colar no Telefone um texto maior que o limite do domínio fica n
     "only Chromium lets a test write the clipboard"
   );
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const pasted = "9".repeat(MAX_CUSTOMER_PHONE_LENGTH + 15);
+  const pasted = "9".repeat(MAX_CUSTOMER_PHONE_LENGTH * 2);
   const created: { phone?: string }[] = [];
-  const { answers } = saveAnswers(refusal("SERVICE_UNAVAILABLE", 503), 0);
-  answers["customer/create"] = (route) => {
-    const body = route.request().postDataJSON() as {
-      json: { phone?: string };
-    };
-    created.push(body.json);
-    return route.fulfill(rpc(customer(2, "Bia Souza")));
+  const answers: Record<string, Handler> = {
+    "customer/create": (route) => {
+      const body = route.request().postDataJSON() as {
+        json: { phone?: string };
+      };
+      created.push(body.json);
+      return route.fulfill(rpc(customer(2, "Bia Souza")));
+    },
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
   };
   await openCustomers(page, answers);
 
