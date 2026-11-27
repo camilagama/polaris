@@ -816,9 +816,11 @@ export function SubmitButton({
  */
 export function EntryGate({
   children,
+  help = false,
   title,
 }: {
   children: (methods: { google: boolean; siteKey: string | null }) => ReactNode;
+  help?: boolean;
   title: string;
 }) {
   const { methods, retry } = useEntryMethods();
@@ -830,7 +832,7 @@ export function EntryGate({
     return null;
   }
   return (
-    <EntryScreen title={title}>
+    <EntryScreen help={help} title={title}>
       {methods.state === "loading" ? (
         <EntryStatus>{PAGE_LOADING}</EntryStatus>
       ) : (

@@ -112,7 +112,7 @@ export function ConfirmEmailPanel({
   );
 
   return (
-    <EntryScreen support={intro} title={CONFIRM_TITLE}>
+    <EntryScreen help support={intro} title={CONFIRM_TITLE}>
       {resent ? (
         // the same line for the address of the sign-up and the one typed here: the server may not have sent it
         <EntrySuccess>{RESENT}</EntrySuccess>
@@ -181,7 +181,7 @@ function VerifyLink({
 
   if (state === "done") {
     return (
-      <EntryScreen title={CONFIRM_DONE_TITLE}>
+      <EntryScreen help title={CONFIRM_DONE_TITLE}>
         <EntrySuccess>{CONFIRM_DONE}</EntrySuccess>
         <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
       </EntryScreen>
@@ -197,7 +197,7 @@ function VerifyLink({
     );
   }
   return (
-    <EntryScreen title={CONFIRM_TITLE}>
+    <EntryScreen help title={CONFIRM_TITLE}>
       {state === "checking" ? (
         <EntryStatus>{CONFIRM_CHECKING}</EntryStatus>
       ) : (
@@ -225,7 +225,7 @@ export function ConfirmEmailPage() {
     document.title = documentTitle(CONFIRM_PAGE_TITLE);
   }, []);
   return (
-    <EntryGate title={CONFIRM_TITLE}>
+    <EntryGate help title={CONFIRM_TITLE}>
       {(methods) =>
         token ? (
           <VerifyLink siteKey={methods.siteKey} token={token} />

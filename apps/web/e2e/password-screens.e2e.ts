@@ -4,6 +4,7 @@ import type { Page, Request, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { runClockFor } from "./run-clock-for";
 import { OFFLINE_POC_ORIGIN } from "./run-settings";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
@@ -338,6 +339,62 @@ async function expectNewPasswordField(
   await expect(field).not.toHaveAttribute("aria-invalid", "true");
   await field.fill("abc");
 }
+
+test.describe("a linha de ajuda sob o cartão", () => {
+  const SCREENS = [
+    {
+      name: "Criar conta",
+      path: "/criar-conta",
+      ready: "Criar conta",
+      slug: "criar-conta",
+    },
+    {
+      name: "Esqueci a senha",
+      path: "/esqueci-a-senha",
+      ready: "Enviar link",
+      slug: "esqueci",
+    },
+    {
+      name: "Confirmar e-mail",
+      path: "/confirmar-email#token=tok-verifica",
+      ready: "Agora é só entrar.",
+      slug: "confirmar-email",
+    },
+    {
+      name: "Redefinir senha",
+      path: "/redefinir-senha#token=tok-de-teste.123",
+      ready: "Nova senha",
+      slug: "redefinir-senha",
+    },
+  ];
+
+  for (const screen of SCREENS) {
+    test(`${screen.name}: 'Precisa de ajuda? Escreva para {endereço}.' com o mailto, sem rolar de lado a 360 px`, async ({
+      page,
+    }) => {
+      await serve(page, newServer());
+      await page.setViewportSize({ height: 740, width: 360 });
+      await page.goto(screen.path);
+      await expect(page.getByText(screen.ready).first()).toBeVisible();
+      const line = page.getByText("Precisa de ajuda? Escreva para");
+      await expect(line).toBeVisible();
+      await expect(line).toHaveText(
+        `Precisa de ajuda? Escreva para ${SUPPORT_ADDRESS}.`
+      );
+      await expect(
+        page.getByRole("link", {
+          name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+        })
+      ).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+      await shot(page, `ajuda-${screen.slug}`, true);
+    });
+  }
+});
 
 test.describe("com a senha desligada (AC-46)", () => {
   test("a entrada mostra só o Google e as páginas de senha levam a /entrar", async ({

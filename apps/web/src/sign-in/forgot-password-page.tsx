@@ -81,7 +81,7 @@ function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
   );
 
   return (
-    <EntryScreen support={FORGOT_SUPPORT} title={FORGOT_TITLE}>
+    <EntryScreen help support={FORGOT_SUPPORT} title={FORGOT_TITLE}>
       {sent ? <EntrySuccess>{FORGOT_SENT}</EntrySuccess> : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
       <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
@@ -120,7 +120,7 @@ export function ForgotPasswordPage() {
     document.title = documentTitle(FORGOT_TITLE);
   }, []);
   return (
-    <EntryGate title={FORGOT_TITLE}>
+    <EntryGate help title={FORGOT_TITLE}>
       {(methods) => <ForgotPasswordForm siteKey={methods.siteKey} />}
     </EntryGate>
   );
