@@ -1399,7 +1399,7 @@ for (const mode of ["offline", "mentindo"] as const) {
         "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta."
       );
       await expect(
-        page.getByRole("dialog").getByText("Sem internet.")
+        page.getByRole("dialog").getByText("Sem conexão.")
       ).toBeVisible();
       // it also looks off (the Button base class), not just reads off
       await expect(create).toHaveCSS("opacity", "0.5");

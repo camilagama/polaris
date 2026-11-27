@@ -453,7 +453,7 @@ describe("Parar depois desta linha (Everton)", () => {
       ] as const
     ).map((pause) => pauseText(pause, 2, 1));
     expect(texts[0]).toBe("Importação parada. 2 produtos entraram; 1 falta.");
-    expect(texts[1]).toBe("Sem internet. 2 produtos entraram; 1 falta.");
+    expect(texts[1]).toBe("Sem conexão. 2 produtos entraram; 1 falta.");
     for (const text of texts) {
       expect(text).not.toMatch(CANCEL_OR_UNDO);
     }

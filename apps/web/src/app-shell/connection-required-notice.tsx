@@ -22,7 +22,7 @@ const CONNECTION_NOTICE_TEXT_ID = "connection-required-text";
 /** The same sentence inside a form dialog, whose veil covers the strip of the shell. */
 const CONNECTION_DIALOG_TEXT_ID = "connection-required-dialog-text";
 
-const CONNECTION_NOTICE_TITLE = "Sem internet.";
+const CONNECTION_NOTICE_TITLE = "Sem conexão.";
 const CONNECTION_NOTICE_WITH_FORM =
   "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta.";
 const CONNECTION_NOTICE_WITHOUT_FORM =

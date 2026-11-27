@@ -275,7 +275,7 @@ export function enteredAndLeft(entered: number, left: number): string {
 function pauseLead(pause: ImportPause): string {
   switch (pause.kind) {
     case "offline":
-      return "Sem internet.";
+      return "Sem conexão.";
     case "stopped":
       return "Importação parada.";
     case "interrupted":

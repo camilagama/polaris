@@ -195,9 +195,9 @@ function useCalendarModule(): {
 /** The texts of the box that holds the place of the calendar (DESIGN.md, "Datas"). */
 const LOADING_TEXT = "Abrindo o calendário…";
 const FAILED_TEXT = "O calendário não abriu.";
-const OFFLINE_TEXT = "Sem internet. O calendário abre quando a conexão voltar.";
+const OFFLINE_TEXT = "Sem conexão. O calendário abre quando a conexão voltar.";
 const OFFLINE_RELOAD_TEXT =
-  "Sem internet. Conecte-se e recarregue a página para abrir o calendário.";
+  "Sem conexão. Conecte-se e recarregue a página para abrir o calendário.";
 const RELOAD_WARNING =
   "Recarregar a página apaga o que você preencheu nesta tela.";
 

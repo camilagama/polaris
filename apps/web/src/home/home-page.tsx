@@ -91,7 +91,7 @@ function HomeRefresh({
   busy: boolean;
   className?: string;
   offline: boolean;
-  /** The line that already says "Sem internet.": read as the reason while the button is off for lack of a connection. */
+  /** The line that already says "Sem conexão.": read as the reason while the button is off for lack of a connection. */
   offlineReasonId: string | undefined;
   onClick: () => void;
 }) {

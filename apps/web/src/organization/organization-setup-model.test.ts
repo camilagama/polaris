@@ -77,7 +77,7 @@ describe("setupErrorMessage", () => {
   });
 
   it("says there is no internet when the call got no answer", () => {
-    const text = "Sem internet. Conecte-se e tente de novo.";
+    const text = "Sem conexão. Conecte-se e tente de novo.";
     expect(setupErrorMessage(new TypeError("Failed to fetch"))).toBe(text);
     expect(setupErrorMessage(new NoWorkerAnswerError("intercepted"))).toBe(
       text

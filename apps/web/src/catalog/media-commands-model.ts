@@ -131,7 +131,7 @@ export const replacementDoneText =
   "Imagem substituída. A nova imagem entrou no fim da lista; use Para antes e Para depois para ajustar a posição.";
 
 const networkMessage =
-  "Sem internet. Tente de novo quando a conexão voltar; repetir é seguro.";
+  "Sem conexão. Tente de novo quando a conexão voltar; repetir é seguro.";
 
 export interface MediaFailure {
   /** The plan's limit that refused the image (corte 1.6, L2 and L3): the way to the Pro goes with the text. */
