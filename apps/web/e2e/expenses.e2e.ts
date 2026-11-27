@@ -841,24 +841,22 @@ test("a competência além de um ano à frente é recusada no campo da data e n�
   await page.getByRole("button", { name: "Registrar despesa" }).click();
 
   const field = datePickerButton(page, COMPETENCE_LABEL);
-  const message = page.getByText(COMPETENCE_TOO_FAR_AHEAD);
-  await expect(message).toBeVisible();
   await expect(field).toHaveAttribute("aria-invalid", "true");
   const describedBy = (await field.getAttribute("aria-describedby")) ?? "";
-  await expect(
-    page
-      .locator(
-        describedBy
-          .split(" ")
-          .map((id) => `[id="${id}"]`)
-          .join(",")
-      )
-      .filter({ hasText: COMPETENCE_TOO_FAR_AHEAD })
-  ).toBeVisible();
+  const message = page
+    .locator(
+      describedBy
+        .split(" ")
+        .map((id) => `[id="${id}"]`)
+        .join(",")
+    )
+    .filter({ hasText: COMPETENCE_TOO_FAR_AHEAD });
+  await expect(message).toBeVisible();
   expect(server.calls.slice(callsBefore)).not.toContain("expense/create");
   expect(server.expenses).toHaveLength(0);
 
   await pickDate(page, COMPETENCE_LABEL, lastDay);
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
   await expect(message).toHaveCount(0);
   await page.getByRole("button", { name: "Registrar despesa" }).click();
   await expect(page.getByText("Despesa registrada.")).toBeVisible();
