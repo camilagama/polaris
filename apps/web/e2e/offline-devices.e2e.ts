@@ -541,6 +541,37 @@ test.describe("as datas da linha de cada aparelho", () => {
     }
   });
 
+  for (const [width, mode, expected] of [
+    [
+      639,
+      "cada fato fica numa linha, sem o ponto",
+      { sameLine: false, secondBelowFirst: true, separatorShown: false },
+    ],
+    [
+      640,
+      "a frase leva o ponto, e o ponto vai com o fato que ele abre",
+      { separatorShown: true, separatorWithFact: true },
+    ],
+  ] as const) {
+    test(`a ${width} px, de um lado e do outro do ponto de 640 px do DESIGN.md: ${mode}`, async ({
+      page,
+    }) => {
+      await openDevicesWithDates(page, width, 16);
+      for (const [index, dates] of DATES_OF_THE_LIST.entries()) {
+        // biome-ignore lint/performance/noAwaitInLoops: one device after the other
+        const lines = await measureDateLines(page, dates, index);
+        expect(lines.dateLines, `aparelho ${index + 1}: data inteira`).toEqual([
+          1, 1,
+        ]);
+        expect(lines.overflow).toBeLessThanOrEqual(0);
+        expect(
+          lines,
+          `aparelho ${index + 1}: a troca de modo da frase está em 640 px (DESIGN.md, Aparelhos, e o sm de device-item.tsx); se ela mudar de propósito, mude os dois e este teste`
+        ).toMatchObject(expected);
+      }
+    });
+  }
+
   test("de 640 a 900 px a frase quebra sem partir data e o ponto vai com o fato que ele abre", async ({
     page,
   }) => {
