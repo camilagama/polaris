@@ -2357,7 +2357,7 @@ export function UiGallery() {
               afterRead
               icon={[ShoppingBagIcon, WalletIcon, ChartColumnIcon]}
               support="Escolha outro período ou registre vendas e despesas."
-              title="Sem vendas nem despesas em 1 a 31 de outubro"
+              title="Sem vendas nem despesas em 1 a 31 de outubro."
             >
               <Button type="button">Nova venda</Button>
               <Button type="button" variant="outline">
@@ -2367,7 +2367,7 @@ export function UiGallery() {
             <EmptyState
               afterRead
               support="Escolha outro período ou registre vendas e despesas."
-              title="Sem vendas nem despesas em 1 a 31 de outubro"
+              title="Sem vendas nem despesas em 1 a 31 de outubro."
             >
               <Button type="button">Nova venda</Button>
             </EmptyState>
