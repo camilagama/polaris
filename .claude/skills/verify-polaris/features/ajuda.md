@@ -4,7 +4,7 @@ Ajuda e contato (`/ajuda`) é a página estática de suporte, dentro do shell: o
 
 ## Sub-features
 
-- `ajuda` `/ajuda`: o e-mail do suporte e o do encarregado (DPO) como links `mailto:`, "Antes de escrever" e os links dos Termos e da Política. Estática: abre sem conexão. A linha "Precisa de ajuda? Escreva para {endereço}." também está em `/entrar` e em "Abra a sua loja".
+- `ajuda` `/ajuda`: o e-mail do suporte e o do encarregado (DPO) como links `mailto:`, "Antes de escrever" e os links dos Termos e da Política. Estática: abre sem conexão. A linha "Precisa de ajuda? Escreva para {endereço}." também está em `/entrar`, em Criar conta, Esqueci a senha, Confirmar e-mail e Redefinir senha (em todos os estados delas, inclusive o de carregar) e em "Abra a sua loja".
 
 ## How to get to it (user POV)
 

@@ -463,6 +463,118 @@ for (const width of [WIDE_WINDOW, 1024]) {
   );
 }
 
+/** Per row, as the screen shows it: where the figures block (`dl`) ends and where the button group starts. */
+function rowPlacement(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll("li")]
+      .filter((row) => row.querySelector("[data-stock-action]") !== null)
+      .map((row) => {
+        const figures = row.querySelector("dl")?.getBoundingClientRect();
+        const group = row
+          .querySelector('[data-slot="button-group"]')
+          ?.getBoundingClientRect();
+        return {
+          contentWidth: Number.parseFloat(getComputedStyle(row).width),
+          figuresBottom: figures?.bottom ?? Number.NaN,
+          figuresRight: figures?.right ?? Number.NaN,
+          groupLeft: group?.left ?? Number.NaN,
+          groupTop: group?.top ?? Number.NaN,
+        };
+      })
+  );
+}
+
+/** The width, in rem, at which the row's container query changes from stacked to three columns, read from the rule the page loaded. */
+function containerLineRem(page: Page) {
+  return page.evaluate(() => {
+    const lines = new Set<number>();
+    const visit = (rules: CSSRuleList) => {
+      for (const rule of rules) {
+        if (
+          rule instanceof CSSContainerRule &&
+          [...rule.cssRules].some(
+            (inner) =>
+              inner instanceof CSSStyleRule &&
+              inner.selectorText.includes("_18\\.5rem")
+          )
+        ) {
+          const [, minimum = ""] = rule.conditionText.split(">=");
+          if (minimum.includes("rem")) {
+            lines.add(Number.parseFloat(minimum));
+          }
+        }
+        if ("cssRules" in rule) {
+          visit((rule as CSSGroupingRule).cssRules);
+        }
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      visit(sheet.cssRules);
+    }
+    return [...lines];
+  });
+}
+
+for (const width of [WIDE_WINDOW, 1024]) {
+  reflowTest(
+    `a ${width} px cada linha tem três colunas: o grupo de botões fica à direita dos valores, sem descer`,
+    async ({ page }) => {
+      await openStock(page, width, 16);
+      const rows = await rowPlacement(page);
+      expect(rows).toHaveLength(ENTRIES.length);
+      for (const row of rows) {
+        expect(
+          row.groupTop,
+          "o topo do grupo fica acima do fim dos valores"
+        ).toBeLessThan(row.figuresBottom);
+        expect(
+          row.groupLeft,
+          "o grupo começa depois do fim dos valores"
+        ).toBeGreaterThanOrEqual(row.figuresRight);
+      }
+    },
+    { coarse: false }
+  );
+}
+
+const LINE_OFFSET_PIXELS = 1;
+
+for (const [side, sign] of [
+  ["acima", 1],
+  ["abaixo", -1],
+] as const) {
+  reflowTest(
+    `a linha de contêiner de 42 rem é medida pela largura da linha: logo ${side} dela as colunas ${sign > 0 ? "ficam lado a lado" : "empilham"}, com a janela de 1280 px`,
+    async ({ page }) => {
+      await openStock(page, WIDE_WINDOW, 16);
+      const [lineRem, ...others] = await containerLineRem(page);
+      expect(others, "uma só linha de contêiner na regra das colunas").toEqual(
+        []
+      );
+      expect(lineRem, "a regra das três colunas foi lida do CSS").toBeDefined();
+      const line = (lineRem ?? 0) * 16;
+      await page.addStyleTag({
+        content: `[data-list-block] ul[aria-labelledby] > li { box-sizing: content-box; max-width: none; width: calc(${lineRem}rem + ${sign * LINE_OFFSET_PIXELS}px); }`,
+      });
+      const rows = await rowPlacement(page);
+      expect(rows).toHaveLength(ENTRIES.length);
+      for (const row of rows) {
+        expect(
+          sign * (row.contentWidth - line),
+          "a largura do contêiner da linha"
+        ).toBeGreaterThan(0);
+        if (sign > 0) {
+          expect(row.groupTop).toBeLessThan(row.figuresBottom);
+          expect(row.groupLeft).toBeGreaterThanOrEqual(row.figuresRight);
+        } else {
+          expect(row.groupTop).toBeGreaterThanOrEqual(row.figuresBottom);
+        }
+      }
+    },
+    { coarse: false }
+  );
+}
+
 reflowTest(
   "numa linha de menos de 42 rem (a lateral aberta) o grupo desce para baixo dos valores, sem rolagem lateral",
   async ({ page }) => {
@@ -483,8 +595,9 @@ reflowTest(
         }))
     );
     expect(rows).toHaveLength(ENTRIES.length);
+    const [lineRem] = await containerLineRem(page);
     for (const row of rows) {
-      expect(row.rowWidth).toBeLessThan(42 * 16);
+      expect(row.rowWidth).toBeLessThan((lineRem ?? 0) * 16);
       expect(row.groupTop).toBeGreaterThanOrEqual(row.figuresBottom ?? 0);
     }
     await assertNoPageScroll(page);
