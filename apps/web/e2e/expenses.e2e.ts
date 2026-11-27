@@ -1145,7 +1145,9 @@ async function createMonthlyRule(page: Page, description: string) {
   await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
   // the form is a dialog, outside the panel
   const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
-  await form.getByLabel("Valor de cada ocorrência").fill("1.200");
+  await form
+    .getByLabel("Valor de cada ocorrência", { exact: true })
+    .fill("1.200");
   await choose(page, form, "Categoria", "Aluguel");
   await choose(page, form, "Frequência", "Todo mês");
   await pickDate(form, "Começa em", "2026-07-14");
@@ -1257,22 +1259,34 @@ for (const width of FORM_WIDTHS) {
       name: "Nova despesa recorrente",
     });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toBeFocused();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toBeFocused();
     await expectFormDialogLayout(dialog, width);
 
     // Esc sem digitar não guarda nada, nem o que foi digitado e apagado: reabrir traz o formulário como começou
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
-    await dialog.getByLabel("Valor de cada ocorrência").fill("7");
-    await dialog.getByLabel("Valor de cada ocorrência").fill("");
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("7");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("");
 
-    await dialog.getByLabel("Valor de cada ocorrência").fill("1.200");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("1.200");
     if (width < 760) {
       await expectKeyboardKeepsMainButton(
         page,
@@ -1286,9 +1300,9 @@ for (const width of FORM_WIDTHS) {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(openForm).toBeFocused();
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue(
-      "1.200"
-    );
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("1.200");
 
     await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -1297,8 +1311,12 @@ for (const width of FORM_WIDTHS) {
 
     // o que foi digitado não fica para a próxima vez, e salvar fecha o formulário e diz o resultado
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
-    await dialog.getByLabel("Valor de cada ocorrência").fill("1.200");
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("1.200");
     await choose(page, dialog, "Categoria", "Aluguel");
     await choose(page, dialog, "Frequência", "Todo mês");
     await pickDate(dialog, "Começa em", "2026-07-14");
