@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { MAX_CUSTOMER_PHONE_LENGTH } from "@polaris/domain/customers/customer";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -244,4 +245,43 @@ test("Clientes: a conferência de repetidos que segue em 503 no segundo clique v
   ).toBeVisible();
   expect(calls.checks).toBe(3);
   expect(calls.creates).toBe(1);
+});
+
+test("Clientes: colar no Telefone um texto maior que o limite do domínio fica no limite e salvar não recusa o tamanho", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "only Chromium lets a test write the clipboard"
+  );
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const pasted = "9".repeat(MAX_CUSTOMER_PHONE_LENGTH + 15);
+  const created: { phone?: string }[] = [];
+  const { answers } = saveAnswers(refusal("SERVICE_UNAVAILABLE", 503), 0);
+  answers["customer/create"] = (route) => {
+    const body = route.request().postDataJSON() as {
+      json: { phone?: string };
+    };
+    created.push(body.json);
+    return route.fulfill(rpc(customer(2, "Bia Souza")));
+  };
+  await openCustomers(page, answers);
+
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+  const phone = page.getByLabel("Telefone");
+  await phone.focus();
+  await page.evaluate((text) => navigator.clipboard.writeText(text), pasted);
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect(phone).toHaveValue("9".repeat(MAX_CUSTOMER_PHONE_LENGTH));
+
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: SAVED })
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(created).toHaveLength(1);
+  expect(created[0]?.phone).toBe("9".repeat(MAX_CUSTOMER_PHONE_LENGTH));
 });
