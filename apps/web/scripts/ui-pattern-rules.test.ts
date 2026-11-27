@@ -21,7 +21,8 @@ import { describe, expect, it } from "vitest";
  *   string com `border-0` não conta, porque essa classe tira a borda).
  * - R4: `ListTotalFooter`, `ListNotice` e `RowTile` só vivem em `ui/`: a tela usa o `ListBlock` (o total é o
  *   `ListBlock.Total`), nunca as peças soltas.
- * - R5 (aviso, não reprova): um `Block` cujo conteúdo faz `.map(` de linhas fora de um `ListBlock`.
+ * - R5 (aviso, não reprova): um `Block` cujo conteúdo faz `.map(` de linhas fora de um `ListBlock`. `R5_EXEMPT` guarda
+ *   os arquivos cujas linhas não são lista de registros (painel de várias ações, links de navegação, relato de estado).
  *
  * A varredura é `src/**` fora de `ui/`, da galeria e dos testes. Cada regra tem uma lista de dívida com os arquivos de
  * antes do padrão, uma linha de comentário por pasta separando os grupos (dois pacotes de pastas diferentes não
@@ -240,14 +241,92 @@ export function blockMapHits(text: string): number {
   return hits;
 }
 
-/** The warnings of R5 for the files that hold one: they do not fail the test. */
-export function r5Warnings(hits: ReadonlyMap<string, number>): string[] {
+/** The only reasons a file may give to stay out of the `ListBlock`: its rows are not a list of records. */
+export const R5_EXEMPT_REASONS = [
+  "multi-action-panel",
+  "navigation-links",
+  "status-report",
+] as const;
+
+export interface R5Exemption {
+  file: string;
+  blocks: number;
+  reason: (typeof R5_EXEMPT_REASONS)[number];
+  why: string;
+}
+
+/**
+ * The files whose hand-drawn rows are not a list of records, so R5 does not warn about them. `blocks` is the exact
+ * number of `Block`s the file holds with a `.map(`: one more warns again, and one less (a file that migrated) fails
+ * the test, so a stale exemption leaves the list in the same change. Sorted by file. It is not the `ALLOWLIST`: that
+ * one is R3's and fails for a file that draws a list.
+ */
+export const R5_EXEMPT: readonly R5Exemption[] = [
+  {
+    file: "src/catalog/public-catalog-panels.tsx",
+    blocks: 1,
+    reason: "multi-action-panel",
+    why: "Cada produto do catálogo público tem a própria ação de mostrar ou esconder, dentro de um painel de várias ações: não é uma lista de registros.",
+  },
+  {
+    file: "src/data-export/data-export-list.tsx",
+    blocks: 1,
+    reason: "status-report",
+    why: "Cada cópia dos dados é o relato de um pedido, com situação, prazo e o link para baixar: lê-se como um relatório de estado, não como uma lista de registros.",
+  },
+  {
+    file: "src/organization/closed-store-page.tsx",
+    blocks: 1,
+    reason: "navigation-links",
+    why: "A página da loja encerrada diz a situação em frases e leva à cópia dos dados; a escolha entre lojas é uma lista de links, que é navegação e não registro.",
+  },
+];
+
+/**
+ * The warnings of R5 for the files that hold one: they do not fail the test. A file in `exempt` warns only for the
+ * `Block`s beyond the number its exemption counts.
+ */
+export function r5Warnings(
+  hits: ReadonlyMap<string, number>,
+  exempt: readonly R5Exemption[] = R5_EXEMPT
+): string[] {
+  const covered = new Map(exempt.map((entry) => [entry.file, entry.blocks]));
   return [...hits]
-    .filter(([, count]) => count > 0)
-    .map(
-      ([file]) =>
-        `${file}: Block com .map de linhas fora de um ListBlock (R5, aviso): use o ListBlock`
-    );
+    .filter(([file, count]) => count > (covered.get(file) ?? 0))
+    .map(([file, count]) => {
+      const blocks = covered.get(file);
+      const extra =
+        blocks === undefined
+          ? ""
+          : ` (${count} Blocks, a isenção cobre ${blocks})`;
+      return `${file}: Block com .map de linhas fora de um ListBlock (R5, aviso)${extra}: use o ListBlock`;
+    });
+}
+
+/** What is wrong with the R5 exemptions themselves, given how many `Block`s with a `.map(` each file holds. */
+export function r5ExemptFaults(
+  exempt: readonly R5Exemption[],
+  hits: ReadonlyMap<string, number>
+): string[] {
+  return exempt.flatMap(({ file, blocks, reason, why }, index) => {
+    const faults: string[] = [];
+    if (exempt.findIndex((entry) => entry.file === file) !== index) {
+      faults.push(`${file}: isenção repetida: uma por arquivo`);
+    }
+    if (!R5_EXEMPT_REASONS.includes(reason)) {
+      faults.push(`${file}: motivo "${reason}" fora da lista fechada`);
+    }
+    if (why.length <= 20) {
+      faults.push(`${file}: a razão da isenção está curta demais`);
+    }
+    const found = hits.get(file) ?? 0;
+    if (found < blocks) {
+      faults.push(
+        `${file}: isenção de R5 para ${blocks} Block(s) e o arquivo tem ${found}: tire-a da lista ou baixe a contagem`
+      );
+    }
+    return faults;
+  });
 }
 
 /** The only reasons an exception of R3 may give: an image, and the bubble of a chart. */
@@ -398,6 +477,8 @@ const read = (path: string) => readFileSync(join(web, path), "utf8");
 
 const HITS = new Map(SCOPE.map((path) => [path, ruleHits(read(path))]));
 
+const R5_HITS = new Map(SCOPE.map((path) => [path, blockMapHits(read(path))]));
+
 const filesOf = (rule: Rule) =>
   [...HITS].filter(([, found]) => found[rule] > 0).map(([file]) => file);
 
@@ -413,13 +494,21 @@ describe("o padrão visual das telas (R1 a R3)", () => {
   });
 
   it("R5 (aviso): a árvore diz onde um Block ainda desenha linhas à mão, sem reprovar", () => {
-    const warnings = r5Warnings(
-      new Map(SCOPE.map((path) => [path, blockMapHits(read(path))]))
-    );
+    const warnings = r5Warnings(R5_HITS);
     for (const warning of warnings) {
       console.warn(warning);
     }
     expect(SCOPE.length).toBeGreaterThan(0);
+  });
+
+  it("as isenções de R5 são ordenadas, só têm os motivos da lista fechada e batem com os Blocks do arquivo", () => {
+    expect(R5_EXEMPT.map((entry) => entry.file)).toEqual(
+      R5_EXEMPT.map((entry) => entry.file).sort()
+    );
+    for (const entry of R5_EXEMPT) {
+      expect(existsSync(join(web, entry.file)), entry.file).toBe(true);
+    }
+    expect(r5ExemptFaults(R5_EXEMPT, R5_HITS)).toEqual([]);
   });
 
   it("nada foge do padrão fora das listas, e nenhuma lista guarda o que já está limpo", () => {
@@ -781,6 +870,69 @@ describe("R5: Block com .map de linhas fora de um ListBlock (aviso)", () => {
         debt: { R1: [], R2: [], R3: [], R4: [] },
       })
     ).toEqual([]);
+  });
+
+  describe("a isenção de R5", () => {
+    const FILE = "src/x/lista.tsx";
+    const WHY = "Cada linha é um link para outra página, não um registro.";
+    const exemption = (
+      overrides: Partial<R5Exemption> = {}
+    ): readonly R5Exemption[] => [
+      {
+        file: FILE,
+        blocks: 1,
+        reason: "navigation-links",
+        why: WHY,
+        ...overrides,
+      },
+    ];
+    const TWO_BLOCKS = `${BLOCK_WITH_ROWS}\n${BLOCK_WITH_ROWS}`;
+
+    it("isento com a contagem exata não avisa nem reprova", () => {
+      const hits = new Map([[FILE, blockMapHits(BLOCK_WITH_ROWS)]]);
+      expect(r5Warnings(hits, exemption())).toEqual([]);
+      expect(r5ExemptFaults(exemption(), hits)).toEqual([]);
+    });
+
+    it("um Block a mais com .map no mesmo arquivo volta a avisar", () => {
+      const hits = new Map([[FILE, blockMapHits(TWO_BLOCKS)]]);
+      expect(r5Warnings(hits, exemption())).toEqual([
+        `${FILE}: Block com .map de linhas fora de um ListBlock (R5, aviso) (2 Blocks, a isenção cobre 1): use o ListBlock`,
+      ]);
+      expect(r5ExemptFaults(exemption(), hits)).toEqual([]);
+    });
+
+    it("isento sem hit reprova: a exceção velha sai da lista", () => {
+      const hits = new Map([[FILE, blockMapHits("<Block>{x}</Block>")]]);
+      expect(r5ExemptFaults(exemption(), hits)).toEqual([
+        `${FILE}: isenção de R5 para 1 Block(s) e o arquivo tem 0: tire-a da lista ou baixe a contagem`,
+      ]);
+      expect(
+        r5ExemptFaults(exemption({ blocks: 2 }), new Map([[FILE, 1]]))
+      ).toEqual([
+        `${FILE}: isenção de R5 para 2 Block(s) e o arquivo tem 1: tire-a da lista ou baixe a contagem`,
+      ]);
+    });
+
+    it("o mesmo arquivo duas vezes reprova", () => {
+      const twice = [...exemption(), ...exemption()];
+      expect(r5ExemptFaults(twice, new Map([[FILE, 1]]))).toEqual([
+        `${FILE}: isenção repetida: uma por arquivo`,
+      ]);
+    });
+
+    it("motivo fora da lista fechada reprova, e razão curta também", () => {
+      const hits = new Map([[FILE, 1]]);
+      const outside = exemption({
+        reason: "porque-sim" as R5Exemption["reason"],
+      });
+      expect(r5ExemptFaults(outside, hits)).toEqual([
+        `${FILE}: motivo "porque-sim" fora da lista fechada`,
+      ]);
+      expect(r5ExemptFaults(exemption({ why: "curta" }), hits)).toEqual([
+        `${FILE}: a razão da isenção está curta demais`,
+      ]);
+    });
   });
 
   it.each([
