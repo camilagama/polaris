@@ -1189,6 +1189,53 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   );
 });
 
+/** The height of a medium control: 36 px under the phone line and 32 px from it. */
+const RULE_BUTTON_HEIGHT = { 360: 36, 1280: 32 } as const;
+
+for (const width of FORM_WIDTHS) {
+  test(`o botão Nova despesa recorrente a ${width} px fica dentro do cartão e tem a altura de controle`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(sizeFor(width));
+    await page.clock.setFixedTime(new Date(NOW));
+    await openExpenses(page, new FakeExpenseServer());
+    await openRulesPanel(page);
+    const button = rulesPanel(page).getByRole("button", {
+      exact: true,
+      name: "Nova despesa recorrente",
+    });
+    await expect(button).toBeVisible();
+    const reading = await button.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const card = element
+        .closest('[data-slot="card"]')
+        ?.getBoundingClientRect();
+      return {
+        cardLeft: card?.left ?? Number.NaN,
+        cardRight: card?.right ?? Number.NaN,
+        height: box.height,
+        left: box.left,
+        right: box.right,
+      };
+    });
+    expect(
+      reading.left,
+      "the button starts inside the card"
+    ).toBeGreaterThanOrEqual(reading.cardLeft);
+    expect(
+      reading.right,
+      "the button ends inside the card"
+    ).toBeLessThanOrEqual(reading.cardRight);
+    expect(reading.height, "the height of a control").toBe(
+      RULE_BUTTON_HEIGHT[width]
+    );
+  });
+}
+
 for (const width of FORM_WIDTHS) {
   test(`Despesa recorrente a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
     page,

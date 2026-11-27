@@ -245,36 +245,38 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
   expect(calls.downloads).toEqual([`/api/data-exports/${EXPORT_ID}/files/1`]);
 });
 
+const measureTitleGrid = (page: Page) => {
+  const grid = title(page).locator("xpath=ancestor::div[@data-title-line]/..");
+  return grid.evaluate((element) => {
+    const heading = element.querySelector("[data-title-line] h2");
+    const box = heading?.getBoundingClientRect();
+    const blocks = [...element.children]
+      .filter((child) => !child.matches("[data-title-line]"))
+      .map((child) => child.getBoundingClientRect());
+    return {
+      gaps: blocks
+        .slice(1)
+        .map((rect, index) =>
+          Math.round(rect.top - (blocks[index]?.bottom ?? 0))
+        ),
+      gridTop: Math.round(element.getBoundingClientRect().top),
+      headingHeight: Math.round(box?.height ?? 0),
+      titleLineHeight: Math.round(
+        element.querySelector("[data-title-line]")?.getBoundingClientRect()
+          .height ?? 0
+      ),
+      top: Math.round(blocks[0]?.top ?? 0),
+    };
+  });
+};
+
 test("o título só fica para o leitor de tela quando a aba nomeia a tela, e os cartões ficam a 16 px uns dos outros", async ({
   page,
 }) => {
   await openScreen(page, { lists: [[]] });
   await expect(title(page)).toBeAttached();
   await expect(list(page)).toContainText("Nenhuma cópia pedida ainda.");
-  const grid = title(page).locator("xpath=ancestor::div[@data-title-line]/..");
-  const measure = () =>
-    grid.evaluate((element) => {
-      const heading = element.querySelector("[data-title-line] h2");
-      const box = heading?.getBoundingClientRect();
-      const blocks = [...element.children]
-        .filter((child) => !child.matches("[data-title-line]"))
-        .map((child) => child.getBoundingClientRect());
-      return {
-        gaps: blocks
-          .slice(1)
-          .map((rect, index) =>
-            Math.round(rect.top - (blocks[index]?.bottom ?? 0))
-          ),
-        headingHeight: Math.round(box?.height ?? 0),
-        titleLineHeight: Math.round(
-          element.querySelector("[data-title-line]")?.getBoundingClientRect()
-            .height ?? 0
-        ),
-        top: Math.round(blocks[0]?.top ?? 0),
-        gridTop: Math.round(element.getBoundingClientRect().top),
-      };
-    });
-  const measured = await measure();
+  const measured = await measureTitleGrid(page);
   expect(measured.gaps.length).toBeGreaterThanOrEqual(2);
   expect(new Set(measured.gaps)).toEqual(new Set([16]));
   if (onPhone(page)) {
@@ -286,6 +288,29 @@ test("o título só fica para o leitor de tela quando a aba nomeia a tela, e os 
     expect(measured.titleLineHeight).toBe(0);
     expect(measured.top).toBe(measured.gridTop);
   }
+});
+
+test("a 700 px a tela é a do celular: o título à vista, Voltar no lugar das abas e os cartões a 16 px uns dos outros", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "a largura é a do teste"
+  );
+  await page.setViewportSize({ height: 900, width: 700 });
+  await openScreen(page, { lists: [[]] });
+  await expect(list(page)).toContainText("Nenhuma cópia pedida ainda.");
+  expect(onPhone(page)).toBe(true);
+  await expect(title(page)).toBeVisible();
+  await expect(backToList(page)).toBeVisible();
+  await expect(
+    page.getByRole("tablist", { name: "Configurações da loja" })
+  ).toHaveCount(0);
+  const measured = await measureTitleGrid(page);
+  expect(measured.gaps.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(measured.gaps)).toEqual(new Set([16]));
+  expect(measured.headingHeight).toBeGreaterThan(8);
+  expect(measured.top).toBeGreaterThan(measured.gridTop);
 });
 
 test("sem formato marcado o botão não envia e o campo diz o que falta (AC-2)", async ({
