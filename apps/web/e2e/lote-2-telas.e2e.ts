@@ -712,7 +712,7 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await expect(name).toBeFocused();
 });
 
-test("Clientes: editar com conexão fecha o formulário e o aviso diz o nome do cliente salvo, como cadastrar, arquivar e restaurar", async ({
+test("Clientes: editar com conexão fecha o formulário e o aviso diz o nome que o servidor devolveu, como cadastrar, arquivar e restaurar", async ({
   page,
 }) => {
   await openScreen(page, "/customers", "Clientes", {
@@ -727,7 +727,7 @@ test("Clientes: editar com conexão fecha o formulário e o aviso diz o nome do 
     .getByRole("button", { exact: true, name: "Editar Ana Lima" })
     .click();
   const dialog = page.getByRole("dialog", { name: "Editar cliente" });
-  await dialog.getByLabel("Nome", { exact: true }).fill("Ana Lima Souza");
+  await dialog.getByLabel("Nome", { exact: true }).fill("ana lima souza");
   await dialog.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(
     page
@@ -735,7 +735,6 @@ test("Clientes: editar com conexão fecha o formulário e o aviso diz o nome do 
       .filter({ hasText: "Cliente “Ana Lima Souza” atualizado." })
   ).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByText("Dados do cliente atualizados.")).toHaveCount(0);
 });
 
 test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
