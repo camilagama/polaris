@@ -430,7 +430,7 @@ export type RhythmSource =
   | { data: DailySeries | null; status: "copy" };
 
 /**
- * The block while the series is read, as tall as the block with the map: at the default letter 199 px (203 px from 768
+ * The block while the series is read, as tall as the block with the map: at the default letter 199 px (203 px from 760
  * px) with the map of 12 + 3, which is 123 px tall; beside the goal the map is as tall as its cell makes it, so the
  * minimum height is the block's own (12.6875 rem) with the map's height in pixels in place of the 123. The bar sits in a
  * box of the panel's width, the one the map is measured in, so the cell is the one the map will have.

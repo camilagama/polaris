@@ -38,7 +38,7 @@ import { HomeBlock } from "./home-parts";
  * does not open the table is shown in the place of the drawing, and the sentence of § 5.5 says why.
  */
 
-/** The least height of the plot: 140 px on a phone, 200 from 768 px; the empty period keeps the same one. */
+/** The least height of the plot: 140 px on a phone, 200 from 760 px; the empty period keeps the same one. */
 function useChartHeight() {
   const still = useIsMobile();
   return { height: still ? 140 : 200, still };
