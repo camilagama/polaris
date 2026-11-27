@@ -151,7 +151,7 @@ function useCategoryCommands({
             organizationId,
           });
           onUpsert(result.category, "update");
-          return "Categoria renomeada.";
+          return `Categoria “${result.category.name}” renomeada.`;
         })
       ),
     [onUpsert, organizationId, run, settle]
