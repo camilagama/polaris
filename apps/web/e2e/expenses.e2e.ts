@@ -2123,7 +2123,7 @@ test("o segmentado Lançamentos · Recorrentes · Categorias: nome acessível, e
   await expect(
     page
       .getByRole("tabpanel", { name: "Categorias" })
-      .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
+      .getByRole("checkbox", { name: "Incluir arquivadas" })
   ).toBeVisible();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
   await expect(page).not.toHaveURL(VER_ANY);

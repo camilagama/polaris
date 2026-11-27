@@ -1011,8 +1011,9 @@ test.describe("o diálogo pequeno mais alto que a janela rola inteiro", () => {
     context,
     page,
   }) => {
-    // measured: this confirmation is 415 px tall at 320 px / 24 px and 271 px at 568 × 320 / 20 px, which both fit; at
-    // 24 px in a 320 px-high window it passes the window, and its first focus is the footer button, below the fold
+    // measured with the "Manter meta" button: this confirmation is 415 px tall at 320 px / 24 px (740 px window) and
+    // 271 px at 568 × 320 / 20 px, which both fit; at 24 px in a 320 px-high window its content is 325 px, past the
+    // window, and its first focus is the footer button, below the fold
     await openReflowViewport(page, {
       fontPixels: BEST_EFFORT_FONT_PIXELS,
       height: 320,

@@ -256,7 +256,7 @@ export function ExpenseCategoriesPanel({
             onCheckedChange={setShowArchived}
           />
           <FieldLabel htmlFor="expense-categories-archived">
-            Mostrar categorias arquivadas
+            Incluir arquivadas
           </FieldLabel>
         </Field>
         <Button
