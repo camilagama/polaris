@@ -582,6 +582,41 @@ test("Trocar abre a busca com a variante atual marcada; Escape volta à linha co
   await expect(item.getByLabel("Quantidade")).toHaveValue("3");
 });
 
+for (const width of [360, 1280]) {
+  test(`a ${width} px, Adicionar item (clique e Enter) leva o foco à busca de produto do item novo e a linha continua a última`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width });
+    await openSaleLab(page, "claro");
+    await pickShirt(page);
+    const addItem = page.getByRole("button", { name: "Adicionar item" });
+    for (const how of ["clique", "Enter"] as const) {
+      const number = how === "clique" ? 2 : 3;
+      if (how === "clique") {
+        // biome-ignore lint/performance/noAwaitInLoops: the second add starts from the first one's result
+        await addItem.click();
+      } else {
+        await addItem.focus();
+        await page.keyboard.press("Enter");
+      }
+      const added = page.getByRole("group", {
+        exact: true,
+        name: `Item ${number}`,
+      });
+      const search = added.getByRole("combobox", {
+        name: "Produto ou variante",
+      });
+      await expect(search).toBeFocused();
+      await expect(search).toHaveAttribute("aria-expanded", "false");
+      const itemBox = await added.boundingBox();
+      const addBox = await addItem.boundingBox();
+      expect(addBox?.y ?? 0).toBeGreaterThanOrEqual(
+        (itemBox?.y ?? Number.POSITIVE_INFINITY) + (itemBox?.height ?? 0)
+      );
+    }
+  });
+}
+
 const NON_BLANK = /\S/;
 const SINGLE_PAYMENT_TEXT =
   "Um pagamento no valor total. Para receber de dois jeitos, use Dividir pagamento. O método não comprova o recebimento.";
