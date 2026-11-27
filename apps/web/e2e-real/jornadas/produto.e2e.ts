@@ -450,6 +450,15 @@ async function fillNewProduct(
 const saveProduct = (page: Page) =>
   page.getByRole("button", { name: "Cadastrar produto" }).click();
 
+/** Saves and waits for the server's answer to `product.create`, so what is read next comes after the write. */
+async function saveProductAndWaitForServer(page: Page): Promise<number> {
+  const answered = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.startsWith("/rpc/product/create")
+  );
+  await saveProduct(page);
+  return (await answered).status();
+}
+
 const productCard = (page: Page, name: string) =>
   page.locator("[data-product-id]", { hasText: name });
 
@@ -478,6 +487,23 @@ test("produto: custo sem quantidade é erro de campo e nada é gravado", async (
   );
   await expect(productCard(page, name)).toHaveCount(0);
   expect(await catalogCounts(sql, organizationId)).toEqual(before);
+
+  // the same dialog saves once the quantity is there: the refusal left nothing half done behind
+  await page.getByLabel("Quantos você tem agora").fill("10");
+  await saveProduct(page);
+  await expect(productCard(page, name)).toBeVisible();
+  await expect
+    .poll(async () => await wholeProducts(sql, organizationId, name))
+    .toEqual([
+      expect.objectContaining({
+        balance: 10,
+        movements: 1,
+        movementType: "receipt",
+        variants: 1,
+      }),
+    ]);
+  const [saved] = await wholeProducts(sql, organizationId, name);
+  expect(saved?.movementCost).toMatch(UNIT_COST_12_50);
 });
 
 /** A price below zero or with three places is refused in the field, and nothing is written. */
@@ -578,6 +604,7 @@ interface WholeProduct {
   balance: number | null;
   id: string;
   movementCost: string | null;
+  movementDay: string | null;
   movements: number;
   movementType: string | null;
   price: number | null;
@@ -593,11 +620,12 @@ async function wholeProducts(
   const { rows } = await sql.query(
     `SELECT p.id, p.version,
             (SELECT count(*)::int FROM product_variants v WHERE v.product_id = p.id) AS variants,
-            (SELECT v.list_price::text FROM product_variants v WHERE v.product_id = p.id) AS price,
-            (SELECT b.quantity FROM inventory_balances b WHERE b.product_id = p.id) AS balance,
+            (SELECT v.list_price::text FROM product_variants v WHERE v.product_id = p.id LIMIT 1) AS price,
+            (SELECT b.quantity FROM inventory_balances b WHERE b.product_id = p.id LIMIT 1) AS balance,
             (SELECT count(*)::int FROM stock_movements m WHERE m.product_id = p.id) AS movements,
-            (SELECT m.movement_type FROM stock_movements m WHERE m.product_id = p.id) AS movement_type,
-            (SELECT m.unit_cost::text FROM stock_movements m WHERE m.product_id = p.id) AS movement_cost
+            (SELECT m.movement_type FROM stock_movements m WHERE m.product_id = p.id LIMIT 1) AS movement_type,
+            (SELECT m.unit_cost::text FROM stock_movements m WHERE m.product_id = p.id LIMIT 1) AS movement_cost,
+            (SELECT m.occurred_on::text FROM stock_movements m WHERE m.product_id = p.id LIMIT 1) AS movement_day
        FROM products p
       WHERE p.organization_id = $1 AND p.name = $2
       ORDER BY p.id`,
@@ -607,6 +635,7 @@ async function wholeProducts(
     balance: number | null;
     id: string;
     movement_cost: string | null;
+    movement_day: string | null;
     movement_type: string | null;
     movements: number;
     price: string | null;
@@ -617,6 +646,7 @@ async function wholeProducts(
     balance: row.balance,
     id: row.id,
     movementCost: row.movement_cost,
+    movementDay: row.movement_day,
     movements: row.movements,
     movementType: row.movement_type,
     price: row.price === null ? null : numericCents(row.price),
@@ -667,6 +697,7 @@ test("produto: nome, preço, quantidade e custo criam tudo junto, e o mesmo nome
     version: 1,
   });
   expect(first?.movementCost).toMatch(UNIT_COST_12_50);
+  expect(first?.movementDay).toBe(localDate(runT0(), ZONE));
   const { rows: audits } = await sql.query<{
     entity_type: string;
     event_type: string;
@@ -735,7 +766,7 @@ test("produto: nome com caractere de controle ou de direção é recusado e nada
     const name = `${base}${forbidden}`;
     // biome-ignore lint/performance/noAwaitInLoops: one name after the other in the same open dialog
     await fillNewProduct(page, { name, price: "59,90" });
-    await saveProduct(page);
+    expect(await saveProductAndWaitForServer(page)).toBe(400);
     await expect(
       page.getByRole("alert").filter({ hasText: NAME_INVALID })
     ).toBeVisible();
