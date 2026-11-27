@@ -283,7 +283,7 @@ describe("describeMediaFailure", () => {
         context,
         new TypeError("Failed to fetch")
       );
-      expect(failure.message).toContain("Sem internet");
+      expect(failure.message).toContain("Sem conexão");
       expect(failure.message).toContain("repetir é seguro");
       expect(failure.reloadList).toBe(false);
     }

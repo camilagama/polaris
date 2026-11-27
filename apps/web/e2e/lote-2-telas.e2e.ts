@@ -175,7 +175,7 @@ test("Categorias sem internet: a faixa diz que a tela precisa de conexão, o que
   });
   await page.getByLabel("Nova categoria").fill("Acessórios");
   await page.context().setOffline(true);
-  const strip = page.getByRole("status").filter({ hasText: "Sem internet." });
+  const strip = page.getByRole("status").filter({ hasText: "Sem conexão." });
   await expect(strip).toContainText(STRIP);
   await expect(strip).toContainText("O que você digitou fica aqui");
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");

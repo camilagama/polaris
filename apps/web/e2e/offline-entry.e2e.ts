@@ -288,8 +288,8 @@ test("sem rede ao abrir: texto de sem internet, com o foco no aviso e o nome man
   await page.goto("/");
   await page.getByLabel("Nome da loja").fill("Loja do teste");
   await page.getByRole("button", { name: "Abrir loja" }).click();
-  const alert = page.getByRole("alert").filter({ hasText: "Sem internet." });
-  await expect(alert).toHaveText("Sem internet. Conecte-se e tente de novo.");
+  const alert = page.getByRole("alert").filter({ hasText: "Sem conexão." });
+  await expect(alert).toHaveText("Sem conexão. Conecte-se e tente de novo.");
   await expect(alert).toBeFocused();
   await expect(page.getByText("Não foi possível abrir a loja")).toHaveCount(0);
   await expect(page.getByLabel("Nome da loja")).toHaveValue("Loja do teste");

@@ -5,7 +5,7 @@ import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * Formas de receber is a screen that works only with a connection: while the tab does not reach the Worker the shell
- * shows the strip "Sem internet.", the buttons that write are `aria-disabled` and point at the strip with
+ * shows the strip "Sem conexão.", the buttons that write are `aria-disabled` and point at the strip with
  * `aria-describedby`, and nothing is sent. The route is the real one, with the API answered by the test.
  */
 const ORGANIZATION = {
@@ -51,7 +51,7 @@ const MACHINE = {
   version: 1,
 };
 
-const STRIP_TITLE = "Sem internet.";
+const STRIP_TITLE = "Sem conexão.";
 const STRIP_TEXT = "Esta tela precisa de conexão.";
 const STRIP_TEXT_ID = "connection-required-text";
 const DIALOG_TEXT_ID = "connection-required-dialog-text";
