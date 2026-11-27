@@ -703,7 +703,12 @@ export const SPEC_SCREENS = {
     "attention",
   ],
   "apps/web/e2e-pwa/ui-stock-cost.e2e.ts": ["inventory"],
-  "apps/web/e2e-pwa/ui-vao-contagem.e2e.ts": ["inventory", "products"],
+  "apps/web/e2e-pwa/ui-vao-contagem.e2e.ts": [
+    "expenses",
+    "home",
+    "inventory",
+    "products",
+  ],
   "apps/web/e2e-pwa/ui-visual.e2e.ts": "all",
   "apps/web/e2e-pwa/update-moments.e2e.ts": ["home", "sale"],
   "apps/web/e2e-pwa/update.e2e.ts": "all",
