@@ -188,8 +188,9 @@ function DeleteBody({
         </DialogTitle>
         <DialogDescription render={<div />}>
           <p>
-            Não tem volta. As vendas antigas continuam no histórico, com o nome
-            que o item tinha. {sentence} O SKU não poderá ser usado de novo.
+            Não dá para desfazer. As vendas antigas continuam no histórico, com
+            o nome que o item tinha. {sentence} O SKU não poderá ser usado de
+            novo.
           </p>
         </DialogDescription>
       </DialogHeader>

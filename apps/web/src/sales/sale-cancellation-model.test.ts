@@ -157,9 +157,8 @@ describe("reason and note validation", () => {
   it("explains that the sale is kept, stock returns per item and it is final", () => {
     expect(CANCELLATION_EXPLANATION).toContain("preservados");
     expect(CANCELLATION_EXPLANATION).toContain(
-      "O estoque volta item a item, pelo custo registrado em cada item, exceto item de produto removido. O cancelamento não pode ser desfeito."
+      "O estoque volta item a item, pelo custo registrado em cada item, exceto item de produto removido. Não dá para desfazer o cancelamento."
     );
-    expect(CANCELLATION_EXPLANATION).toContain("não pode ser desfeito");
   });
 });
 

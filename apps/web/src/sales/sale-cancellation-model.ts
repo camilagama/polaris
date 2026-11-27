@@ -35,7 +35,7 @@ export interface SaleNotice {
 }
 
 export const CANCELLATION_EXPLANATION =
-  "Cancelar registra um cancelamento: a venda confirmada e os dados dela são preservados, sem edição. O estoque volta item a item, pelo custo registrado em cada item, exceto item de produto removido. O cancelamento não pode ser desfeito.";
+  "Cancelar registra um cancelamento: a venda confirmada e os dados dela são preservados, sem edição. O estoque volta item a item, pelo custo registrado em cada item, exceto item de produto removido. Não dá para desfazer o cancelamento.";
 
 /** Label of a stored reason code; a missing code means none was informed. */
 export function cancellationReasonLabel(code: string | null): string {

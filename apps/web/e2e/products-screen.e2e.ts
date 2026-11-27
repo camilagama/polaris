@@ -1549,7 +1549,7 @@ test("o diálogo de Excluir diz o que acontece, pede o nome e só habilita com o
     )
   );
   const dialog = await askToDelete(page);
-  await expect(dialog).toContainText("Não tem volta.");
+  await expect(dialog).toContainText("Não dá para desfazer.");
   await expect(dialog).toContainText(
     "As vendas antigas continuam no histórico, com o nome que o item tinha."
   );
