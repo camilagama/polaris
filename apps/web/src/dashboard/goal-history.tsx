@@ -1,6 +1,7 @@
 import { MoneyText } from "@/ui/hidden-values";
 import type { GoalReadModel } from "@polaris/contracts";
 import { Button } from "@/ui/button";
+import { Skeleton } from "@/ui/skeleton";
 import { LoadError } from "../expenses/expense-fields";
 import { formatGoalDate, formatGoalValue } from "./goal-model";
 import { useGoalHistory } from "./use-goal-history";
@@ -54,9 +55,12 @@ function HistoryList({ goal, organizationId, timezone }: GoalHistoryProps) {
         />
       ) : null}
       {state.isLoading && state.changes === null ? (
-        <p className="text-muted-foreground text-support" role="status">
-          Carregando o histórico…
-        </p>
+        <div role="status">
+          <span className="sr-only">Carregando o histórico…</span>
+          <div aria-hidden="true" className="flex h-4.5 items-center">
+            <Skeleton className="h-3.5 w-2/3" />
+          </div>
+        </div>
       ) : null}
       {state.changes?.length === 0 ? (
         <p className="text-muted-foreground text-support">

@@ -25,6 +25,7 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { CheckableOption } from "@/ui/checkable-option";
 import { Field, FieldDescription, FieldLegend, FieldSet } from "@/ui/field";
+import { Skeleton } from "@/ui/skeleton";
 import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
 import {
   listProductMedia,
@@ -743,9 +744,10 @@ export function ProductMediaPanel({
   let list: ReactNode;
   if (isLoading) {
     list = (
-      <p className="text-muted-foreground text-support" role="status">
-        Carregando imagens…
-      </p>
+      <div aria-busy="true" role="status">
+        <span className="sr-only">Carregando imagens…</span>
+        <Skeleton aria-hidden="true" className="h-24 w-full rounded-lg" />
+      </div>
     );
   } else if (loadError) {
     list = (
