@@ -148,7 +148,7 @@ test.describe("the focus when the step changes", () => {
     await tabTo(page, "Voltar");
     await page.keyboard.press("Enter");
     await expect(
-      page.getByRole("combobox", { name: "Motivo (opcional)" })
+      page.getByRole("combobox", { name: "Motivo Opcional" })
     ).toBeFocused();
   });
 
@@ -157,7 +157,7 @@ test.describe("the focus when the step changes", () => {
   }) => {
     await openDetail(page);
     await openSaleAction(page, "Cancelar venda");
-    await page.getByRole("combobox", { name: "Motivo (opcional)" }).click();
+    await page.getByRole("combobox", { name: "Motivo Opcional" }).click();
     await page.getByRole("option", { exact: true, name: "Outro" }).click();
     const group = page.locator("[data-slot=input-group]").filter({
       has: page.getByLabel("Observação (obrigatória para “Outro”)"),
