@@ -345,6 +345,9 @@ test("cliente: arquivar, restaurar e anonimizar; a venda ligada não muda", asyn
   await menuOf(created.id, name).click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   await expect(rowOf(created.id)).toBeHidden();
+  await expect(
+    page.getByRole("status").filter({ hasText: `Cliente “${name}” arquivado.` })
+  ).toBeVisible();
   await expect
     .poll(async () => (await customerById(sql, created.id)).archived_at)
     .not.toBeNull();
@@ -355,6 +358,11 @@ test("cliente: arquivar, restaurar e anonimizar; a venda ligada não muda", asyn
   await menuOf(created.id, name).click();
   await page.getByRole("menuitem", { name: "Restaurar" }).click();
   await expect(rowOf(created.id)).toBeHidden();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: `Cliente “${name}” restaurado.` })
+  ).toBeVisible();
   await expect
     .poll(async () => (await customerById(sql, created.id)).archived_at)
     .toBeNull();

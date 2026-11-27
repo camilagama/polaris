@@ -128,15 +128,13 @@ function useCategoryCommands({
     async (group: ExpenseGroupKey, name: string) =>
       settle(
         await run("create", "category-create", async () => {
-          onUpsert(
-            await orpcClient.expense.createCategory({
-              group,
-              name,
-              organizationId,
-            }),
-            "create"
-          );
-          return "Categoria criada.";
+          const created = await orpcClient.expense.createCategory({
+            group,
+            name,
+            organizationId,
+          });
+          onUpsert(created, "create");
+          return `Categoria “${created.name}” criada.`;
         })
       ),
     [onUpsert, organizationId, run, settle]
@@ -176,7 +174,7 @@ function useCategoryCommands({
               ? await orpcClient.expense.archiveCategory(input)
               : await orpcClient.expense.restoreCategory(input);
             onUpsert(result.category, "update");
-            return archiving ? "Categoria arquivada." : "Categoria restaurada.";
+            return `Categoria “${result.category.name}” ${archiving ? "arquivada" : "restaurada"}.`;
           }
         )
       );

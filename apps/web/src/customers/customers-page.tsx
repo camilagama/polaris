@@ -559,11 +559,11 @@ export function CustomersPage() {
         } else if (action === "archive") {
           const archived = await orpcClient.customer.archive(input);
           await keepLocalRow(workspace, archived.customer);
-          setNotice("Cliente arquivado.");
+          setNotice(`Cliente “${archived.customer.name}” arquivado.`);
         } else {
           const restored = await orpcClient.customer.restore(input);
           await keepLocalRow(workspace, restored.customer);
-          setNotice("Cliente restaurado.");
+          setNotice(`Cliente “${restored.customer.name}” restaurado.`);
         }
         if (editingCustomer?.id === customer.id) {
           setEditingCustomer(null);

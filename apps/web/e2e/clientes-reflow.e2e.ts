@@ -263,6 +263,32 @@ reflowTest(
   }
 );
 
+reflowTest(
+  "a 360 px o aviso de arquivar traz o nome entre aspas, sem cortar nem rolar de lado",
+  async ({ page }) => {
+    await openCustomers(page, 360, 16);
+    const archived = {
+      ...WIDE,
+      archivedAt: DAY,
+      status: "archived",
+      version: 2,
+    };
+    await page.route("**/rpc/customer/archive", (route) =>
+      route.fulfill(rpc({ customer: archived }))
+    );
+    await page
+      .getByRole("button", { name: `Mais ações para ${LONG_NAME}` })
+      .click();
+    await page.getByRole("menuitem", { name: "Arquivar" }).click();
+    const notice = page.getByRole("status").filter({
+      hasText: `Cliente “${LONG_NAME}” arquivado.`,
+    });
+    await expect(notice).toBeVisible();
+    await assertNothingClipped(notice);
+    await assertNoPageScroll(page);
+  }
+);
+
 const WIDE_WINDOW = 1280;
 /** The device's own registration after the session opens: the shell's call, not something the list screen reads. */
 const DEVICE_REGISTRATION = "device/register";
