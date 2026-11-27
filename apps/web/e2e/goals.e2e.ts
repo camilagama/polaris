@@ -973,6 +973,72 @@ test("o histórico de uma meta sem mudanças diz que o alvo nunca mudou", async 
   await expect(page.getByText("O alvo nunca foi alterado.")).toBeVisible();
 });
 
+test("o histórico do alvo ocupa a mesma altura esperando a resposta e depois dela, com mudança e sem", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  const changedName = "Com mudança";
+  const intactName = "Intacta";
+  const cases = [
+    {
+      goal: server.seed({
+        changes: [{ changedAt: NOW, newTarget: "5", previousTarget: "10" }],
+        kind: "sale_count",
+        name: changedName,
+        target: "5",
+      }),
+      name: changedName,
+      text: "de 10 para 5 em 14/10/2026",
+    },
+    {
+      goal: server.seed({
+        kind: "net_sales",
+        name: intactName,
+        target: "2000.00",
+      }),
+      name: intactName,
+      text: "O alvo nunca foi alterado.",
+    },
+  ];
+  await openGoals(page, server);
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/rpc/goal/targetChanges", async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  const heightOf = async (body: Locator) =>
+    (await body.boundingBox())?.height ?? 0;
+
+  const openHistory = (name: string) =>
+    card(page, name).getByRole("button", { name: "Histórico do alvo" }).click();
+  // one pointer: two clicks at once would interleave their press and release
+  await openHistory(changedName);
+  await openHistory(intactName);
+  const waiting = await Promise.all(
+    cases.map(async (item) => {
+      const body = page.locator(`#goal-history-${item.goal.id}`);
+      await expect(body.getByRole("status")).toBeVisible();
+      return { ...item, body, before: await heightOf(body) };
+    })
+  );
+  release();
+  await Promise.all(
+    waiting.map(async ({ before, body, name, text }) => {
+      await expect(body.getByText(text)).toBeVisible();
+      await expect(body.getByRole("status")).toHaveCount(0);
+      const after = await heightOf(body);
+      expect(before, `${name}: a espera tem altura`).toBeGreaterThan(10);
+      expect(
+        Math.abs(after - before),
+        `${name}: esperando ${before} px, com a resposta ${after} px`
+      ).toBeLessThanOrEqual(1);
+    })
+  );
+});
+
 test("cancela a meta só depois da confirmação", async ({ page }) => {
   const server = new FakeGoalServer();
   server.seed({ kind: "net_sales", name: "Meta de vendas", target: "1000.00" });
