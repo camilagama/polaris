@@ -468,3 +468,39 @@ export async function assertTextsApart(
   expect(touching, "texts that overlap each other").toEqual([]);
   return boxes.length;
 }
+
+/**
+ * The two ends of each item line of a receipt (the sum at the left and the total at the right) never paint over each
+ * other: when they share a line the left one ends before the right one starts, and when they do not fit together the
+ * total is on a line of its own. Returns how many lines it measured; none fails, because a sweep with no line proves nothing.
+ */
+export async function assertItemLineEndsApart(items: Locator) {
+  const lines = await items.locator("li > p").evaluateAll((paragraphs) =>
+    paragraphs.map((paragraph) => {
+      const left = (
+        paragraph.firstElementChild as Element
+      ).getBoundingClientRect();
+      const right = (
+        paragraph.lastElementChild as Element
+      ).getBoundingClientRect();
+      return {
+        leftRight: left.right,
+        rightLeft: right.left,
+        sameLine: right.top < left.bottom && left.top < right.bottom,
+        text: paragraph.textContent ?? "",
+      };
+    })
+  );
+  expect(lines.length, "no item line was found to measure").toBeGreaterThan(0);
+  const overlapping = lines
+    .filter(
+      ({ leftRight, rightLeft, sameLine }) =>
+        sameLine && leftRight > rightLeft + SLACK_PIXELS
+    )
+    .map(({ text }) => text);
+  expect(
+    overlapping,
+    "item lines whose two ends paint over each other"
+  ).toEqual([]);
+  return lines.length;
+}
