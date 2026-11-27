@@ -47,7 +47,7 @@ import { challengeToken, useChallenge } from "./turnstile";
 
 type ResetPhase = "done" | "form" | "link-invalid";
 
-function ResetPasswordForm({
+export function ResetPasswordForm({
   siteKey,
   token,
 }: {
@@ -120,7 +120,7 @@ function ResetPasswordForm({
 
   if (phase === "done") {
     return (
-      <EntryScreen title={RESET_TITLE}>
+      <EntryScreen help title={RESET_TITLE}>
         <EntrySuccess>{RESET_DONE}</EntrySuccess>
         <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
       </EntryScreen>
@@ -130,7 +130,7 @@ function ResetPasswordForm({
     return <ResetLinkMissing text={RESET_LINK_INVALID} />;
   }
   return (
-    <EntryScreen title={RESET_TITLE}>
+    <EntryScreen help title={RESET_TITLE}>
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
       <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
         <NewPasswordField
@@ -168,7 +168,7 @@ function ResetPasswordForm({
 }
 
 /** `neutral`: the page was opened without its link, which is an instruction and not a failure. */
-function ResetLinkMissing({
+export function ResetLinkMissing({
   neutral = false,
   text,
 }: {
@@ -176,7 +176,7 @@ function ResetLinkMissing({
   text: string;
 }) {
   return (
-    <EntryScreen title={RESET_TITLE}>
+    <EntryScreen help title={RESET_TITLE}>
       {neutral ? (
         <EntryNotice>{text}</EntryNotice>
       ) : (
@@ -201,7 +201,7 @@ export function ResetPasswordPage() {
     document.title = documentTitle(RESET_PAGE_TITLE);
   }, []);
   return (
-    <EntryGate title={RESET_TITLE}>
+    <EntryGate help title={RESET_TITLE}>
       {(methods) =>
         token ? (
           <ResetPasswordForm siteKey={methods.siteKey} token={token} />

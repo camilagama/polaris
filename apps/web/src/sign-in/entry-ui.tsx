@@ -199,7 +199,7 @@ export function EntryScreen({
   children: ReactNode;
   /** The right half with the drawing, from 1024 px: on by default for the entry card, off for a page that stays one column. */
   halves?: boolean;
-  /** The line "Precisa de ajuda?" with the address of the support: the sign-in and the first access. */
+  /** The line "Precisa de ajuda?" with the address of the support: the sign-in, the first access, the sign-up and the password screens (forgot, confirm the e-mail, reset). */
   help?: boolean;
   /** Without them (the legal texts, which are the pages they point to). */
   legalLinks?: boolean;
@@ -816,9 +816,11 @@ export function SubmitButton({
  */
 export function EntryGate({
   children,
+  help = false,
   title,
 }: {
   children: (methods: { google: boolean; siteKey: string | null }) => ReactNode;
+  help?: boolean;
   title: string;
 }) {
   const { methods, retry } = useEntryMethods();
@@ -830,7 +832,7 @@ export function EntryGate({
     return null;
   }
   return (
-    <EntryScreen title={title}>
+    <EntryScreen help={help} title={title}>
       {methods.state === "loading" ? (
         <EntryStatus>{PAGE_LOADING}</EntryStatus>
       ) : (

@@ -208,6 +208,7 @@ function SignUpForm({
     return (
       <ConfirmEmailPanel
         email={sentTo}
+        help
         intro={confirmSentText(sentTo)}
         siteKey={siteKey}
       />
@@ -222,7 +223,7 @@ function SignUpForm({
   // the Google way off on the server: the button is off and the screen says why, as on `/entrar`
   const googleAlert = googleFailure ?? (googleOn ? null : GOOGLE_NOT_OFFERED);
   return (
-    <EntryScreen title={SIGN_UP_TITLE}>
+    <EntryScreen help title={SIGN_UP_TITLE}>
       {googleAlert ? (
         <EntryAlert key={googleAlert}>{googleAlert}</EntryAlert>
       ) : null}
@@ -346,7 +347,7 @@ export function SignUpPage() {
     document.title = documentTitle(SIGN_UP_PAGE_TITLE);
   }, []);
   return (
-    <EntryGate title={SIGN_UP_TITLE}>
+    <EntryGate help title={SIGN_UP_TITLE}>
       {(methods) => (
         <SignUpForm google={methods.google} siteKey={methods.siteKey} />
       )}

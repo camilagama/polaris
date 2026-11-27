@@ -56,10 +56,13 @@ import { challengeToken, useChallenge } from "./turnstile";
  */
 export function ConfirmEmailPanel({
   email,
+  help = false,
   intro,
   siteKey,
 }: {
   email: string | null;
+  /** `/entrar` shows this panel without the line of help, as it always did. */
+  help?: boolean;
   intro: string;
   siteKey: string | null;
 }) {
@@ -112,7 +115,7 @@ export function ConfirmEmailPanel({
   );
 
   return (
-    <EntryScreen support={intro} title={CONFIRM_TITLE}>
+    <EntryScreen help={help} support={intro} title={CONFIRM_TITLE}>
       {resent ? (
         // the same line for the address of the sign-up and the one typed here: the server may not have sent it
         <EntrySuccess>{RESENT}</EntrySuccess>
@@ -154,7 +157,7 @@ export function ConfirmEmailPanel({
 
 type Verification = "checking" | LinkOutcome;
 
-function VerifyLink({
+export function VerifyLink({
   siteKey,
   token,
 }: {
@@ -181,7 +184,7 @@ function VerifyLink({
 
   if (state === "done") {
     return (
-      <EntryScreen title={CONFIRM_DONE_TITLE}>
+      <EntryScreen help title={CONFIRM_DONE_TITLE}>
         <EntrySuccess>{CONFIRM_DONE}</EntrySuccess>
         <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
       </EntryScreen>
@@ -191,13 +194,14 @@ function VerifyLink({
     return (
       <ConfirmEmailPanel
         email={null}
+        help
         intro={state === "expired" ? CONFIRM_EXPIRED : CONFIRM_INVALID}
         siteKey={siteKey}
       />
     );
   }
   return (
-    <EntryScreen title={CONFIRM_TITLE}>
+    <EntryScreen help title={CONFIRM_TITLE}>
       {state === "checking" ? (
         <EntryStatus>{CONFIRM_CHECKING}</EntryStatus>
       ) : (
@@ -225,13 +229,14 @@ export function ConfirmEmailPage() {
     document.title = documentTitle(CONFIRM_PAGE_TITLE);
   }, []);
   return (
-    <EntryGate title={CONFIRM_TITLE}>
+    <EntryGate help title={CONFIRM_TITLE}>
       {(methods) =>
         token ? (
           <VerifyLink siteKey={methods.siteKey} token={token} />
         ) : (
           <ConfirmEmailPanel
             email={null}
+            help
             intro={CONFIRM_NO_LINK}
             siteKey={methods.siteKey}
           />

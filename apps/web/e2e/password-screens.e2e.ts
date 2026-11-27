@@ -4,6 +4,7 @@ import type { Page, Request, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { runClockFor } from "./run-clock-for";
 import { OFFLINE_POC_ORIGIN } from "./run-settings";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
@@ -339,6 +340,70 @@ async function expectNewPasswordField(
   await field.fill("abc");
 }
 
+async function expectHelpLine(page: Page) {
+  await expect(
+    page.getByRole("link", {
+      name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+    })
+  ).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
+}
+
+test.describe("a linha de ajuda sob o cartão", () => {
+  const SCREENS = [
+    {
+      name: "Criar conta",
+      path: "/criar-conta",
+      ready: "Criar conta",
+      slug: "criar-conta",
+    },
+    {
+      name: "Esqueci a senha",
+      path: "/esqueci-a-senha",
+      ready: "Enviar link",
+      slug: "esqueci",
+    },
+    {
+      name: "Confirmar e-mail",
+      path: "/confirmar-email#token=tok-verifica",
+      ready: "Agora é só entrar.",
+      slug: "confirmar-email",
+    },
+    {
+      name: "Redefinir senha",
+      path: "/redefinir-senha#token=tok-de-teste.123",
+      ready: "Nova senha",
+      slug: "redefinir-senha",
+    },
+  ];
+
+  for (const screen of SCREENS) {
+    test(`${screen.name}: 'Precisa de ajuda? Escreva para {endereço}.' com o mailto, sem rolar de lado a 360 px`, async ({
+      page,
+    }) => {
+      await serve(page, newServer());
+      await page.setViewportSize({ height: 740, width: 360 });
+      await page.goto(screen.path);
+      await expect(page.getByText(screen.ready).first()).toBeVisible();
+      const line = page.getByText("Precisa de ajuda? Escreva para");
+      await expect(line).toBeVisible();
+      await expect(line).toHaveText(
+        `Precisa de ajuda? Escreva para ${SUPPORT_ADDRESS}.`
+      );
+      await expect(
+        page.getByRole("link", {
+          name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+        })
+      ).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+      await shot(page, `ajuda-${screen.slug}`, true);
+    });
+  }
+});
+
 test.describe("com a senha desligada (AC-46)", () => {
   test("a entrada mostra só o Google e as páginas de senha levam a /entrar", async ({
     page,
@@ -563,6 +628,7 @@ test.describe("entrar com e-mail e senha", () => {
     await expect(
       page.getByRole("heading", { name: "Confirme seu e-mail" })
     ).toBeVisible();
+    await expect(page.getByText("Precisa de ajuda?")).toHaveCount(0);
     await shot(page, "entrar-email-nao-confirmado");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
     await expect(
@@ -812,6 +878,7 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   await expect(
     page.getByRole("heading", { name: "Confirme seu e-mail" })
   ).toBeVisible();
+  await expectHelpLine(page);
   await expect(
     page.getByText(
       "Enviamos um e-mail para nova@exemplo.com. Siga as instruções nele."
@@ -920,6 +987,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(
       page.getByText("Senha trocada. Entre com a nova senha.")
     ).toBeVisible();
+    await expectHelpLine(page);
     const [reset] = callsTo(server, "/api/auth/reset-password");
     expect(reset?.body).toEqual({
       newPassword: PASSWORD,
@@ -964,6 +1032,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(
       page.getByRole("link", { name: "Pedir outro link" })
     ).toBeVisible();
+    await expectHelpLine(page);
     await expectFitsCard(page);
     await shot(page, "nova-senha-sem-link", true);
   });
@@ -992,6 +1061,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await page.goto("about:blank");
     await page.goto("/confirmar-email#token=tok-velho");
     await expect(page.getByText("Este link venceu. Peça outro.")).toBeVisible();
+    await expectHelpLine(page);
     await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
     // the same line for the address typed here and for the one of the sign-up: no "Reenviamos"
