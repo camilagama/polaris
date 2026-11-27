@@ -13,6 +13,7 @@ import {
   goalProjection,
   homePeriods,
   homeReads,
+  homeUpdatedLine,
   monthTitle,
   msUntilNextMidnight,
   newSaleOfflineText,
@@ -26,6 +27,9 @@ import {
   storeToday,
   sumNetSales,
 } from "./home-model";
+
+const UPDATED_LINE_SHAPE =
+  /^[A-Za-zÀ-ú-]+, \d{1,2} de [a-zç]+ · atualizado às \d{2}:\d{2}$/;
 
 type Daily = { date: string; netSales: string; salesCount: number }[];
 
@@ -144,6 +148,47 @@ describe("the store's today and the turn of the day (§ 5.1)", () => {
     expect(shouldRefreshOnReturn(0, 299_999)).toBe(false);
     expect(shouldRefreshOnReturn(0, 300_000)).toBe(true);
     expect(shouldRefreshOnReturn(1_000_000, 1_000_000 + 600_000)).toBe(true);
+  });
+});
+
+describe("homeUpdatedLine: the store's day and the time of the read", () => {
+  it("writes the store's day and hour, not the device's, for the same instant", () => {
+    const instant = "2026-10-23T02:30:00.000Z";
+    expect(homeUpdatedLine(instant, "America/Sao_Paulo")).toBe(
+      "Quinta-feira, 22 de outubro · atualizado às 23:30"
+    );
+    expect(homeUpdatedLine(instant, "Pacific/Kiritimati")).toBe(
+      "Sexta-feira, 23 de outubro · atualizado às 16:30"
+    );
+    expect(homeUpdatedLine(instant, "Pacific/Pago_Pago")).toBe(
+      "Quinta-feira, 22 de outubro · atualizado às 15:30"
+    );
+  });
+
+  it("writes the day without a leading zero and the hour with one", () => {
+    expect(
+      homeUpdatedLine("2026-03-05T12:05:00.000Z", "America/Sao_Paulo")
+    ).toBe("Quinta-feira, 5 de março · atualizado às 09:05");
+  });
+
+  it("capitalizes the weekday and keeps the month lowercase", () => {
+    expect(
+      homeUpdatedLine("2026-03-08T15:00:00.000Z", "America/Sao_Paulo")
+    ).toBe("Domingo, 8 de março · atualizado às 12:00");
+    expect(
+      homeUpdatedLine("2026-12-14T15:45:00.000Z", "America/Sao_Paulo")
+    ).toBe("Segunda-feira, 14 de dezembro · atualizado às 12:45");
+  });
+
+  it("writes no line for an instant that is not a date, and does not throw without a zone", () => {
+    expect(homeUpdatedLine("não é data", "America/Sao_Paulo")).toBe("");
+    expect(homeUpdatedLine("não é data", null)).toBe("");
+    expect(() =>
+      homeUpdatedLine("2026-10-23T12:00:00.000Z", null)
+    ).not.toThrow();
+    expect(homeUpdatedLine("2026-10-23T12:00:00.000Z", null)).toMatch(
+      UPDATED_LINE_SHAPE
+    );
   });
 });
 
