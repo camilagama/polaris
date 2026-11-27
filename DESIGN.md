@@ -101,7 +101,7 @@ No primeiro contato, cada elemento diz o número, o nome e no máximo uma linha 
 
 | Elemento | Limite | Regra |
 | --- | --- | --- |
-| Rótulo de botão, campo, aba e item de menu | 1 a 3 palavras, sem ponto | Verbo no botão ("Definir meta"), substantivo no campo. |
+| Rótulo | Rótulo de botão: verbo e objeto, de 1 a 3 palavras, até 5 quando o objeto precisa, sempre em uma linha no celular, sem ponto. Campo, aba e item de menu: 1 a 3 palavras, sem ponto. | Verbo no botão ("Definir meta"), substantivo no campo. |
 | Título de cartão ou de bloco | até 3 palavras | Não repete a tela ("Meta", não "Meta do mês"). |
 | Linha sob o título da página | 1 linha a 360 px, cerca de 45 caracteres | Só data, período ou estado da leitura. Nunca uma frase que explica a tela: ela vai para o (i) do título ("Sobre {tela}"; o (i) leva até 2 frases e 160 caracteres, como na linha "Ajuda (i)"), porque quem já conhece a tela a relê a cada visita e a frase empurra o conteúdo para baixo. Vale também sob o título de um cartão ("Pagamento" da Venda). |
 | Cartão de KPI | nome, número e **1** linha de apoio (mais o minigráfico) | A linha de apoio é o chip e a contagem, ou o aviso. "Com o que compara", "como é calculado" e o período que o número soma vão para a ajuda (no Início; o Resultado diz o período à vista). Nada repete o título ("2 vendas", não "2 vendas hoje" sob "Vendas hoje"). |
