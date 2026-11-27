@@ -88,22 +88,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
-    clientWidth: 212,
-    reason:
-      'em Configurações no celular, dentro de uma aba, o título "Configurações" (221 px, uma palavra só) divide a linha com a seta de voltar e passa 9 px da borda direita da coluna',
-    screens: [
-      "assinatura oferta com Pix",
-      "assinatura Pix aguardando o banco",
-      "assinatura Pro ativo",
-      "assinatura em teste, com o pé do menu",
-      "assinatura cancelar a renovação",
-      "assinatura carência com o aviso",
-      "seus dados com uma cópia pronta e um pedido em andamento",
-    ],
-    scrollWidth: 221,
-    selector: "main#conteudo > h1",
-  },
-  {
     clientWidth: 320,
     reason:
       "no diálogo de produto, o conteúdo do corpo mede 342 px em 320 px e passa 22 px: o painel Variantes (as seções de opções e de combinações, com o formulário de cada uma) pede 318 px numa coluna de 272 px; a faixa de abas Dados, Variantes e Imagens rola dentro da própria caixa e já não alarga o corpo",
@@ -1042,7 +1026,10 @@ test.describe("o diálogo pequeno mais alto que a janela rola inteiro", () => {
     await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    const back = dialog.getByRole("button", { exact: true, name: "Voltar" });
+    const back = dialog.getByRole("button", {
+      exact: true,
+      name: "Manter meta",
+    });
     await expect(back).toBeFocused();
     await page.evaluate(
       () =>

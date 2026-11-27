@@ -17,7 +17,12 @@ import {
   type TabScreenId,
 } from "./navigation-model";
 import { PageLoading } from "./page-loading";
-import { TabPanelScope, type TitleBack, TitleLine } from "./screen-title";
+import {
+  ScreenTitle,
+  TabPanelScope,
+  type TitleBack,
+  TitleLine,
+} from "./screen-title";
 
 /** The links into a tab: the goals of the Início, a new product or one of them, the return of a checkout, the part of Despesas. */
 const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno", "ver"];
@@ -205,10 +210,10 @@ export function ScreenTabs({
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       {phoneBack ? (
         <TitleLine back={phoneBack}>
-          <h1 className="text-title">{title}</h1>
+          <ScreenTitle>{title}</ScreenTitle>
         </TitleLine>
       ) : (
-        <h1 className="text-title">{title}</h1>
+        <ScreenTitle>{title}</ScreenTitle>
       )}
       <SectionTabs
         hideList={!showStrip}

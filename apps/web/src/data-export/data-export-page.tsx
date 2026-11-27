@@ -7,6 +7,7 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { readErrorMessage } from "../lib/rpc-error";
+import { useIsMobile } from "../lib/use-mobile";
 import { CloseStoreSection } from "../organization/close-store-section";
 import {
   type EmailPreferenceCalls,
@@ -21,8 +22,9 @@ import {
 } from "./data-export-model";
 
 function Title() {
+  const phone = useIsMobile();
   return (
-    <TitleLine>
+    <TitleLine tabNamesIt={!phone}>
       <ScreenTitle>Seus dados</ScreenTitle>
     </TitleLine>
   );

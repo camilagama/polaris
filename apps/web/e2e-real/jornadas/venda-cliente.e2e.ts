@@ -248,7 +248,8 @@ test("venda e cliente: associar, trocar e remover só acrescentam histórico, a 
   await expect(customerLine(page, second.name)).toBeVisible();
   await openSaleAction(page, "Remover cliente");
   await page
-    .getByRole("button", { exact: true, name: "Sim, remover cliente" })
+    .getByRole("dialog", { name: "Remover o cliente desta venda?" })
+    .getByRole("button", { exact: true, name: "Remover cliente" })
     .click();
   await expect(page.getByText(UNASSIGNED, { exact: true })).toBeVisible();
   await expect(customerLine(page, "Sem cliente")).toBeVisible();

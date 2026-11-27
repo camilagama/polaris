@@ -691,10 +691,13 @@ export function SalePage() {
     },
     [editByPerson, form.items, lastPrices, listPrices, seedStock, setKeptNotice]
   );
-  const handleAddItem = useCallback(
-    () => editByPerson((current) => addItem(current, newId())),
-    [editByPerson]
-  );
+  const handleAddItem = useCallback(() => {
+    const draftId = newId();
+    editByPerson((current) => addItem(current, draftId));
+    focusLater(() =>
+      document.getElementById(`sale-item-${draftId}-search`)?.focus()
+    );
+  }, [editByPerson]);
   const handleRemoveItem = useCallback(
     (draftId: string) =>
       editByPerson((current) => removeItem(current, draftId)),

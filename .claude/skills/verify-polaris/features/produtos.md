@@ -33,7 +33,7 @@ Preconditions:
 - Provado: `drives/produtos-criar.verify.ts` (360 e 1280, claro) e `drives/receitas.verify.ts --grep produto-importar`.
 
 - **Chegar pelo menu.** Desktop: `getByRole("navigation", { exact: true, name: "Principal" }).getByRole("link", { exact: true, name: "Produtos" }).click()`. Celular: `getByRole("button", { exact: true, name: "Mais" }).click()` e `getByRole("dialog", { name: "Mais" }).getByRole("link", { exact: true, name: "Produtos" }).click()`. Abre `getByRole("heading", { exact: true, level: 1, name: "Produtos" })` com `tablist "Produtos e categorias"`.
-- **Abrir o Dialog.** `getByRole("button", { name: "Novo produto" }).first().click()`; `const dialog = getByRole("dialog", { name: "Novo produto" })`, com "Um passo só: o produto pode nascer com o estoque."
+- **Abrir o Dialog.** `getByRole("button", { name: "Novo produto" }).click()`; `const dialog = getByRole("dialog", { name: "Novo produto" })`, com "Um passo só: o produto pode nascer com o estoque."
 - **Preencher.** `dialog.getByLabel("Nome do produto").fill(...)`, `dialog.getByLabel("Preço de tabela").fill("59,90")`, `dialog.getByLabel("Quantos você tem agora").fill("10")`, `dialog.getByLabel("Custo de cada unidade").fill("12,50")`. Categoria: `getByRole("button", { name: "Mais detalhes" })`, depois o combobox "Categoria" e a opção.
 - **Cadastrar.** `dialog.getByRole("button", { name: "Cadastrar produto" }).click()`. O Dialog fecha e `page.locator("[data-product-id]", { hasText: nome })` aparece na lista.
 - **Persistência.** `page.reload()` e o mesmo `[data-product-id]` continua lá; `$V sql "SELECT p.name, v.list_price::text, b.quantity FROM products p JOIN product_variants v ON v.product_id = p.id LEFT JOIN inventory_balances b ON b.variant_id = v.id WHERE p.name LIKE 'Camiseta%'"` mostra preço `59.90` e saldo 10.
@@ -45,7 +45,7 @@ Preconditions:
 ## Gotchas
 
 - O `h1` é "Produtos" (a aba e o `h2` também se chamam "Produtos"): use `exact: true` e `level: 1`.
-- Há dois "Novo produto" na loja vazia (o do topo e o do vazio): `.first()`.
+- Há um só botão "Novo produto", na linha do título, com a loja vazia também (o vazio traz só a frase): não precisa de `.first()`.
 - No celular, Produtos não está na barra de baixo: só pelo "Mais" (a barra marca "Estoque" como a área).
 - "Importar planilha" fica desligado sem conexão, com o motivo "Importar planilha precisa de conexão.": é `aria-disabled`, e o `click()` do Playwright espera até estourar o tempo; use `click({ force: true })` para provar que nada abre.
 - A importação vai a uma linha a cada 7 s: use poucas linhas por drive. A pausa do regime do plano Free ("O servidor está ocupado. A importação continua sozinha às HH:MM.", com "Parar a importação") não acontece no workerd local: responda a uma chamada de `product/importBatch` com a página da plataforma (`page.route`, 503 com `cf-ray`, sem a marca do Worker) e diga isso na evidência.

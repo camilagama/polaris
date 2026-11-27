@@ -251,10 +251,10 @@ function RemoveDialog({
         </DialogHeader>
         <DialogFooter className="gap-3">
           <Button onClick={onCancel} type="button" variant="outline">
-            Cancelar
+            Manter cliente
           </Button>
           <Button onClick={onConfirm} type="button" variant="destructive">
-            Sim, remover cliente
+            Remover cliente
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -301,7 +301,7 @@ function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
       label="Cliente"
       onChange={onChange}
       options={view.options}
-      placeholder="Escolha"
+      placeholder="Escolha um cliente"
       value={selectedId}
     />
   );
