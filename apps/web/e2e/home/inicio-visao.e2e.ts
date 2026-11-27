@@ -501,7 +501,7 @@ test.describe("loja com venda", () => {
     });
   }
 
-  test("a 360 px, com a frase numa linha, o vão entre ela e a fileira de ações não passa de 24 px", async ({
+  test("a 360 px, com a frase numa linha, o vão entre ela e a fileira de ações é de 24 px, com 1 px de folga", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -512,7 +512,11 @@ test.describe("loja com venda", () => {
     );
     const { actionsTop, lines, phraseBottom } = await headerGeometry(page);
     expect(lines, "a frase de sexta, 23/10, cabe numa linha").toBe(1);
-    expect(actionsTop - phraseBottom).toBeLessThanOrEqual(24);
+    const gap = actionsTop - phraseBottom;
+    const reason =
+      "o vão de uma linha é 24 px (-mt-2 sobre o gap-y-4 e a linha vazia de 16 px), com 1 px de arredondamento";
+    expect(gap, reason).toBeGreaterThanOrEqual(23);
+    expect(gap, reason).toBeLessThanOrEqual(25);
   });
 
   for (const [width, at, name] of [
