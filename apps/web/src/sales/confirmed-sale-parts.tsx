@@ -90,8 +90,13 @@ export function ConfirmedDetails({
 }
 
 /**
- * The items of a confirmed sale as stored: product, quantities and prices, and the recorded cost. In the `receipt`
- * the line of prices is in Geist Mono and ends at the right edge; the name and the cost note stay at the left.
+ * The items of a confirmed sale as stored: product, quantities and prices, and the recorded cost. Each line has two
+ * ends: the quantity and the charged price at the left (with the table price after them, only when it differs) and
+ * the total of the item at the right edge, in the column of the subtotal. In the `receipt` the figures are in Geist
+ * Mono; the name and the cost note stay at the left. The left part takes its narrowest width as its basis, so the
+ * total stays beside the quantity while both fit and goes whole to the line below, at the right edge, when they do not;
+ * the table price drops under the quantity before that happens. A screen reader hears the quantity, the charged price, the table
+ * price and the total, in that order.
  */
 export function ConfirmedItems({
   headingId,
@@ -113,14 +118,30 @@ export function ConfirmedItems({
             <span className="font-medium [overflow-wrap:anywhere]">
               {item.label}
             </span>
-            <span
+            <p
               className={cn(
-                "tabular-nums",
-                receipt && "text-right font-mono [overflow-wrap:anywhere]"
+                "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 tabular-nums",
+                receipt && "font-mono"
               )}
             >
-              <MoneyText text={item.detail} />
-            </span>
+              <span className="min-w-0 flex-[1_1_min-content]">
+                <span className="whitespace-nowrap">
+                  <MoneyText text={item.chargedText} />
+                </span>
+                {item.listedText ? (
+                  <>
+                    <span className="sr-only">,</span>{" "}
+                    <span className="whitespace-nowrap text-muted-foreground">
+                      <MoneyText text={item.listedText} />
+                    </span>
+                  </>
+                ) : null}
+              </span>
+              <span className="ml-auto text-right">
+                <span className="sr-only">Total do item: </span>
+                <MoneyText text={item.totalText} />
+              </span>
+            </p>
             <span className="text-muted-foreground text-support">
               <MoneyText text={item.costText} />
             </span>

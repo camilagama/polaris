@@ -57,6 +57,31 @@ const GOAL_PROJECTION_SHORT =
 
 const GOAL_PROJECTION_NO_SALES = "Sem vendas nos últimos 7 dias para estimar.";
 
+/** Wednesday, `30/09`: "Quarta-feira, 30 de setembro · atualizado às 12:00" takes two lines on a phone. */
+const WEDNESDAY_NOON = Date.parse("2026-09-30T15:00:00.000Z");
+
+/** Where the phrase under the title ends (its last line, not the box reserved for two) and where the row of actions starts. */
+async function headerGeometry(page: Page) {
+  return await page.locator("#home-updated").evaluate((phrase) => {
+    const range = document.createRange();
+    range.selectNodeContents(phrase);
+    const tops = new Set(
+      [...range.getClientRects()].map((rect) => Math.round(rect.top))
+    );
+    const style = getComputedStyle(phrase);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    const box = phrase.getBoundingClientRect();
+    const sale = [...document.querySelectorAll("a")].find(
+      (link) => link.textContent?.trim() === "Nova venda"
+    );
+    return {
+      actionsTop: sale?.getBoundingClientRect().top ?? Number.NaN,
+      lines: tops.size,
+      phraseBottom: box.top + tops.size * lineHeight,
+    };
+  });
+}
+
 /** The foot of the menu: in the sidebar from 760 px, in "Mais" below it. */
 async function openMenuFoot(page: Page) {
   const more = page.getByRole("button", { exact: true, name: "Mais" });
@@ -475,6 +500,81 @@ test.describe("loja com venda", () => {
       ).toBe(true);
     });
   }
+
+  test("a 360 px, com a frase numa linha, o vão entre ela e a fileira de ações é de 24 px, com 1 px de folga", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expect(page.locator("#home-updated")).toContainText(
+      "Sexta-feira, 23 de outubro · atualizado às 12:00"
+    );
+    const { actionsTop, lines, phraseBottom } = await headerGeometry(page);
+    expect(lines, "a frase de sexta, 23/10, cabe numa linha").toBe(1);
+    const gap = actionsTop - phraseBottom;
+    const reason =
+      "o vão de uma linha é 24 px (-mt-2 sobre o gap-y-4 e a linha vazia de 16 px), com 1 px de arredondamento";
+    expect(gap, reason).toBeGreaterThanOrEqual(23);
+    expect(gap, reason).toBeLessThanOrEqual(25);
+  });
+
+  for (const [width, at, name] of [
+    [360, WEDNESDAY_NOON, "360 px com o dia da semana e o mês longos"],
+    [320, NOON, "320 px"],
+  ] as const) {
+    test(`a ${name}, a frase em duas linhas e a troca por 'Atualizando…' não mudam a fileira de ações de lugar`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      const server = new FakeServer(SOLD);
+      await openHome(page, server, at);
+      const updated = page.locator("#home-updated");
+      await expect(updated).toContainText("atualizado às");
+      const settledState = await headerGeometry(page);
+      expect(settledState.lines, "a frase quebra em duas linhas").toBe(2);
+      expect(
+        settledState.actionsTop - settledState.phraseBottom,
+        "com duas linhas sobram 8 px entre a frase e a fileira, nunca 0"
+      ).toBeCloseTo(8, 0);
+      let answer: () => void = () => undefined;
+      server.held.set(
+        "report/periodSummary",
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      await page.getByRole("button", { name: "Atualizar" }).first().click();
+      await expect(updated).toHaveText("Atualizando…");
+      const during = await headerGeometry(page);
+      expect(during.lines).toBe(1);
+      expect(during.actionsTop).toBe(settledState.actionsTop);
+      answer();
+      await expect(updated).toContainText("atualizado às");
+      expect((await headerGeometry(page)).actionsTop).toBe(
+        settledState.actionsTop
+      );
+    });
+  }
+
+  test("sem internet a 360 px, a frase de offline segue a 6 px da fileira de ações", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    const online = await headerGeometry(page);
+    await page.context().setOffline(true);
+    const offlineText = page.locator("#home-new-sale-offline");
+    await expect(offlineText).toBeVisible();
+    const row = await newSale(page).boundingBox();
+    const text = await offlineText.boundingBox();
+    expect(
+      (text?.y ?? 0) - ((row?.y ?? 0) + (row?.height ?? 0)),
+      "o aviso fica colado à fileira de ações"
+    ).toBe(6);
+    expect((await headerGeometry(page)).actionsTop).toBe(online.actionsTop);
+  });
 
   test("a ordem do foco é a que se vê: período, Atualizar, Nova venda; e o período vem antes dos cartões no DOM", async ({
     page,

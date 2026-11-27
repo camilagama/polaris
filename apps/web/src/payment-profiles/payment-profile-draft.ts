@@ -3,6 +3,7 @@ import type {
   PaymentProfileReadModel,
   PaymentProfileRuleInput,
 } from "@polaris/contracts";
+import { MAX_EXPECTED_SETTLEMENT_DAYS } from "@polaris/domain/sales/payment-profile";
 import { moneyInputText } from "../expenses/expense-model";
 import { percentageFieldText, percentageProblem } from "./payment-fee-model";
 
@@ -38,6 +39,7 @@ export const INSTALLMENTS_RULE_TEXT =
   "Informe o número de parcelas: 1 ou mais, sem vírgula.";
 export const SETTLEMENT_RULE_TEXT =
   "Informe os dias de prazo: 0 ou mais, sem vírgula. Ou deixe em branco.";
+export const SETTLEMENT_MAX_TEXT = `O prazo não pode passar de ${MAX_EXPECTED_SETTLEMENT_DAYS.toLocaleString("pt-BR")} dias.`;
 const MAX_INTEGER = 2_147_483_647;
 const INTEGER_TEXT = /^\d+$/;
 
@@ -143,6 +145,13 @@ function wholeNumberProblem(text: string, minimum: number): boolean {
   );
 }
 
+function settlementProblem(days: string): string | null {
+  if (INTEGER_TEXT.test(days) && Number(days) > MAX_EXPECTED_SETTLEMENT_DAYS) {
+    return SETTLEMENT_MAX_TEXT;
+  }
+  return wholeNumberProblem(days, 0) ? SETTLEMENT_RULE_TEXT : null;
+}
+
 function fixedProblem(text: string): boolean {
   const value = decimalInputValue(text.trim());
   return value === "" || !Number.isFinite(Number(value)) || Number(value) < 0;
@@ -183,8 +192,11 @@ export function draftProblems(draft: ProfileDraft): Record<string, string> {
       problems[ruleFieldId(rule, "installments")] = INSTALLMENTS_RULE_TEXT;
     }
     const days = rule.expectedSettlementDays.trim();
-    if (days !== "" && wholeNumberProblem(days, 0)) {
-      problems[ruleFieldId(rule, "settlement")] = SETTLEMENT_RULE_TEXT;
+    if (days !== "") {
+      const problem = settlementProblem(days);
+      if (problem) {
+        problems[ruleFieldId(rule, "settlement")] = problem;
+      }
     }
     Object.assign(
       problems,

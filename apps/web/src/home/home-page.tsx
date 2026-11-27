@@ -680,9 +680,9 @@ function HomeHeader({
           <h1 className="text-title min-[47.5rem]:col-start-1 min-[47.5rem]:row-start-1">
             Início
           </h1>
-          {/* two lines kept on a phone: the long day and hour, or "Carregando…", take the same box */}
+          {/* two lines kept on a phone: the long day and hour, or "Carregando…", take the same box; the line a short phrase leaves empty is 16 px, and the actions row below (`-mt-2`, half of the header `gap-y-4`) sits 24 px under a one-line phrase and 8 px under a two-line one */}
           <p
-            className="min-h-10 text-muted-foreground text-support md:min-h-5 min-[47.5rem]:col-span-2 min-[47.5rem]:row-start-2"
+            className="min-h-8 text-muted-foreground text-support leading-4 md:min-h-5 md:leading-(--text-support--line-height) min-[47.5rem]:col-span-2 min-[47.5rem]:row-start-2"
             id="home-updated"
             role="status"
           >
@@ -700,7 +700,7 @@ function HomeHeader({
           ) : null}
         </div>
       </div>
-      <div className="flex w-full flex-wrap items-start gap-2 min-[47.5rem]:col-start-2 min-[47.5rem]:row-start-1 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
+      <div className="-mt-2 flex w-full flex-wrap items-start gap-2 min-[47.5rem]:col-start-2 min-[47.5rem]:row-start-1 min-[47.5rem]:mt-0 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
         {period?.picker}
         {refresh ? (
           <HomeRefresh

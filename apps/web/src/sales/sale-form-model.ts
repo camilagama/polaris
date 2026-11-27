@@ -3037,10 +3037,15 @@ interface ConfirmedSaleDetail {
 }
 
 interface ConfirmedSaleItemView {
+  /** The price charged per unit, with the quantity: "2 × R$ 114,95". */
+  chargedText: string;
   costText: string;
-  detail: string;
   key: string;
   label: string;
+  /** The table price, only when it differs from the charged one: "tabela R$ 139,90". */
+  listedText: string | null;
+  /** The total of the line, the charged price times the quantity. */
+  totalText: string;
 }
 
 /** The figure beside the total at the top of the receipt, from what the sale already carries. */
@@ -3071,19 +3076,25 @@ function confirmedSummary(sale: ConfirmedSaleReadModel): ConfirmedSaleSummary {
 }
 
 function confirmedItems(sale: ConfirmedSaleReadModel): ConfirmedSaleItemView[] {
-  return sale.items.map((item) => ({
-    costText:
-      item.unitCost === null
-        ? "Custo desconhecido. Margem indeterminada."
-        : `Custo unitário registrado: ${formatBrlCents(item.unitCost)}.`,
-    detail: `${item.quantity} × ${formatBrlAmount(item.chargedUnitPrice)} (tabela ${formatBrlAmount(item.listedUnitPrice)}) = ${formatBrlAmount(
-      Money.from(item.chargedUnitPrice)
-        .multiplyByQuantity(item.quantity)
-        .toString()
-    )}`,
-    key: `${item.position}-${item.variantId}`,
-    label: item.productLabel,
-  }));
+  return sale.items.map((item) => {
+    const charged = formatBrlAmount(item.chargedUnitPrice);
+    const listed = formatBrlAmount(item.listedUnitPrice);
+    return {
+      chargedText: `${item.quantity} × ${charged}`,
+      costText:
+        item.unitCost === null
+          ? "Custo desconhecido. Margem indeterminada."
+          : `Custo unitário registrado: ${formatBrlCents(item.unitCost)}.`,
+      key: `${item.position}-${item.variantId}`,
+      label: item.productLabel,
+      listedText: listed === charged ? null : `tabela ${listed}`,
+      totalText: formatBrlAmount(
+        Money.from(item.chargedUnitPrice)
+          .multiplyByQuantity(item.quantity)
+          .toString()
+      ),
+    };
+  });
 }
 
 function confirmedTotals(sale: ConfirmedSaleReadModel): SummaryRow[] {

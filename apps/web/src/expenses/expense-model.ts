@@ -5,6 +5,7 @@ import type {
 } from "@polaris/contracts";
 import {
   EARLIEST_EXPENSE_COMPETENCE,
+  MAX_EXPENSE_COMPETENCE_DAYS_AHEAD,
   MAX_EXPENSE_DESCRIPTION_LENGTH,
   MAX_EXPENSE_PAYEE_LENGTH,
 } from "@polaris/domain/expenses/expense";
@@ -244,21 +245,48 @@ export const EXPENSE_DRAFT_FIELDS: readonly ExpenseDraftField[] = [
   "payee",
 ];
 
-function competenceError(competenceOn: string): string | null {
+export function addDays(day: string, days: number): string {
+  const [year = 0, month = 1, date = 1] = day.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, date + days))
+    .toISOString()
+    .slice(0, 10);
+}
+
+export const COMPETENCE_TOO_FAR_AHEAD_MESSAGE =
+  "A data de competência pode ser no máximo um ano à frente.";
+
+function competenceError(
+  competenceOn: string,
+  today: string,
+  savedCompetenceOn: string | null
+): string | null {
   if (!isCalendarDate(competenceOn)) {
     return "Informe uma data de competência válida.";
   }
   if (competenceOn < EARLIEST_EXPENSE_COMPETENCE) {
     return "A data de competência não pode ser anterior a 2000.";
   }
+  if (
+    competenceOn !== savedCompetenceOn &&
+    competenceOn > addDays(today, MAX_EXPENSE_COMPETENCE_DAYS_AHEAD)
+  ) {
+    return COMPETENCE_TOO_FAR_AHEAD_MESSAGE;
+  }
   return null;
 }
 
 /**
  * Checks a draft the way the server will, so mistakes show next to the field
- * before anything is sent. `input` is set only when nothing is wrong.
+ * before anything is sent. `today` is the organization's day. The upper limit
+ * of the competence only applies to a date that was typed or changed, so
+ * `savedCompetenceOn` (the date of the expense being edited) is never refused.
+ * `input` is set only when nothing is wrong.
  */
-export function validateExpenseDraft(draft: ExpenseDraft): {
+export function validateExpenseDraft(
+  draft: ExpenseDraft,
+  today: string,
+  savedCompetenceOn: string | null
+): {
   errors: ExpenseDraftErrors;
   input: ExpenseInput | null;
 } {
@@ -270,7 +298,11 @@ export function validateExpenseDraft(draft: ExpenseDraft): {
   if (draft.categoryId === "") {
     errors.categoryId = "Escolha uma categoria.";
   }
-  const competence = competenceError(draft.competenceOn);
+  const competence = competenceError(
+    draft.competenceOn,
+    today,
+    savedCompetenceOn
+  );
   if (competence) {
     errors.competenceOn = competence;
   }

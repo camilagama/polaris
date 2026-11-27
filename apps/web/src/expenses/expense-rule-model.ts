@@ -6,7 +6,7 @@ import {
   MAX_EXPENSE_PAYEE_LENGTH,
 } from "@polaris/domain/expenses/expense";
 import { isCalendarDate } from "../lib/dates";
-import { moneyInputMessage, parseMoneyInput } from "./expense-model";
+import { addDays, moneyInputMessage, parseMoneyInput } from "./expense-model";
 
 /**
  * Pure helpers of the recurring expense rules: what a person types to create
@@ -86,13 +86,6 @@ export function newRuleDraft(today: string): RuleDraft {
     payee: "",
     startsOn: today,
   };
-}
-
-function addDays(day: string, days: number): string {
-  const [year = 0, month = 1, date = 1] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + days))
-    .toISOString()
-    .slice(0, 10);
 }
 
 function startsOnError(startsOn: string, today: string): string | null {

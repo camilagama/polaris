@@ -6,8 +6,8 @@ import {
   addAllCombinations,
   addAllCombinationsLabel,
   clearDefaultSkuLabel,
-  combinationCap,
   clearedDefaultSkuNotice,
+  combinationCap,
   duplicateSkuMessage,
   emptyConfigurationDraft,
   isConfigurationDraftEmpty,
@@ -16,6 +16,7 @@ import {
   missingCombinationCount,
   missingCombinations,
   optionLabel,
+  optionValueLengthError,
   optionValuesError,
   overCapMessage,
   parseOptionValues,
@@ -132,6 +133,67 @@ describe("tamanho do SKU", () => {
     expect(skuLengthError(emoji.repeat(65))).toBe(
       "Use até 64 caracteres. Agora são 65."
     );
+  });
+});
+
+describe("tamanho do valor de opção, por linha do campo", () => {
+  const emoji = "\u{1F600}";
+  const over = (line: number, count: number) =>
+    `Use até 80 caracteres por valor. A linha ${line} tem ${count}.`;
+
+  it("aceita 80 caracteres e diz a linha e a contagem com 81", () => {
+    expect(optionValueLengthError("a".repeat(80))).toBeNull();
+    expect(optionValueLengthError("a".repeat(81))).toBe(over(1, 81));
+  });
+
+  it("conta depois de aparar: 80 com espaços nas pontas cabem, um espaço no meio a mais não", () => {
+    expect(optionValueLengthError(`  ${"a".repeat(80)}  `)).toBeNull();
+    expect(optionValueLengthError(`${"a".repeat(40)} ${"a".repeat(40)}`)).toBe(
+      over(1, 81)
+    );
+  });
+
+  it("conta por caractere: 80 emojis cabem, 81 não", () => {
+    expect(emoji.repeat(80)).toHaveLength(160);
+    expect(optionValueLengthError(emoji.repeat(80))).toBeNull();
+    expect(optionValueLengthError(emoji.repeat(81))).toBe(over(1, 81));
+  });
+
+  it("numera pelo que a pessoa vê: a linha em branco ocupa um número, com \\n e com \\r\\n", () => {
+    const long = "a".repeat(82);
+    expect(optionValueLengthError(`P\n\n${long}`)).toBe(over(3, 82));
+    expect(optionValueLengthError(`P\r\n\r\n${long}`)).toBe(over(3, 82));
+  });
+
+  it("duas linhas longas dizem as linhas no plural", () => {
+    const long = "a".repeat(81);
+    expect(optionValueLengthError(`${long}\nP\n${long}`)).toBe(
+      "Use até 80 caracteres por valor. As linhas 1 e 3 passam de 80."
+    );
+  });
+
+  it("três linhas longas listam 1, 2 e 3", () => {
+    const long = "a".repeat(81);
+    expect(optionValueLengthError(`${long}\n${long}\n${long}`)).toBe(
+      "Use até 80 caracteres por valor. As linhas 1, 2 e 3 passam de 80."
+    );
+  });
+
+  it("quatro ou mais mostram as três primeiras e 'e mais N'", () => {
+    const long = "a".repeat(81);
+    const lines = (count: number) =>
+      Array.from({ length: count }, () => long).join("\n");
+    expect(optionValueLengthError(lines(4))).toBe(
+      "Use até 80 caracteres por valor. As linhas 1, 2, 3 e mais 1 passam de 80."
+    );
+    expect(optionValueLengthError(lines(6))).toBe(
+      "Use até 80 caracteres por valor. As linhas 1, 2, 3 e mais 3 passam de 80."
+    );
+  });
+
+  it("texto vazio e só espaços não têm erro", () => {
+    expect(optionValueLengthError("")).toBeNull();
+    expect(optionValueLengthError("   \n  ")).toBeNull();
   });
 });
 

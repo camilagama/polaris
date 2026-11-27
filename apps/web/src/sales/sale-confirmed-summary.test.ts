@@ -116,3 +116,39 @@ describe("the figure beside the total of the receipt", () => {
     expect(row?.itemCountText).toBe(`${detail.summary.itemCount} item`);
   });
 });
+
+describe("the lines of the items of a confirmed sale", () => {
+  const withPrices = (charged: string, listed: string) => {
+    const base = sale([2], "20.00");
+    return confirmedSaleView({
+      ...base,
+      items: base.items.map((line) => ({
+        ...line,
+        chargedUnitPrice: charged,
+        listedUnitPrice: listed,
+      })),
+    });
+  };
+
+  it("gives the quantity with the charged price, the table price and the total of the item as separate parts", () => {
+    const [line] = withPrices("114.95", "139.90").items;
+    expect(line).toMatchObject({
+      chargedText: "2 × R$ 114,95",
+      listedText: "tabela R$ 139,90",
+      totalText: "R$ 229,90",
+    });
+    expect(line).not.toHaveProperty("detail");
+  });
+
+  it("leaves the table price out when it is the charged price", () => {
+    const [line] = withPrices("114.95", "114.95").items;
+    expect(line?.listedText).toBeNull();
+    expect(line?.chargedText).toBe("2 × R$ 114,95");
+  });
+
+  it("keeps the table price when the charge is above it", () => {
+    expect(withPrices("150.00", "139.90").items[0]?.listedText).toBe(
+      "tabela R$ 139,90"
+    );
+  });
+});
