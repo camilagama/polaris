@@ -21,6 +21,7 @@ import {
 import { EmptyState } from "@/ui/empty-state";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { InsetBlock } from "@/ui/inset-block";
 import { ListBlock } from "@/ui/list-block";
 import { Skeleton } from "@/ui/skeleton";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
@@ -255,7 +256,7 @@ function DeleteConfirm({
   onConfirm,
   online,
 }: DeleteConfirmProps) {
-  const groupRef = useRef<HTMLFieldSetElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     focusLater(() => groupRef.current?.focus());
   }, []);
@@ -265,12 +266,14 @@ function DeleteConfirm({
     }
   }, [category, online, onConfirm]);
   return (
-    <fieldset
-      className="focus-ring grid w-full min-w-0 gap-3"
+    <InsetBlock
+      aria-label={`Confirmar remoção de ${category.name}`}
+      className="grid w-full gap-3 p-3 outline-none focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-solid focus-visible:outline-offset-2"
       ref={groupRef}
+      role="group"
       tabIndex={-1}
+      tone="destructive"
     >
-      <legend className="sr-only">Confirmar remoção de {category.name}</legend>
       <p className="text-support">
         Remover{" "}
         <strong className="font-medium [overflow-wrap:anywhere]">
@@ -286,7 +289,7 @@ function DeleteConfirm({
           type="button"
           variant="outline"
         >
-          Cancelar
+          Manter categoria
         </Button>
         <Button
           {...connectionControlProps(online)}
@@ -298,7 +301,7 @@ function DeleteConfirm({
           Remover categoria
         </Button>
       </div>
-    </fieldset>
+    </InsetBlock>
   );
 }
 
