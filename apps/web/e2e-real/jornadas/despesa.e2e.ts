@@ -113,9 +113,11 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
 
   await page.goto("/dashboard");
   await expect(chainValue(page, EXPENSES_OF_PERIOD)).toHaveText(BRL_VALUE);
-  expect(cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText())).toBe(
-    123_456
-  );
+  await expect
+    .poll(async () =>
+      cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText())
+    )
+    .toBe(123_456);
 });
 
 /**
@@ -185,9 +187,11 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
 
   await page.goto("/dashboard");
   await expect(chainValue(page, EXPENSES_OF_PERIOD)).toHaveText(BRL_VALUE);
-  expect(cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText())).toBe(
-    25_000
-  );
+  await expect
+    .poll(async () =>
+      cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText())
+    )
+    .toBe(25_000);
 });
 
 const PERIOD_SUMMARY_PATH = "/rpc/report/periodSummary";
@@ -437,15 +441,20 @@ async function editedExpensesOf(
   }));
 }
 
-/** The one category the person made, once the database has it. */
+/** The one category the person made, once the database has it with the fields in `expected`; the row is the one the poll matched. */
 async function onlyCategoryOf(
   sql: Sql,
-  organizationId: string
+  organizationId: string,
+  expected: Partial<CategoryRow>
 ): Promise<CategoryRow> {
+  let seen: CategoryRow[] = [];
   await expect
-    .poll(async () => (await categoriesOf(sql, organizationId)).length)
-    .toBe(1);
-  return (await categoriesOf(sql, organizationId))[0] as CategoryRow;
+    .poll(async () => {
+      seen = await categoriesOf(sql, organizationId);
+      return seen;
+    })
+    .toEqual([expect.objectContaining(expected)]);
+  return seen[0] as CategoryRow;
 }
 
 const categoryAlert = (scope: Locator, text: string) =>
@@ -469,8 +478,10 @@ test("categoria de despesa: nome repetido na loja (outra caixa, outro grupo) e r
 
   await page.goto("/expenses");
   await addCategory(page, first, "Operacional/Administrativa");
-  const created = await onlyCategoryOf(sql, organizationId);
-  expect(created).toMatchObject({ group_key: "operational", name: first });
+  const created = await onlyCategoryOf(sql, organizationId, {
+    group_key: "operational",
+    name: first,
+  });
 
   const repeated = await openNewCategory(
     page,
@@ -486,14 +497,16 @@ test("categoria de despesa: nome repetido na loja (outra caixa, outro grupo) e r
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await addCategory(page, second, "Comercial");
+  let before: CategoryRow[] = [];
   await expect
-    .poll(async () => (await categoriesOf(sql, organizationId)).length)
-    .toBe(2);
-  const before = await categoriesOf(sql, organizationId);
-  expect(before.map((row) => [row.name, row.group_key])).toEqual([
-    [first, "operational"],
-    [second, "commercial"],
-  ]);
+    .poll(async () => {
+      before = await categoriesOf(sql, organizationId);
+      return before.map((row) => [row.name, row.group_key]);
+    })
+    .toEqual([
+      [first, "operational"],
+      [second, "commercial"],
+    ]);
 
   await page
     .getByRole("button", { exact: true, name: `Renomear categoria ${second}` })
@@ -522,8 +535,10 @@ test("categoria de despesa: renomear muda o nome e o banco guarda o mesmo id e o
 
   await page.goto("/expenses");
   await addCategory(page, name, "Impostos");
-  const created = await onlyCategoryOf(sql, organizationId);
-  expect(created).toMatchObject({ group_key: "taxes", name });
+  const created = await onlyCategoryOf(sql, organizationId, {
+    group_key: "taxes",
+    name,
+  });
 
   await page
     .getByRole("button", { exact: true, name: `Renomear categoria ${name}` })
@@ -571,8 +586,10 @@ test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nov
 
   await page.goto("/expenses");
   await addCategory(page, name, "Comercial");
-  const created = await onlyCategoryOf(sql, organizationId);
-  expect(created).toMatchObject({ archived: false, group_key: "commercial" });
+  const created = await onlyCategoryOf(sql, organizationId, {
+    archived: false,
+    group_key: "commercial",
+  });
   const categoryId = created.id;
   await rpc.expense.create({
     amount: "321.45",
