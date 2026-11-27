@@ -740,10 +740,10 @@ test("produto: nome, preço, quantidade e custo criam tudo junto, e o mesmo nome
 });
 
 /**
- * A name with a control character or one that controls the direction of the text is refused, on the screen and by the
- * server, and nothing is written; a line break in the description is fine.
+ * A name with a control character or one that controls the direction of the text is refused by the server on what the
+ * screen sends, and nothing is written.
  */
-test("produto: nome com caractere de controle ou de direção é recusado e nada é gravado; quebra de linha na descrição vale", async ({
+test("produto: nome com caractere de controle ou de direção é recusado na tela e nada é gravado", async ({
   browser,
   sql,
 }, testInfo) => {
@@ -755,7 +755,7 @@ test("produto: nome com caractere de controle ou de direção é recusado e nada
       organization: { timezone: ZONE },
     }
   );
-  const { page, user } = journey;
+  const { page } = journey;
   const organizationId = journey.organizationId as string;
   const base = `Camiseta ${journey.name}`;
   const before = await catalogCounts(sql, organizationId);
@@ -777,6 +777,23 @@ test("produto: nome com caractere de controle ou de direção é recusado e nada
     );
     expect(rows).toHaveLength(0);
   }
+});
+
+/**
+ * The same refusal holds for the RPC alone, with no screen in front of it: the rule is the server's, not the form's.
+ * Its own test, so a server that stops refusing fails here even when the screen test fails first.
+ */
+test("produto: nome com caractere de controle ou de direção é recusado pelo RPC sozinho e nada é gravado", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "produto-nome-rpc", {
+    organization: { timezone: ZONE },
+  });
+  const { page, user } = journey;
+  const organizationId = journey.organizationId as string;
+  const base = `Camiseta ${journey.name}`;
+  const before = await catalogCounts(sql, organizationId);
 
   for (const forbidden of [BELL, RIGHT_TO_LEFT_OVERRIDE]) {
     // biome-ignore lint/performance/noAwaitInLoops: one refusal after the other
@@ -784,20 +801,46 @@ test("produto: nome com caractere de controle ou de direção é recusado e nada
       user.rpc.product.create({ name: `${base}${forbidden}`, organizationId })
     );
     expect(code).toBe("BAD_REQUEST");
+    expect(await catalogCounts(sql, organizationId)).toEqual(before);
   }
-  expect(await catalogCounts(sql, organizationId)).toEqual(before);
+  const { rows } = await sql.query(
+    "SELECT 1 FROM products WHERE organization_id = $1 AND name LIKE $2",
+    [organizationId, `${base}%`]
+  );
+  expect(rows).toHaveLength(0);
 
+  // the list shows a valid product (the proof that it loaded) and only that one
+  await user.rpc.product.create({ name: base, organizationId });
+  await page.goto("/products");
+  await expect(productCard(page, base)).toHaveCount(1);
+  await expect(page.locator("[data-product-id]")).toHaveCount(1);
+});
+
+/** A line break in the description is kept as typed: the description is the one text where it is allowed. */
+test("produto: quebra de linha na descrição é gravada como foi digitada", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "produto-descricao", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const name = `Camiseta ${journey.name}`;
   const description = "Primeira linha\nSegunda linha";
-  await page.getByLabel("Nome do produto").fill(base);
+
+  await page.goto("/products");
+  await openNewProduct(page);
+  await page.getByLabel("Nome do produto").fill(name);
   await page.getByRole("button", { name: "Mais detalhes" }).click();
   await page.getByLabel("Descrição").fill(description);
-  await saveProduct(page);
-  await expect(productCard(page, base)).toBeVisible();
+  expect(await saveProductAndWaitForServer(page)).toBe(200);
+  await expect(productCard(page, name)).toBeVisible();
   await expect
     .poll(async () => {
       const { rows } = await sql.query<{ description: string | null }>(
         "SELECT description FROM products WHERE organization_id = $1 AND name = $2",
-        [organizationId, base]
+        [organizationId, name]
       );
       return rows.map((row) => row.description);
     })
