@@ -471,14 +471,14 @@ Tela no visual v5.1, sem CSS próprio, carregada sob demanda; o desenho são os 
   - **"Plano Pro" com "Ativo" e com o bloco "Pagamento" (o caso normal):** sem linha de apoio. A data e o valor ficam só no bloco, na "Próxima cobrança", e o "Ciclo" diz só o ciclo.
   - **"Plano Pro" com "Ativo" e sem o bloco** (a loja não tem forma de pagamento registrada): a frase "Próxima cobrança em D, R$ X." fica sob o selo.
     - **Com valor:** a frase inteira, "Próxima cobrança em D, R$ X.".
-    - **Sem valor:** a frase vem sem o valor.
-    - **Ciclo novo:** a frase vem com o ciclo novo, quando é o caso.
+    - **Sem valor:** a frase vem sem o valor, "Próxima cobrança em D.".
+      - **Ciclo novo:** quando o ciclo mudou, "Próxima cobrança em D, já no ciclo X; o valor aparece na renovação." (X é o nome do ciclo: Mensal, Semestral ou Anual).
     - **Sem próxima cobrança:** a frase some.
-  - **"Pro até D":** com o selo "Renovação cancelada" ou "reembolso pendente".
+  - **"Pro até D":** com o selo "Renovação cancelada" ou "Reembolso pendente".
   - **"Pagamento não confirmado":** com os dias que restam.
   - **Uso:** variantes, imagens e metas, em três linhas: rótulo, barra fina em tinta e "26 de 50" à direita; sem caixa própria (regra D2).
   - **Bloco "Pagamento":** como paga, ciclo, próxima ou primeira cobrança, e "Nenhuma" com a renovação cancelada.
-  - **E, no fim:** "Dá para assinar de novo a partir de D…" e "O que a sua loja já guardou: N vendas, N produtos e N meses de histórico. Seus dados não são apagados."; cada parte some no zero.
+  - **E, no fim:** "Dá para assinar de novo depois de D, quando este período termina." (só quando há data) e "O que a sua loja já guardou: N vendas, N produtos e N meses de histórico. Seus dados não são apagados.". Nesta segunda frase, cada parte (vendas, produtos, meses) some no zero, e a frase inteira some quando as três são zero.
   - **Reembolso pendente:** é um aviso âmbar. Dentro das 72 h, "Cancelamos a renovação, mas o reembolso não foi concluído." com o prazo; depois, "Cancelamos a renovação. O reembolso está com o nosso suporte.", sem botão.
 - **Oferta (Free):** "Plano Pro", os ciclos do catálogo em cartões de escolha (mensal marcado; o anual com o selo "2 meses grátis" e o preço por mês), os métodos que o servidor oferece (cartão: "Você vai pagar na página segura do Asaas…"; Pix Automático, com nome, CPF ou CNPJ de teclado numérico e e-mail, sem telefone), um bloco rebaixado com a primeira cobrança e o preço total antes de qualquer página, e um botão em tinta: "Começar os 7 dias grátis" (cartão), "Começar o teste grátis" (Pix, sem número de dias) ou "Assinar o Pro"; enquanto espera, "Abrindo…" desligado.
 - **Esperando o provedor:** a página do Asaas devolve a pessoa a `/subscription?retorno=concluida|cancelada|expirada` (a raiz com o `?assinatura=` de antes leva à tela); a volta concluída diz "Confirmando o pagamento…" e o Pix mostra o selo "Aguardando a aprovação no app do banco", o "copia e cola" com "Copiar" e "Abrir a página de pagamento" (sem QR; no celular o código vem primeiro e a página é de contorno, no desktop a página é a principal); a tela relê o plano a cada 5 s por 2 min e depois diz "Ainda não recebemos a confirmação…" com "Atualizar". "Escolher outra forma de pagamento" volta à oferta.
