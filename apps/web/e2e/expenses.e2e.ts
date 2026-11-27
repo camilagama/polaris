@@ -2317,7 +2317,9 @@ test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome 
     .getByRole("button", { exact: true, name: "Salvar alterações" })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(panel.getByText("Categoria renomeada.")).toBeVisible();
+  await expect(
+    panel.getByText("Categoria “Frete e entregas” renomeada.")
+  ).toBeVisible();
   await expect(
     panel.getByRole("button", { name: "Renomear categoria Frete e entregas" })
   ).toBeFocused();
