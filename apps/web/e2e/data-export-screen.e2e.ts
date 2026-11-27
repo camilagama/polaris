@@ -250,6 +250,7 @@ test("o título só fica para o leitor de tela quando a aba nomeia a tela, e os 
 }) => {
   await openScreen(page, { lists: [[]] });
   await expect(title(page)).toBeAttached();
+  await expect(list(page)).toContainText("Nenhuma cópia pedida ainda.");
   const grid = title(page).locator("xpath=ancestor::div[@data-title-line]/..");
   const measure = () =>
     grid.evaluate((element) => {
@@ -259,12 +260,13 @@ test("o título só fica para o leitor de tela quando a aba nomeia a tela, e os 
         .filter((child) => !child.matches("[data-title-line]"))
         .map((child) => child.getBoundingClientRect());
       return {
-        gaps: blocks.slice(1).map((rect, index) => {
-          const previous = blocks[index];
-          return Math.round(rect.top - (previous ? previous.bottom : 0));
-        }),
+        gaps: blocks
+          .slice(1)
+          .map((rect, index) =>
+            Math.round(rect.top - (blocks[index]?.bottom ?? 0))
+          ),
         headingHeight: Math.round(box?.height ?? 0),
-        titleTop: Math.round(
+        titleLineHeight: Math.round(
           element.querySelector("[data-title-line]")?.getBoundingClientRect()
             .height ?? 0
         ),
@@ -281,7 +283,7 @@ test("o título só fica para o leitor de tela quando a aba nomeia a tela, e os 
     expect(measured.top).toBeGreaterThan(measured.gridTop);
   } else {
     expect(measured.headingHeight).toBeLessThanOrEqual(1);
-    expect(measured.titleTop).toBe(0);
+    expect(measured.titleLineHeight).toBe(0);
     expect(measured.top).toBe(measured.gridTop);
   }
 });
