@@ -13,6 +13,7 @@ import {
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { InsetBlock } from "@/ui/inset-block";
+import { Skeleton } from "@/ui/skeleton";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
@@ -37,6 +38,27 @@ interface ProductVariantsPanelProps {
   onProductUpdated: (product: ProductReadModel) => void;
   organizationId: string;
   product: ProductReadModel;
+}
+
+/** Heights follow `VariantSection` and the SKU and price rows, so the sections that arrive take the place of these. */
+function VariantSectionShape({ separated }: { separated: boolean }) {
+  return (
+    <div
+      className={
+        separated ? "grid gap-3 border-border border-t pt-4" : "grid gap-3"
+      }
+      data-variant-shape=""
+    >
+      <div className="grid gap-1.5">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-3.5 w-full" />
+      </div>
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-ctl-md min-w-0 flex-1 rounded-lg" />
+        <Skeleton className="h-ctl-md w-24 rounded-lg" />
+      </div>
+    </div>
+  );
 }
 
 function ConfiguredVariants({
@@ -188,9 +210,13 @@ export function ProductVariantsPanel({
   let content: ReactNode = null;
   if (isLoading) {
     content = (
-      <p className="text-muted-foreground text-support" role="status">
-        Carregando variantes…
-      </p>
+      <div aria-busy="true" role="status">
+        <span className="sr-only">Carregando variantes…</span>
+        <div aria-hidden="true" className="grid gap-4">
+          <VariantSectionShape separated={false} />
+          <VariantSectionShape separated />
+        </div>
+      </div>
     );
   } else if (loadError) {
     content = (

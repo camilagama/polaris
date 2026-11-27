@@ -106,3 +106,40 @@ describe("a lista Variantes cadastradas", () => {
     expect(items[1]?.textContent).toContain("Cor: Azul · Tamanho: M");
   });
 });
+
+describe("a espera das variantes", () => {
+  it("desenha o esqueleto escondido e diz a frase só ao leitor de tela, num status", () => {
+    getVariants.mockReturnValue(new Promise(() => undefined));
+    const { container } = render(
+      <StaticOrganizationProvider
+        organization={{
+          id: "o1",
+          name: "Loja",
+          role: "owner",
+          timezone: "UTC",
+        }}
+      >
+        <ProductVariantsPanel
+          configurationDraft={null}
+          focusVariantId={null}
+          onConfigurationDraftChange={noop}
+          onProductUpdated={noop}
+          organizationId="o1"
+          product={{ id: "p1" } as ProductReadModel}
+        />
+      </StaticOrganizationProvider>
+    );
+    const status = screen.getByRole("status");
+    const phrase = within(status).getByText("Carregando variantes…");
+    expect(phrase.className).toBe("sr-only");
+    const shapes = container.querySelectorAll('[data-slot="skeleton"]');
+    expect(shapes.length).toBeGreaterThan(0);
+    expect(shapes[0]?.closest("[aria-hidden='true']")).not.toBeNull();
+    expect(status.textContent).toBe("Carregando variantes…");
+    const sections = container.querySelectorAll("[data-variant-shape]");
+    expect(sections).toHaveLength(2);
+    expect(sections[0]?.className).not.toContain("border-t");
+    expect(sections[1]?.className).toContain("border-t");
+    expect(sections[1]?.className).toContain("pt-4");
+  });
+});
