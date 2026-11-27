@@ -1,4 +1,5 @@
 import type { PaymentProfileReadModel } from "@polaris/contracts";
+import { MAX_EXPECTED_SETTLEMENT_DAYS } from "@polaris/domain/sales/payment-profile";
 import { describe, expect, it } from "vitest";
 import {
   blankDraft,
@@ -17,6 +18,7 @@ import {
   type RuleDraft,
   ruleFieldId,
   ruleInput,
+  SETTLEMENT_MAX_TEXT,
   SETTLEMENT_RULE_TEXT,
 } from "./payment-profile-draft";
 
@@ -68,6 +70,51 @@ describe("draftProblems", () => {
         draftProblems(named("A", { ...rule, expectedSettlementDays: text }))
       ).toEqual({ [ruleFieldId(rule, "settlement")]: SETTLEMENT_RULE_TEXT });
     }
+  });
+
+  it("stops the settlement at the domain limit, on the field of the rule that passed it", () => {
+    const first = blankRule();
+    const second = { ...blankRule(), method: "cash" as const };
+    const days = (text: string, other = "30") =>
+      draftProblems(
+        named(
+          "A",
+          { ...first, expectedSettlementDays: other },
+          { ...second, expectedSettlementDays: text }
+        )
+      );
+    expect(SETTLEMENT_MAX_TEXT).toBe("O prazo não pode passar de 3.650 dias.");
+    expect(days(String(MAX_EXPECTED_SETTLEMENT_DAYS))).toEqual({});
+    for (const over of [
+      String(MAX_EXPECTED_SETTLEMENT_DAYS + 1),
+      "2147483647",
+      "2147483648",
+      "99999999999999999999",
+      "0003651",
+    ]) {
+      expect(days(over)).toEqual({
+        [ruleFieldId(second, "settlement")]: SETTLEMENT_MAX_TEXT,
+      });
+    }
+    expect(days("30", "3651")).toEqual({
+      [ruleFieldId(first, "settlement")]: SETTLEMENT_MAX_TEXT,
+    });
+    for (const text of ["-1", "1,5", "abc", "1e5", "Infinity", "0x1000"]) {
+      expect(days(text)).toEqual({
+        [ruleFieldId(second, "settlement")]: SETTLEMENT_RULE_TEXT,
+      });
+    }
+    expect(days("")).toEqual({});
+    expect(days("0")).toEqual({});
+  });
+
+  it("sends the settlement at the limit unchanged", () => {
+    expect(
+      ruleInput({
+        ...blankRule(),
+        expectedSettlementDays: String(MAX_EXPECTED_SETTLEMENT_DAYS),
+      }).expectedSettlementDays
+    ).toBe(MAX_EXPECTED_SETTLEMENT_DAYS);
   });
 
   it("asks for the fixed amount only when the fee has one, and for a number that is not negative", () => {

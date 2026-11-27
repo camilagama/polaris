@@ -174,7 +174,11 @@ export function ExpenseForm({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const result = validateExpenseDraft(draft);
+      const result = validateExpenseDraft(
+        draft,
+        today,
+        editing?.competenceOn ?? null
+      );
       if (result.input === null) {
         setErrors(result.errors);
         const first = EXPENSE_DRAFT_FIELDS.find(
@@ -187,7 +191,7 @@ export function ExpenseForm({
       }
       await onSave(result.input);
     },
-    [draft, onSave]
+    [draft, editing, onSave, today]
   );
 
   return (
