@@ -257,3 +257,351 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     ranking.getByRole("link", { name: "Ver os produtos" })
   ).toHaveAttribute("href", "/products");
 });
+
+interface Refusal {
+  code: string;
+  reason: unknown;
+}
+
+/** The code and the `data.reason` of a refused call; fails if the call answers. */
+async function refusal(call: Promise<unknown>): Promise<Refusal> {
+  try {
+    await call;
+  } catch (error) {
+    const { code, data } = error as {
+      code?: unknown;
+      data?: { reason?: unknown } | null;
+    };
+    return { code: String(code), reason: data?.reason };
+  }
+  throw new Error("The call was expected to be refused, and it answered.");
+}
+
+interface ProductState {
+  archived: boolean;
+  categoryId: string | null;
+  deleted: boolean;
+  id: string;
+  version: number;
+}
+
+/** The lifecycle events the audit holds for one product, by type. */
+type ProductAudit = Record<
+  "product.archived" | "product.deleted" | "product.restored",
+  number
+>;
+
+const ANY_ROW = "[data-product-id]";
+
+/**
+ * Archiving and restoring by the screen: the same row (id) goes out of "Ativos" and back, each transition raises the
+ * version by one and writes one audit event; the archived product is not offered by the sale search and its old sale
+ * stays in the history; archiving what is already archived changes nothing.
+ */
+test("produto: arquivar e restaurar pela tela mantêm o id, sobem a versão, saem e voltam na Nova venda; repetir não muda nada", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "ciclo-vida-produto", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const { rpc } = journey.user;
+  const today = localDate(runT0(), ZONE);
+  const archivedName = `Garrafa ${journey.name} arquivada`;
+  const controlName = `Garrafa ${journey.name} ativa`;
+
+  const subject = await seedProduct(rpc, organizationId, archivedName, "45.90");
+  const control = await seedProduct(rpc, organizationId, controlName, "19.90");
+  await seedStock(rpc, organizationId, subject.variantId, 4, "20.00", today);
+  await seedStock(rpc, organizationId, control.variantId, 4, "8.00", today);
+  const saleId = await seedCashSale(
+    rpc,
+    organizationId,
+    [{ price: "45.90", quantity: 1, variantId: subject.variantId }],
+    new Date(runT0()).toISOString()
+  );
+
+  const stateOf = async (): Promise<ProductState> => {
+    const { rows } = await sql.query<ProductState>(
+      `SELECT id, version, category_id AS "categoryId",
+              archived_at IS NOT NULL AS archived, deleted_at IS NOT NULL AS deleted
+         FROM products WHERE id = $1`,
+      [subject.productId]
+    );
+    return rows[0] as ProductState;
+  };
+  const auditOf = async (): Promise<ProductAudit> => {
+    const { rows } = await sql.query<{
+      event_type: keyof ProductAudit;
+      n: number;
+    }>(
+      `SELECT event_type, count(*)::int AS n FROM tenant_audit_event
+        WHERE organization_id = $1 AND entity_type = 'product' AND entity_id = $2
+          AND event_type IN ('product.archived', 'product.restored', 'product.deleted')
+        GROUP BY event_type`,
+      [organizationId, subject.productId]
+    );
+    const audit: ProductAudit = {
+      "product.archived": 0,
+      "product.deleted": 0,
+      "product.restored": 0,
+    };
+    for (const row of rows) {
+      audit[row.event_type] = row.n;
+    }
+    return audit;
+  };
+
+  const first = await stateOf();
+  expect(first).toMatchObject({ archived: false, deleted: false });
+  expect(await auditOf()).toEqual({
+    "product.archived": 0,
+    "product.deleted": 0,
+    "product.restored": 0,
+  });
+
+  await page.goto("/products");
+  const rowOf = (name: string) => page.locator(ANY_ROW, { hasText: name });
+  await expect(rowOf(archivedName)).toBeVisible({ timeout: 30_000 });
+  await rowOf(archivedName).getByRole("button", { name: MORE_ACTIONS }).click();
+  await page.getByRole("menuitem", { name: "Arquivar" }).click();
+  await expect(
+    page.getByText(`Produto “${archivedName}” arquivado.`)
+  ).toBeVisible();
+  await expect(rowOf(archivedName)).toHaveCount(0);
+  await expect(rowOf(controlName)).toBeVisible();
+  await expect
+    .poll(stateOf)
+    .toEqual({ ...first, archived: true, version: first.version + 1 });
+  expect(await auditOf()).toEqual({
+    "product.archived": 1,
+    "product.deleted": 0,
+    "product.restored": 0,
+  });
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  await expect(rowOf(archivedName)).toBeVisible();
+  await expect(rowOf(controlName)).toHaveCount(0);
+
+  // outside the sale: the search offers the active product of the same prefix and not the archived one
+  const searchSale = async () => {
+    await page.goto("/sales");
+    const item = page.getByRole("group", { exact: true, name: "Item 1" });
+    await item
+      .getByLabel("Produto ou variante")
+      .fill(`Garrafa ${journey.name}`);
+    const listbox = page.getByRole("listbox", {
+      name: "Variantes encontradas",
+    });
+    await expect(
+      listbox.getByRole("option", { name: new RegExp(controlName) })
+    ).toBeVisible();
+    return listbox.getByRole("option", { name: new RegExp(archivedName) });
+  };
+  await expect(await searchSale()).toHaveCount(0);
+
+  // a sale of the archived product stays in the history, with its name
+  await page.goto("/sales/history");
+  const sales = page.getByRole("list", {
+    exact: true,
+    name: "Vendas do período",
+  });
+  const saleLink = sales.locator(`a[href="/sales/detail?saleId=${saleId}"]`);
+  await expect(saleLink).toContainText("Confirmada");
+  await saleLink.click();
+  await expect(page).toHaveURL(new RegExp(`saleId=${saleId}`));
+  await expect(page.getByText(archivedName).first()).toBeVisible();
+
+  // archiving what is archived changes nothing: same version, no second audit row
+  const archivedVersion = (await stateOf()).version;
+  const again = await rpc.product.archive({
+    expectedVersion: archivedVersion,
+    id: subject.productId,
+    organizationId,
+  });
+  expect(again.changed).toBe(false);
+  expect(await stateOf()).toEqual({
+    ...first,
+    archived: true,
+    version: archivedVersion,
+  });
+  expect(await auditOf()).toEqual({
+    "product.archived": 1,
+    "product.deleted": 0,
+    "product.restored": 0,
+  });
+
+  // restoring brings the same row back, one more version, and the sale offers it again
+  await page.goto("/products");
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  await rowOf(archivedName).getByRole("button", { name: MORE_ACTIONS }).click();
+  await page.getByRole("menuitem", { name: "Restaurar" }).click();
+  await expect(
+    page.getByText(`Produto “${archivedName}” restaurado.`)
+  ).toBeVisible();
+  await expect(rowOf(archivedName)).toHaveCount(0);
+  await expect
+    .poll(stateOf)
+    .toEqual({ ...first, archived: false, version: first.version + 2 });
+  expect(await auditOf()).toEqual({
+    "product.archived": 1,
+    "product.deleted": 0,
+    "product.restored": 1,
+  });
+  await page.getByRole("tab", { name: "Ativos" }).click();
+  await expect(rowOf(archivedName)).toBeVisible();
+  await expect(await searchSale()).toBeVisible();
+});
+
+/** Deleting an active product is refused by the server and the screen offers "Excluir…" only for an archived one. */
+test("produto ativo não se exclui: o servidor recusa com product_lifecycle_conflict e a tela só oferece Excluir no arquivado", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "excluir-ativo", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const { rpc } = journey.user;
+  const name = `Caneca ${journey.name}`;
+  const subject = await seedProduct(rpc, organizationId, name, "19.90");
+
+  const rowState = async () =>
+    (
+      await sql.query<{
+        deleted: boolean;
+        events: number;
+        version: number;
+      }>(
+        `SELECT p.version, p.deleted_at IS NOT NULL AS deleted,
+                (SELECT count(*)::int FROM tenant_audit_event
+                  WHERE organization_id = $1 AND entity_id = $2::text AND event_type = 'product.deleted') AS events
+           FROM products p WHERE p.id = $2::uuid`,
+        [organizationId, subject.productId]
+      )
+    ).rows[0];
+  const before = await rowState();
+  expect(before).toMatchObject({ deleted: false, events: 0 });
+
+  const refused = await refusal(
+    rpc.product.delete({
+      expectedVersion: before?.version as number,
+      id: subject.productId,
+      organizationId,
+    })
+  );
+  expect(refused).toEqual({
+    code: "CONFLICT",
+    reason: "product_lifecycle_conflict",
+  });
+  expect(await rowState()).toEqual(before);
+
+  await page.goto("/products");
+  const row = page.locator(ANY_ROW, { hasText: name });
+  await row.getByRole("button", { name: MORE_ACTIONS }).click();
+  await expect(page.getByRole("menuitem", { name: "Arquivar" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Excluir…" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem", { name: "Arquivar" })).toBeHidden();
+
+  await row.getByRole("button", { name: MORE_ACTIONS }).click();
+  await page.getByRole("menuitem", { name: "Arquivar" }).click();
+  await expect(page.getByText(`Produto “${name}” arquivado.`)).toBeVisible();
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  await row.getByRole("button", { name: MORE_ACTIONS }).click();
+  await expect(page.getByRole("menuitem", { name: "Excluir…" })).toBeVisible();
+});
+
+/**
+ * Archiving a category keeps the link of the products that already have it, and no new product can pick it: the
+ * selector does not list it and the server refuses the assignment without saving anything.
+ */
+test("categoria arquivada: o produto mantém o vínculo e nenhum produto novo pode escolhê-la", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "categoria-arquivada", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const { rpc } = journey.user;
+  const archivedCategory = `Antiga ${journey.name}`;
+  const activeCategory = `Vigente ${journey.name}`;
+  const linkedName = `Linkado ${journey.name}`;
+  const newName = `Novo ${journey.name}`;
+  const refusedName = `Recusado ${journey.name}`;
+
+  const category = await rpc.category.create({
+    name: archivedCategory,
+    organizationId,
+  });
+  await rpc.category.create({ name: activeCategory, organizationId });
+  const linked = await rpc.product.create({
+    categoryId: category.id,
+    name: linkedName,
+    organizationId,
+  });
+  const linkedCategory = async () =>
+    (
+      await sql.query<{ category_id: string | null }>(
+        "SELECT category_id FROM products WHERE id = $1",
+        [linked.id]
+      )
+    ).rows[0]?.category_id;
+  const productsNamed = async (name: string) =>
+    (
+      await sql.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM products WHERE organization_id = $1 AND name = $2",
+        [organizationId, name]
+      )
+    ).rows[0]?.n;
+  expect(await linkedCategory()).toBe(category.id);
+
+  await rpc.category.archive({ id: category.id, organizationId });
+  await expect
+    .poll(
+      async () =>
+        (
+          await sql.query<{ archived: boolean }>(
+            "SELECT archived_at IS NOT NULL AS archived FROM categories WHERE id = $1",
+            [category.id]
+          )
+        ).rows[0]?.archived
+    )
+    .toBe(true);
+  expect(await linkedCategory()).toBe(category.id);
+
+  await page.goto("/products");
+  const linkedRow = page.locator(ANY_ROW, { hasText: linkedName });
+  await expect(linkedRow).toBeVisible({ timeout: 30_000 });
+  await expect(linkedRow).toContainText(archivedCategory);
+
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill(newName);
+  await page.getByRole("button", { name: "Mais detalhes" }).click();
+  await page.getByRole("combobox", { exact: true, name: "Categoria" }).click();
+  await expect(
+    page.getByRole("option", { exact: true, name: activeCategory })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("option", { name: new RegExp(archivedCategory) })
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  const refused = await refusal(
+    rpc.product.create({
+      categoryId: category.id,
+      name: refusedName,
+      organizationId,
+    })
+  );
+  expect(refused).toEqual({
+    code: "CONFLICT",
+    reason: "product_category_unavailable",
+  });
+  expect(await productsNamed(refusedName)).toBe(0);
+  expect(await linkedCategory()).toBe(category.id);
+});
