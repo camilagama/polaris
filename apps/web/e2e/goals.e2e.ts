@@ -1053,7 +1053,7 @@ test("cancela a meta só depois da confirmação", async ({ page }) => {
   expect(server.goals[0]?.status).toBe("active");
 
   // back out: nothing was cancelled
-  await dialog.getByRole("button", { name: "Voltar" }).click();
+  await dialog.getByRole("button", { name: "Manter meta" }).click();
   await expect(dialog).toHaveCount(0);
   expect(server.goals[0]?.status).toBe("active");
 
