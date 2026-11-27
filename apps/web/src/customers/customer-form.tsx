@@ -3,6 +3,12 @@ import type {
   CustomerReadModel,
 } from "@polaris/contracts";
 import {
+  MAX_CUSTOMER_EMAIL_LENGTH,
+  MAX_CUSTOMER_NAME_LENGTH,
+  MAX_CUSTOMER_NOTES_LENGTH,
+  MAX_CUSTOMER_PHONE_LENGTH,
+} from "@polaris/domain/customers/customer";
+import {
   type ChangeEvent,
   type FormEvent,
   type Ref,
@@ -49,6 +55,7 @@ interface ContactFieldProps {
   id: string;
   invalid: boolean;
   label: string;
+  maxLength: number;
   onChange: (value: string) => void;
   type: "email" | "tel";
   value: string;
@@ -60,6 +67,7 @@ function ContactField({
   id,
   invalid,
   label,
+  maxLength,
   onChange,
   type,
   value,
@@ -77,6 +85,7 @@ function ContactField({
           aria-invalid={invalid ? true : undefined}
           autoComplete={autoComplete}
           id={id}
+          maxLength={maxLength}
           onChange={handleChange}
           type={type}
           value={value}
@@ -113,6 +122,7 @@ export function ContactGroup({
           id="customer-phone"
           invalid={contactError !== null}
           label="Telefone"
+          maxLength={MAX_CUSTOMER_PHONE_LENGTH}
           onChange={onPhone}
           type="tel"
           value={phone}
@@ -122,6 +132,7 @@ export function ContactGroup({
           id="customer-email"
           invalid={contactError !== null}
           label="Email"
+          maxLength={MAX_CUSTOMER_EMAIL_LENGTH}
           onChange={onEmail}
           type="email"
           value={email}
@@ -398,6 +409,7 @@ export function CustomerForm({
                 error={nameError}
                 id="customer-name"
                 label="Nome"
+                maxLength={MAX_CUSTOMER_NAME_LENGTH}
                 onChange={handleName}
                 value={draft.name}
               />
@@ -426,6 +438,7 @@ export function CustomerForm({
             <ProductTextAreaField
               id="customer-notes"
               label="Observações"
+              maxLength={MAX_CUSTOMER_NOTES_LENGTH}
               onChange={handleNotes}
               optional
               value={draft.notes}
