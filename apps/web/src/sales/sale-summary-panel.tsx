@@ -274,10 +274,10 @@ function SplitPaymentDetails({ split }: { split: SplitEvaluation }) {
         const ordinal = index + 1;
         return (
           <div className="grid gap-1.5" key={ordinal}>
-            {/* wraps instead of a leader: a long method beside a large amount does not fit 320 px with a big font */}
+            {/* the name wraps inside its own column (basis + grow) so the amount stays on its first line; the amount only drops below when 320 px with a big font leaves no room for both */}
             <dl className="grid">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <dt className="min-w-0 font-medium">
+                <dt className="min-w-0 flex-1 basis-40 font-medium">
                   Parte {ordinal} · {part.methodText}
                 </dt>
                 <dd className="ms-auto text-right font-medium">
