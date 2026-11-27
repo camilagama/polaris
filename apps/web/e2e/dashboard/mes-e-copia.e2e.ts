@@ -31,6 +31,9 @@ import {
 
 const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 
+const RESULT_READ_FAILED =
+  /^Não foi possível carregar o resultado\.\s*Tentar novamente$/;
+
 /** An amount written on the screen: "R$ 130,00". */
 const AN_AMOUNT = /R\$ \d/;
 
@@ -416,9 +419,7 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
 
   const alert = page.getByRole("alert");
   // three tries (~1.5 s and ~4 s between them) before the screen says it failed
-  await expect(alert).toContainText("Não foi possível carregar o resultado.", {
-    timeout: 15_000,
-  });
+  await expect(alert).toHaveText(RESULT_READ_FAILED, { timeout: 15_000 });
   await expect(kpiCards(page)).toHaveCount(0);
 
   server.failure = null;
