@@ -99,17 +99,17 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         >
           <span className="flex min-w-0 max-w-full">
             <span className="truncate">{row.customerText}</span>
-            {row.splitPayment ? null : (
-              <span className="shrink-0 whitespace-pre">{" ·"}</span>
-            )}
-          </span>
+          </span>{" "}
           <span
             className={
               row.splitPayment
                 ? "min-w-0 max-w-full basis-full"
                 : "min-w-0 max-w-full"
             }
-          >{` ${row.methodText} · ${row.itemCountText}`}</span>
+          >
+            {row.splitPayment ? null : "·\u00A0"}
+            {`${row.methodText} ·\u00A0${row.itemCountText}`}
+          </span>
         </p>
       </div>
       <Money

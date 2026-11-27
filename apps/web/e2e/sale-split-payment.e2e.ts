@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   LAB_PROFILE_SERVER_VERSION,
@@ -354,6 +354,54 @@ test("perfil por parte: cada parte tem o seu no Resumo; a recusa do servidor diz
   await expect(part(page, 1).getByLabel("Valor")).toHaveValue("100,00");
   await expect(part(page, 2).getByLabel("Valor")).toHaveValue("200,00");
 });
+
+for (const viewport of [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+]) {
+  test(`a ${viewport.width} px o valor de cada parte do Resumo fica na primeira linha do nome, à direita, como o Subtotal, com o método longo quebrando`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await openSaleLab(page);
+    await sellShirtFor300(page);
+    await splitButton(page).click();
+    await chooseSelectOption(part(page, 1), "Método", "Pix");
+    await part(page, 1).getByLabel("Valor").fill("100,00");
+    await chooseSelectOption(part(page, 2), "Método", "Crédito");
+    await part(page, 2).getByLabel("Número de parcelas").fill("3");
+    await chooseSelectOption(part(page, 2), "Quem parcela", "Lojista (eu)");
+    await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+    const summary = page.getByRole("region", { exact: true, name: "Resumo" });
+    const amountOf = (name: Locator) =>
+      name.locator("xpath=following-sibling::dd[1]");
+    const nameOf = (ordinal: number) =>
+      summary.locator("dt", { hasText: `Parte ${ordinal} ·` });
+    await expect(nameOf(2)).toContainText("3x");
+    const boxes = await Promise.all([
+      nameOf(1).boundingBox(),
+      amountOf(nameOf(1)).boundingBox(),
+      nameOf(2).boundingBox(),
+      amountOf(nameOf(2)).boundingBox(),
+      amountOf(summary.getByText("Subtotal", { exact: true })).boundingBox(),
+    ]);
+    const [name1, amount1, name2, amount2, subtotal] = boxes;
+    if (!(name1 && amount1 && name2 && amount2 && subtotal)) {
+      throw new Error("sem caixa para medir");
+    }
+    const right = (box: { x: number; width: number }) => box.x + box.width;
+    expect(name2.height).toBeGreaterThan(name1.height * 1.5);
+    for (const [name, amount] of [
+      [name1, amount1],
+      [name2, amount2],
+    ] as const) {
+      expect(amount.y).toBeLessThan(name.y + name.height / 2);
+      expect(amount.x).toBeGreaterThanOrEqual(right(name) - 1);
+    }
+    expect(Math.abs(right(amount2) - right(amount1))).toBeLessThan(1);
+    expect(Math.abs(right(amount2) - right(subtotal))).toBeLessThan(1);
+  });
+}
 
 test("o mesmo perfil editado nas duas partes dá um aviso só, com um botão que revisa as duas", async ({
   page,
