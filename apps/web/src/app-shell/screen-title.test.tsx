@@ -114,6 +114,26 @@ describe("ScreenTitle", () => {
     );
   });
 
+  it("deixa a palavra única quebrar na coluna, no h1 e no h2", () => {
+    const h1 = titleTag(
+      renderToStaticMarkup(<ScreenTitle>Configurações</ScreenTitle>)
+    );
+    const h2 = titleTag(
+      renderToStaticMarkup(
+        <TabPanelScope>
+          <ScreenTitle>Configurações</ScreenTitle>
+        </TabPanelScope>
+      )
+    );
+    expect(h1.tag).toBe("h1");
+    expect(h2.tag).toBe("h2");
+    for (const { classes } of [h1, h2]) {
+      expect(classes).toEqual(
+        expect.arrayContaining(["min-w-0", "[overflow-wrap:anywhere]"])
+      );
+    }
+  });
+
   it("leva o texto como filho, uma só vez, e repassa os atributos ao título", () => {
     const html = renderToStaticMarkup(
       <TabPanelScope>
