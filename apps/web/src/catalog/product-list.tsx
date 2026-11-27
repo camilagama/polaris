@@ -334,7 +334,6 @@ interface ProductListProps extends RowActions {
   isLoading: boolean;
   /** Working from this device's collections while the connection is down. */
   isOffline: boolean;
-  onNew: () => void;
   pendingAction: string | null;
   /** The products that match the search. */
   products: ProductReadModel[];
@@ -352,7 +351,6 @@ export function ProductList({
   count,
   isLoading,
   isOffline,
-  onNew,
   pendingAction,
   products,
   query,
@@ -386,16 +384,10 @@ export function ProductList({
         icon={TagIcon}
         title={
           status === "active"
-            ? "Nenhum produto ainda"
+            ? "Nenhum produto ainda."
             : "Nenhum produto arquivado."
         }
-      >
-        {status === "active" ? (
-          <Button onClick={onNew} type="button">
-            Novo produto
-          </Button>
-        ) : null}
-      </EmptyState>
+      />
     );
   }
 

@@ -1009,7 +1009,6 @@ export function ProductsPage() {
                 onEdit={handleEdit}
                 onManageMedia={handleManageMedia}
                 onManageVariants={handleManageVariants}
-                onNew={handleNew}
                 onRestore={handleRestoreProduct}
                 pendingAction={pendingAction}
                 products={page.items}

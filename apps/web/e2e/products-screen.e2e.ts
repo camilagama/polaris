@@ -7,9 +7,11 @@ import {
   watchCspViolations,
 } from "./csp-fixture";
 import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
+import { FORM_VIEWPORTS } from "./date-pickers";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
 import { outboxCommands } from "./outbox-commands";
+import { expectSamePlaces, placesOf } from "./same-place";
 import { expectScreenTabsKeyboard, expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -912,15 +914,73 @@ test("a lista que não carrega diz o motivo, oferece 'Tentar novamente' e some q
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o formulário com o cursor no nome", async ({
+test("sem produto, o vazio é só a frase, e o único Novo produto, o do título, abre o formulário com o cursor no nome e devolve o foco no Esc", async ({
   page,
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
-  await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
+  const empty = page.locator("[data-empty-state]");
+  await expect(empty.getByText("Nenhum produto ainda")).toBeVisible();
   expect(await emptyIconFaults(page, 1)).toEqual([]);
-  await page.getByRole("button", { name: "Novo produto" }).last().click();
+  await expect(empty.getByRole("button")).toHaveCount(0);
+  const newProduct = page.getByRole("button", { name: "Novo produto" });
+  await expect(newProduct).toHaveCount(1);
+  await newProduct.click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(newProduct).toBeFocused();
 });
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`Produtos a ${viewport.name} px: o título, as abas, a busca, o filtro e o botão ficam no mesmo lugar (até 1 px) lendo, com produtos e vazio, e o botão é um só`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(viewport);
+    let rows = [product(1, "Produto 01")];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openServerScreen(page, {
+      lists: [
+        async (route) => {
+          await gate;
+          await answer(rows)(route);
+        },
+        (route) => answer(rows)(route),
+      ],
+    });
+    const parts = {
+      button: page.getByRole("button", { name: "Novo produto" }),
+      filter: page.getByRole("tablist", { name: "Estado dos produtos" }),
+      search: page.getByLabel("Buscar produto"),
+      tabs: page.getByRole("tablist", { name: "Produtos e categorias" }),
+      title: page.getByRole("heading", {
+        exact: true,
+        level: 1,
+        name: "Produtos",
+      }),
+    };
+
+    await expect(parts.button).toHaveCount(1);
+    const reading = await placesOf(parts);
+
+    release();
+    await expect(page.getByText("Produto 01")).toBeVisible();
+    await expect(parts.button).toHaveCount(1);
+    expectSamePlaces("com produtos", reading, await placesOf(parts));
+
+    rows = [];
+    await page.reload();
+    await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
+    await expect(parts.button).toHaveCount(1);
+    expectSamePlaces("vazio", reading, await placesOf(parts));
+  });
+}
 
 test("a busca ignora maiúsculas e acentos, diz quando nada casa e o número acompanha", async ({
   page,

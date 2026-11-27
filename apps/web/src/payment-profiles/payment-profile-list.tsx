@@ -314,7 +314,7 @@ function ListBody({
         afterRead
         icon={CreditCardIcon}
         support="Adicione um perfil para registrar métodos e taxas de pagamento."
-        title="Nenhum perfil cadastrado"
+        title="Nenhum perfil cadastrado."
       />
     );
   }
