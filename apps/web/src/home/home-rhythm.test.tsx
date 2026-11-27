@@ -224,7 +224,7 @@ const HEAD = /<thead[^>]*>[\s\S]*<\/thead>/;
 const NEWEST_ROW = /<tbody[^>]*><tr[^>]*>([\s\S]*?)<\/tr>/;
 
 describe("the skeleton of the Ritmo", () => {
-  it("keeps the height of the block read: 199 px on a phone and 203 px from 768 px, in rem", () => {
+  it("keeps the height of the block read: 199 px on a phone and 203 px from 760 px, in rem", () => {
     const html = renderToStaticMarkup(
       <RhythmBlock
         figures={{} as unknown as HomeFigures}
