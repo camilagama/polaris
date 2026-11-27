@@ -1,12 +1,18 @@
 // @vitest-environment happy-dom
 import type { ProductReadModel } from "@polaris/contracts";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StaticOrganizationProvider } from "../lib/current-organization";
-import { ProductVariantConfigurationForm } from "./product-variants-form";
 import { ProductVariantSkuSection } from "./product-variant-sku-section";
+import { ProductVariantConfigurationForm } from "./product-variants-form";
 import {
   ADD_AT_LIMIT,
   ADD_NEEDS_VALUES,
@@ -400,6 +406,16 @@ describe("each combination of the list", () => {
       expect(group.getAttribute("data-slot")).toBe("field-group");
       expect(group.tagName).toBe("FIELDSET");
     }
+  });
+
+  it("asks Escolha um valor in the select of a combination that has no value yet", () => {
+    show(null, {
+      ...withRows,
+      variants: [{ values: {} }],
+    });
+    const group = screen.getByRole("group", { name: "Combinação 1" });
+    const select = within(group).getByRole("combobox", { name: "Cor" });
+    expect(within(select).getByText("Escolha um valor")).toBeTruthy();
   });
 });
 

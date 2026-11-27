@@ -117,7 +117,7 @@ describe("what the screen says when a call fails", () => {
 
   it("asks to check the name and the contact when the server refuses the form", () => {
     expect(customerErrorMessage(refusal("BAD_REQUEST"), "save")).toBe(
-      "Confira o nome e informe ao menos um telefone ou email válido."
+      "Confira o nome e informe ao menos um telefone ou e-mail válido."
     );
   });
 
@@ -162,7 +162,7 @@ describe("what the screen says when a call fails", () => {
       "duplicate-check"
     );
     expect(badRequest).toBe(
-      "Confira o nome e informe ao menos um telefone ou email válido."
+      "Confira o nome e informe ao menos um telefone ou e-mail válido."
     );
     expect(badRequest).not.toContain("repetidos");
   });

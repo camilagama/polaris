@@ -290,7 +290,7 @@ test("U-24 e U-28: cliente sem contato — o erro fica junto do botão, os campo
 
   const error = page.locator("#customer-contact-error");
   await expect(error).toHaveText(
-    "Informe ao menos um telefone ou email para o cliente."
+    "Informe ao menos um telefone ou e-mail para o cliente."
   );
   // beside the save button, not at the top of the page
   const save = page.getByRole("button", { name: "Cadastrar cliente" });
