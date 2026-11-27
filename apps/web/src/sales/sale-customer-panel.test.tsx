@@ -211,6 +211,16 @@ describe("the customer panel of a sale", () => {
     expect(getCustomer).not.toHaveBeenCalled();
   });
 
+  it("asks Escolha um cliente in the empty select once the list is read", async () => {
+    getCustomerLink.mockResolvedValue(link(null));
+    renderPanel();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Associar cliente" })
+    );
+    const select = await screen.findByRole("combobox", { name: "Cliente" });
+    expect(within(select).getByText("Escolha um cliente")).toBeTruthy();
+  });
+
   it("says the read of the name failed on the name's own line, with Tentar novamente that reads only that customer again", async () => {
     getCustomerLink.mockResolvedValue(link(ana));
     getCustomer.mockRejectedValueOnce(refused());
