@@ -99,7 +99,7 @@ export function CancelLink() {
       aria-label={changeCancelLabel(ACCOUNT_LABEL)}
       className={cn(
         buttonVariants({ size: "lg", variant: "outline" }),
-        "w-full sm:w-fit"
+        "w-full md:w-fit"
       )}
       href={ACCOUNT_HREF}
     >
@@ -122,7 +122,7 @@ function RecentLoginRequired() {
               </p>
             ) : null}
             <Button
-              className="w-full sm:w-fit"
+              className="w-full md:w-fit"
               disabled={logout.busy}
               onClick={logout.start}
               size="lg"
@@ -342,9 +342,9 @@ export function ChangePasswordForm() {
                   visible={nextVisible}
                 />
                 <Separator />
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center">
                   <SubmitButton
-                    className="sm:w-fit"
+                    className="md:w-fit"
                     // the pause is known: the button stays off, naming the alert, until the time is up
                     heldBy={heldByRequirements(nextId, next)}
                     offBy={paused ? pauseAlertId : undefined}
