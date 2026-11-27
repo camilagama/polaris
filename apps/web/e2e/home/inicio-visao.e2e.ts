@@ -513,8 +513,7 @@ test.describe("loja com venda", () => {
     const { actionsTop, lines, phraseBottom } = await headerGeometry(page);
     expect(lines, "a frase de sexta, 23/10, cabe numa linha").toBe(1);
     const gap = actionsTop - phraseBottom;
-    const reason =
-      "o vão de uma linha é 24 px (-mt-2 sobre o gap-y-4 e a linha vazia de 16 px), com 1 px de arredondamento";
+    const reason = `o vão entre a frase de uma linha e a fileira de ações mudou: mede ${gap} px, e o desenho manda 24 px (-mt-2 sobre o gap-y-4 e a linha vazia de 16 px), com 1 px de arredondamento`;
     expect(gap, reason).toBeGreaterThanOrEqual(23);
     expect(gap, reason).toBeLessThanOrEqual(25);
   });
