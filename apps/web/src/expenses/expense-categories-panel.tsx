@@ -3,7 +3,6 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Block } from "@/ui/block";
 import { Checkbox } from "@/ui/checkbox";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
@@ -248,7 +247,7 @@ export function ExpenseCategoriesPanel({
   );
 
   return (
-    <Block variant="plain">
+    <div className="flex min-w-0 flex-col gap-3 md:gap-4">
       {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
       <ActionNotice feedback={form.open ? null : feedback} />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -316,6 +315,6 @@ export function ExpenseCategoriesPanel({
           </ListBlock>
         ))}
       </div>
-    </Block>
+    </div>
   );
 }
