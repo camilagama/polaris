@@ -37,6 +37,7 @@ const PHONE = /telefone/i;
 const FREE_WORD = /grátis/;
 const SUBSCRIBE_ACTION = /Assinar|Começar/;
 const REFUND_WORD = /reembolso/i;
+const REAIS_SIGN = /R\$/;
 /** `23/10/2026` at noon in São Paulo: the first charge of a trial started now is on `30/10/2026`. */
 const NOW = new Date("2026-10-23T15:00:00.000Z");
 
@@ -460,6 +461,55 @@ test("Pro ativo e renovação cancelada: como paga, o ciclo, a próxima cobranç
       "Dá para assinar de novo depois de 23/11/2026, quando este período termina."
     )
   ).toBeVisible();
+});
+
+test("Pro ativo sem forma de pagamento registrada: a frase sob o selo sem o valor, com o ciclo novo, e nenhuma sem próxima cobrança", async ({
+  page,
+}) => {
+  const cases: [string, Plan, string | null][] = [
+    [
+      "sem valor",
+      {
+        ...ACTIVE,
+        method: null,
+        nextCharge: { amount: null, cycleMonths: 1, on: "2026-11-23" },
+      },
+      "Próxima cobrança em 23/11/2026.",
+    ],
+    [
+      "com o ciclo novo",
+      {
+        ...ACTIVE,
+        method: null,
+        nextCharge: { amount: null, cycleMonths: 12, on: "2026-12-12" },
+      },
+      "Próxima cobrança em 12/12/2026, já no ciclo Anual; o valor aparece na renovação.",
+    ],
+    [
+      "sem próxima cobrança",
+      { ...ACTIVE, method: null, nextCharge: null },
+      null,
+    ],
+  ];
+  for (const [label, answer, sentence] of cases) {
+    // biome-ignore lint/performance/noAwaitInLoops: one case after the other, on the same page
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await openScreen(page, { plans: [answer] });
+    const card = planBlock(page);
+    await expect(planTitle(page), label).toHaveText("Plano Pro");
+    await expect(card.getByText("Ativo", { exact: true }), label).toBeVisible();
+    await expect(page.locator("dl"), label).toHaveCount(0);
+    await expect(card.getByText(REAIS_SIGN), label).toHaveCount(0);
+    if (sentence === null) {
+      await expect(card.getByText("Próxima cobrança"), label).toHaveCount(0);
+    } else {
+      await expect(
+        card.getByText(sentence, { exact: true }),
+        label
+      ).toHaveCount(1);
+      await expect(card.getByText("Próxima cobrança"), label).toHaveCount(1);
+    }
+  }
 });
 
 test("uso acima do limite, também no Pro: selo e barra cheia; sem limite, só o número", async ({

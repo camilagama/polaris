@@ -432,6 +432,10 @@ test("o crédito pede parcelas inteiras, o prazo só aceita dias inteiros e o va
 test("o prazo acima do teto é recusado no campo da regra e não vai ao servidor; no teto, salva", async ({
   page,
 }) => {
+  expect(
+    MAX_EXPECTED_SETTLEMENT_DAYS,
+    "o teto do prazo de recebimento mudou: mude este teste e MAX_EXPECTED_SETTLEMENT_DAYS (packages/domain/src/sales/payment-profile.ts) juntos"
+  ).toBe(3650);
   const sent: { json?: { rules?: { expectedSettlementDays?: number }[] } }[] =
     [];
   await openServerScreen(page, {
