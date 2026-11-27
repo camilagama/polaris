@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { MAX_EXPECTED_SETTLEMENT_DAYS } from "@polaris/domain/sales/payment-profile";
 import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   expectFormDialogLayout,
@@ -26,6 +27,7 @@ import { chooseProfileAction } from "./payment-profile-actions";
  *   the name that is required, the focus after adding and removing a rule, a profile created, archived and
  *   restored with the result said and focused, and an old refusal taken away when the person fixes the form (U-56).
  */
+const SETTLEMENT_MAX_TEXT = `O prazo não pode passar de ${MAX_EXPECTED_SETTLEMENT_DAYS.toLocaleString("pt-BR")} dias.`;
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const THEMES = [
@@ -425,6 +427,51 @@ test("o crédito pede parcelas inteiras, o prazo só aceita dias inteiros e o va
   ).toBeVisible();
   // the first problem of the form takes the cursor
   await expect(page.getByLabel("Número de parcelas")).toBeFocused();
+});
+
+test("o prazo acima do teto é recusado no campo da regra e não vai ao servidor; no teto, salva", async ({
+  page,
+}) => {
+  const sent: { json?: { rules?: { expectedSettlementDays?: number }[] } }[] =
+    [];
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: {
+      "paymentProfile/create": (route) => {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill(rpc(MACHINE));
+      },
+    },
+  });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
+  await page.getByLabel("Nome do perfil").fill("Maquininha");
+  const days = page.getByLabel("Prazo esperado de recebimento (dias)");
+  await days.fill(String(MAX_EXPECTED_SETTLEMENT_DAYS + 1));
+  await page.getByRole("button", { name: "Criar perfil" }).click();
+
+  await expect(page.getByText(SETTLEMENT_MAX_TEXT)).toBeVisible();
+  await expect(days).toHaveAttribute("aria-invalid", "true");
+  const describedBy = (await days.getAttribute("aria-describedby")) ?? "";
+  await expect(
+    page
+      .locator(
+        describedBy
+          .split(" ")
+          .map((id) => `[id="${id}"]`)
+          .join(",")
+      )
+      .filter({ hasText: SETTLEMENT_MAX_TEXT })
+  ).toBeVisible();
+  await expect(days).toBeFocused();
+  expect(sent).toHaveLength(0);
+
+  await days.fill(String(MAX_EXPECTED_SETTLEMENT_DAYS));
+  await page.getByRole("button", { name: "Criar perfil" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.json?.rules?.[0]?.expectedSettlementDays).toBe(
+    MAX_EXPECTED_SETTLEMENT_DAYS
+  );
 });
 
 test("um perfil criado fecha o formulário, é dito no alto, com o foco, e a lista não volta a 'Carregando'", async ({
