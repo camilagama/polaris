@@ -1,9 +1,9 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
-import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useState } from "react";
+import { AddRowButton } from "@/lib/add-row-button";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { FieldDescription } from "@/ui/field";
@@ -408,15 +408,8 @@ export function AddItemButton({
     return null;
   }
   return (
-    <Button
-      className="justify-self-start max-md:w-full"
-      disabled={total >= MAX_SALE_ITEMS}
-      onClick={onAdd}
-      type="button"
-      variant="outline"
-    >
-      <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
+    <AddRowButton disabled={total >= MAX_SALE_ITEMS} onClick={onAdd}>
       Adicionar item
-    </Button>
+    </AddRowButton>
   );
 }
