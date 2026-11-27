@@ -278,7 +278,9 @@ test("Clientes: colar no Telefone um texto maior que o limite do domínio fica n
   await phone.focus();
   await page.evaluate((text) => navigator.clipboard.writeText(text), pasted);
   await page.keyboard.press("ControlOrMeta+V");
-  // the cut is the input's maxLength alone (apps/web/src/customers/customer-form.tsx:125, from packages/domain/src/customers/customer.ts:3);
+  // the cut is the input's maxLength alone
+  // (apps/web/src/customers/customer-form.tsx:125,
+  // from packages/domain/src/customers/customer.ts:3);
   // without it all the pasted characters stay: no mask or normalization shortens the value
   await expect(phone).toHaveValue("9".repeat(MAX_CUSTOMER_PHONE_LENGTH));
 
