@@ -197,10 +197,11 @@ test("limite de variantes do plano Free: o 50º entra, o 51º é recusado, arqui
   expect(await count()).toBe(FREE_LIMIT);
   await makePro(sql, organizationId);
   await proDialog.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText(LIMIT_REFUSAL)).toHaveCount(0);
   await expect(
     page.getByText(`Produto “${proName}” cadastrado.`)
   ).toBeVisible();
-  await expect(page.getByText(LIMIT_REFUSAL)).toHaveCount(0);
   await expect.poll(count).toBe(FREE_LIMIT + 1);
   expect(await storedProducts(sql, organizationId, proName)).toEqual([
     { archived: false, deleted: false },

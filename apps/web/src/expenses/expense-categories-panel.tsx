@@ -3,10 +3,11 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Block } from "@/ui/block";
 import { Checkbox } from "@/ui/checkbox";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
+import { ListBlock } from "@/ui/list-block";
+import { Skeleton } from "@/ui/skeleton";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { orpcClient } from "../lib/orpc";
@@ -14,7 +15,7 @@ import {
   type CategoryDraft,
   ExpenseCategoryForm,
 } from "./expense-category-form";
-import { ActionNotice, ListNote } from "./expense-fields";
+import { ActionNotice } from "./expense-fields";
 import { type ExpenseGroupKey, groupCategories } from "./expense-model";
 import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import type { ExpenseCategoriesState } from "./use-expense-categories";
@@ -58,15 +59,15 @@ function CategoryRow({
   );
 
   return (
-    <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2"
+    <ListBlock.Row
+      className="w-0 min-w-full flex-wrap gap-y-2"
       data-category-id={category.id}
     >
       <span className="flex min-w-0 flex-[1_1_10rem] flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
         {category.name}
         {archived ? <Badge variant="warning">Arquivada</Badge> : null}
       </span>
-      <span className="flex gap-2">
+      <span className="flex flex-wrap gap-2">
         <Button
           aria-label={`Renomear categoria ${category.name}`}
           data-category-rename=""
@@ -90,6 +91,18 @@ function CategoryRow({
           {archived ? "Restaurar" : "Arquivar"}
         </Button>
       </span>
+    </ListBlock.Row>
+  );
+}
+
+const LOADING_TITLE = "Categorias de despesa";
+
+/** The shape of a row while the categories load: the name, and the two actions at its end. */
+function CategoryRowShape() {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <Skeleton className="h-3.5 w-1/3" />
+      <Skeleton className="h-8 w-28" />
     </div>
   );
 }
@@ -234,7 +247,7 @@ export function ExpenseCategoriesPanel({
   );
 
   return (
-    <Block variant="plain">
+    <div className="flex min-w-0 flex-col gap-3 md:gap-4">
       {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
       <ActionNotice feedback={form.open ? null : feedback} />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -275,35 +288,33 @@ export function ExpenseCategoriesPanel({
       </Dialog>
       <div aria-busy={state.isLoading} className="grid gap-4">
         {state.isLoading && state.categories.length === 0 ? (
-          <ListNote loading>Carregando categorias…</ListNote>
+          <ListBlock
+            skeleton={<CategoryRowShape />}
+            state="loading"
+            title={LOADING_TITLE}
+          />
         ) : null}
         {sections.map((section) => (
-          <section
-            aria-labelledby={`expense-group-${section.key}`}
-            className="grid gap-1"
+          <ListBlock
+            id={`expense-group-${section.key}`}
             key={section.key}
+            state="rows"
+            title={
+              <span className="[overflow-wrap:anywhere]">{section.label}</span>
+            }
           >
-            <h3
-              className="font-medium text-muted-foreground text-support"
-              id={`expense-group-${section.key}`}
-            >
-              {section.label}
-            </h3>
-            <ul className="divide-y border-t">
-              {section.items.map((category) => (
-                <li key={category.id}>
-                  <CategoryRow
-                    busyKey={busy}
-                    category={category}
-                    onRename={openForm}
-                    onToggle={toggle}
-                  />
-                </li>
-              ))}
-            </ul>
-          </section>
+            {section.items.map((category) => (
+              <CategoryRow
+                busyKey={busy}
+                category={category}
+                key={category.id}
+                onRename={openForm}
+                onToggle={toggle}
+              />
+            ))}
+          </ListBlock>
         ))}
       </div>
-    </Block>
+    </div>
   );
 }

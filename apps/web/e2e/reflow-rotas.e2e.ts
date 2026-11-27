@@ -113,15 +113,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
-    clientWidth: 272,
-    reason:
-      'na aba Categorias, o cartão tem 272 px e o conteúdo (o "Mostrar categorias arquivadas" e a lista de categorias, com Renomear e Arquivar) mede 291 px: passa 19 px da borda direita do cartão',
-    screens: ["despesas categorias e o diálogo da categoria"],
-    scrollWidth: 291,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
     clientWidth: 320,
     reason:
       "no diálogo de produto, o conteúdo do corpo mede 342 px em 320 px e passa 22 px: o painel Variantes (as seções de opções e de combinações, com o formulário de cada uma) pede 318 px numa coluna de 272 px; a faixa de abas Dados, Variantes e Imagens rola dentro da própria caixa e já não alarga o corpo",
