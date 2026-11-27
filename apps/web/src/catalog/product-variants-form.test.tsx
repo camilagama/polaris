@@ -7,13 +7,19 @@ import { StaticOrganizationProvider } from "../lib/current-organization";
 import { ProductVariantConfigurationForm } from "./product-variants-form";
 import { ProductVariantSkuSection } from "./product-variant-sku-section";
 import {
+  ADD_AT_LIMIT,
+  ADD_NEEDS_VALUES,
   emptyConfigurationDraft,
+  MAX_VARIANTS,
   type VariantConfigurationDraft,
 } from "./product-variants-model";
 
 const readPlan = vi.hoisted(() => vi.fn());
+const configureVariants = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/orpc", () => ({ orpcClient: { billing: { readPlan } } }));
+vi.mock("../lib/orpc", () => ({
+  orpcClient: { billing: { readPlan }, product: { configureVariants } },
+}));
 
 const noop = () => undefined;
 const configuration = (sku: string | null) => ({
@@ -37,6 +43,7 @@ const configuration = (sku: string | null) => ({
 afterEach(() => {
   cleanup();
   readPlan.mockReset();
+  configureVariants.mockReset();
 });
 
 const formOf = (
@@ -212,11 +219,70 @@ describe("Adicionar combinação, the last row of the list", () => {
     expect(list.nextElementSibling).toBe(row);
   });
 
-  it("is off, as before, while an option has no values", () => {
+  it("is off while an option has no values, and the sentence under it says why", () => {
     show(null);
-    expect(
-      (screen.getByRole("button", ADD_ROW) as HTMLButtonElement).disabled
-    ).toBe(true);
+    const row = screen.getByRole("button", ADD_ROW);
+    const reason = screen.getByText(ADD_NEEDS_VALUES);
+    expect(row.getAttribute("aria-disabled")).toBe("true");
+    expect((row as HTMLButtonElement).disabled).toBe(false);
+    expect(row.getAttribute("aria-describedby")).toBe(reason.id);
+    expect(reason.id).not.toBe("");
+    expect(row.nextElementSibling).toBe(reason);
+  });
+
+  it("does not add a combination on a tap while it is off", () => {
+    show(null);
+    fireEvent.click(screen.getByRole("button", ADD_ROW));
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.getByText("Nenhuma combinação adicionada.")).toBeTruthy();
+  });
+
+  it("is off at the limit, with the sentence of the limit and the number of MAX_VARIANTS", () => {
+    show(null, {
+      ...withOptions,
+      variants: Array.from({ length: MAX_VARIANTS }, () => ({
+        values: { color: "Azul" },
+      })),
+    });
+    const row = screen.getByRole("button", ADD_ROW);
+    const reason = screen.getByText(ADD_AT_LIMIT);
+    expect(ADD_AT_LIMIT).toContain(String(MAX_VARIANTS));
+    expect(row.getAttribute("aria-disabled")).toBe("true");
+    expect(row.getAttribute("aria-describedby")).toBe(reason.id);
+    expect(screen.queryByText(ADD_NEEDS_VALUES)).toBeNull();
+    fireEvent.click(row);
+    expect(screen.getAllByRole("listitem")).toHaveLength(MAX_VARIANTS);
+  });
+
+  it("is really disabled, with no sentence, while the save is in flight", async () => {
+    configureVariants.mockReturnValue(new Promise(noop));
+    const colors = Array.from({ length: MAX_VARIANTS }, (_, i) => `C${i}`);
+    show(null, {
+      ...withOptions,
+      valueLines: {
+        ...emptyConfigurationDraft.valueLines,
+        color: colors.join("\n"),
+      },
+      variants: colors.map((color) => ({ values: { color } })),
+    });
+    const row = screen.getByRole("button", ADD_ROW);
+    expect(row.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Salvar variantes" }));
+    await screen.findByRole("button", { name: "Salvando…" });
+    expect((row as HTMLButtonElement).disabled).toBe(true);
+    expect(row.hasAttribute("aria-disabled")).toBe(false);
+    expect(row.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText(ADD_AT_LIMIT)).toBeNull();
+  });
+
+  it("changes nothing while a combination can be added: no sentence, no attribute", () => {
+    show(null, withOptions);
+    const row = screen.getByRole("button", ADD_ROW);
+    expect(row.hasAttribute("aria-disabled")).toBe(false);
+    expect(row.hasAttribute("aria-describedby")).toBe(false);
+    expect((row as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(ADD_NEEDS_VALUES)).toBeNull();
+    expect(screen.queryByText(ADD_AT_LIMIT)).toBeNull();
   });
 });
 
