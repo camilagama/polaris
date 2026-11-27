@@ -229,6 +229,26 @@ describe("the Categorias part is a list block per group", () => {
   });
 });
 
+describe("the Categorias part while the categories load", () => {
+  it("draws the skeleton block, not the rows, and no group yet", async () => {
+    listCategories.mockImplementation(() => new Promise(() => undefined));
+    const user = userEvent.setup();
+    renderPage();
+    await openCategories(user);
+
+    const block = await screen.findByRole("region", {
+      name: "Categorias de despesa",
+    });
+    expect(block.getAttribute("data-state")).toBe("loading");
+    expect(
+      screen.queryByRole("region", { name: "Operacional/Administrativa" })
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Renomear categoria Frete" })
+    ).toBeNull();
+  });
+});
+
 describe("renaming a category on the Categorias part", () => {
   it("reads the list again and the split by category shows the new name", async () => {
     const user = userEvent.setup();
