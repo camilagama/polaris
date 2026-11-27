@@ -104,13 +104,23 @@ function useOverflowX() {
   return { overflows, ref };
 }
 
-/** The right edge of what the row menu draws: its dots, not the 36 px button that holds them. */
+/**
+ * The right edge of what the row menu draws: its rightmost dot, not the 36 px button that holds them. The dots are
+ * not in left-to-right order in the SVG (the icon draws the middle one first and the left one last), so the
+ * rightmost is taken by position.
+ */
 function menuGlyphRight(block: Element) {
   const icon = block.querySelector(
     "[data-list-block-row] [aria-haspopup='menu'] svg"
   );
-  const dot = icon?.querySelector("circle:last-of-type") ?? icon;
-  return dot?.getBoundingClientRect().right;
+  if (!icon) {
+    return;
+  }
+  const dots = Array.from(icon.querySelectorAll("circle"));
+  if (dots.length === 0) {
+    return icon.getBoundingClientRect().right;
+  }
+  return Math.max(...dots.map((dot) => dot.getBoundingClientRect().right));
 }
 
 /**

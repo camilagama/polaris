@@ -176,14 +176,17 @@ function countAndMenuEdges(page: Page) {
     const range = document.createRange();
     range.selectNodeContents(text);
     const drawn = range.getBoundingClientRect();
-    const icon = menu
-      .querySelector("svg circle:last-of-type")
-      ?.getBoundingClientRect();
+    const dotsRight = Array.from(menu.querySelectorAll("svg circle")).map(
+      (dot) => dot.getBoundingClientRect().right
+    );
     return {
       countLeft: drawn.left,
       countRight: drawn.right,
       countTop: drawn.top,
-      menuRight: (icon ?? menu.getBoundingClientRect()).right,
+      menuRight:
+        dotsRight.length > 0
+          ? Math.max(...dotsRight)
+          : menu.getBoundingClientRect().right,
       titleBottom: title.getBoundingClientRect().bottom,
       titleLeft: title.getBoundingClientRect().left,
     };
