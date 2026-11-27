@@ -104,33 +104,12 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
     selector: "main#conteudo > h1",
   },
   {
-    clientWidth: 272,
-    reason:
-      'na aba Recorrentes, o cartão tem 272 px e o conteúdo (o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra) mede 331 px: passa 59 px da borda direita do cartão',
-    screens: ["despesas recorrentes e o diálogo da regra"],
-    scrollWidth: 331,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
     clientWidth: 320,
     reason:
       "no diálogo de produto, o conteúdo do corpo mede 342 px em 320 px e passa 22 px: o painel Variantes (as seções de opções e de combinações, com o formulário de cada uma) pede 318 px numa coluna de 272 px; a faixa de abas Dados, Variantes e Imagens rola dentro da própria caixa e já não alarga o corpo",
     screens: ["produtos variantes, opções e combinação"],
     scrollWidth: 342,
     selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
-  },
-  {
-    clientWidth: 272,
-    reason:
-      'no Detalhe da venda, a data da linha do tempo ("15 out 09:00", 107 px, sem quebra) passa 2 px da borda direita do cartão "Linha do tempo"',
-    screens: [
-      "detalhe da venda aberto",
-      "detalhe da venda cliente da venda",
-      "detalhe da venda trocar o cliente",
-    ],
-    scrollWidth: 274,
-    selector: 'main > div[data-slot="card-frame"]',
   },
   {
     clientWidth: 272,
@@ -1063,7 +1042,10 @@ test.describe("o diálogo pequeno mais alto que a janela rola inteiro", () => {
     await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    const back = dialog.getByRole("button", { exact: true, name: "Voltar" });
+    const back = dialog.getByRole("button", {
+      exact: true,
+      name: "Manter meta",
+    });
     await expect(back).toBeFocused();
     await page.evaluate(
       () =>

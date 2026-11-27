@@ -17,7 +17,7 @@ interface EmptyResultProps {
  * fit in `EMPTY_TITLE_MAX`, so there the period goes to the line of support and the sentence says "no período".
  */
 function emptyResultText(period: string) {
-  const named = `Sem vendas nem despesas em ${period}`;
+  const named = `Sem vendas nem despesas em ${period}.`;
   return named.length <= EMPTY_TITLE_MAX
     ? {
         support: "Escolha outro período ou registre vendas e despesas.",
@@ -25,7 +25,7 @@ function emptyResultText(period: string) {
       }
     : {
         support: `${period}. Escolha outro ou registre vendas e despesas.`,
-        title: "Sem vendas nem despesas no período",
+        title: "Sem vendas nem despesas no período.",
       };
 }
 

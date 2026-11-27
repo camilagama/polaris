@@ -90,7 +90,6 @@ const base: Props = {
   onEdit: noop,
   onManageMedia: noop,
   onManageVariants: noop,
-  onNew: noop,
   onRestore: noop,
   pendingAction: null,
   products: [],
@@ -158,11 +157,12 @@ describe("estados da lista", () => {
     expect(html({ status: "archived" })).not.toContain('data-list-block=""');
   });
 
-  it("sem produto nenhum convida a cadastrar o primeiro, com o botão", () => {
+  it("sem produto nenhum diz só a frase: o botão Novo produto é o do título, não se repete no vazio", () => {
     const markup = html();
     expect(markup).toContain("Nenhum produto ainda");
     expect(markup).not.toContain("Cadastre o primeiro");
-    expect(markup).toContain("Novo produto");
+    expect(markup).not.toContain("Novo produto");
+    expect(markup).not.toContain("<button");
   });
 
   it("a lista de arquivados vazia não convida a cadastrar", () => {

@@ -5,7 +5,7 @@ Produtos (`/products`) é o catálogo: a lista de produtos (ativos e arquivados)
 ## Sub-features
 
 - `produtos-lista` a `list "Produtos cadastrados"` (o `h2` da moldura nomeia a lista), cada produto um item `[data-product-id]`: a linha é o botão "Editar <nome>" (`[data-row-open]`, abre o produto em Dados) e, ao lado, "Mais ações para <nome>" (Variantes, Imagens, Arquivar; no arquivado, Variantes, Restaurar e, em grupo separado, Excluir…). Ao lado do título da moldura, a contagem ("1.248 produtos", `[data-list-count]`); com mais de 50, "Carregar mais" abaixo da moldura. Carregando, a moldura fica com linhas-esqueleto e "Carregando…" só para o leitor de tela.
-- `produtos-vazio` loja sem produto: "Nenhum produto ainda" e o botão "Novo produto" no vazio.
+- `produtos-vazio` loja sem produto: "Nenhum produto ainda.", só a frase no vazio; o "Novo produto" único está na linha do título.
 - `produto-ver-estoque` no rodapé do diálogo de um produto que existe, o link "Ver estoque" (só com `inventory:read`) fecha o diálogo (o que foi digitado fica guardado, como no Esc) e abre o [Estoque](estoque.md) sem recarregar a página, com a busca já com o nome do produto. O diálogo abre também por `/products?produto=<id>`, e com `&variante=<id>` o campo "SKU · <variante>" da aba Variantes recebe o foco; é o caminho de volta do nome do produto na linha do Estoque.
 - `produto-excluir` aba "Arquivados", menu "Mais ações para <nome>" → "Excluir…" (só no arquivado; sem conexão fica desligado): o diálogo "Excluir produto “<nome>”?" pede o nome em "Digite o nome do produto para confirmar" (sem diferenciar maiúsculas nem espaços repetidos) e só então "Excluir produto" age; "Manter arquivado", Esc e clicar fora fecham sem excluir. Recusas dentro do diálogo: saldo ("ainda tem N em estoque", link "Ir ao Estoque"), teto de 50 por hora (a hora de tentar de novo; o drive o simula com `page.route` porque 50 exclusões não cabem na pilha local) e produto mudado. Sucesso: aviso "Produto “<nome>” excluído." e a vaga volta. Prova: `apps/web/e2e-real/jornadas/excluir-produto-arquivado.e2e.ts`.
 - `produto-criar` Dialog "Novo produto": nome, preço de tabela, quantidade e custo; "Mais detalhes" para categoria e descrição.
@@ -33,7 +33,7 @@ Preconditions:
 - Provado: `drives/produtos-criar.verify.ts` (360 e 1280, claro) e `drives/receitas.verify.ts --grep produto-importar`.
 
 - **Chegar pelo menu.** Desktop: `getByRole("navigation", { exact: true, name: "Principal" }).getByRole("link", { exact: true, name: "Produtos" }).click()`. Celular: `getByRole("button", { exact: true, name: "Mais" }).click()` e `getByRole("dialog", { name: "Mais" }).getByRole("link", { exact: true, name: "Produtos" }).click()`. Abre `getByRole("heading", { exact: true, level: 1, name: "Produtos" })` com `tablist "Produtos e categorias"`.
-- **Abrir o Dialog.** `getByRole("button", { name: "Novo produto" }).first().click()`; `const dialog = getByRole("dialog", { name: "Novo produto" })`, com "Um passo só: o produto pode nascer com o estoque."
+- **Abrir o Dialog.** `getByRole("button", { name: "Novo produto" }).click()`; `const dialog = getByRole("dialog", { name: "Novo produto" })`, com "Um passo só: o produto pode nascer com o estoque."
 - **Preencher.** `dialog.getByLabel("Nome do produto").fill(...)`, `dialog.getByLabel("Preço de tabela").fill("59,90")`, `dialog.getByLabel("Quantos você tem agora").fill("10")`, `dialog.getByLabel("Custo de cada unidade").fill("12,50")`. Categoria: `getByRole("button", { name: "Mais detalhes" })`, depois o combobox "Categoria" e a opção.
 - **Cadastrar.** `dialog.getByRole("button", { name: "Cadastrar produto" }).click()`. O Dialog fecha e `page.locator("[data-product-id]", { hasText: nome })` aparece na lista.
 - **Persistência.** `page.reload()` e o mesmo `[data-product-id]` continua lá; `$V sql "SELECT p.name, v.list_price::text, b.quantity FROM products p JOIN product_variants v ON v.product_id = p.id LEFT JOIN inventory_balances b ON b.variant_id = v.id WHERE p.name LIKE 'Camiseta%'"` mostra preço `59.90` e saldo 10.
@@ -45,7 +45,7 @@ Preconditions:
 ## Gotchas
 
 - O `h1` é "Produtos" (a aba e o `h2` também se chamam "Produtos"): use `exact: true` e `level: 1`.
-- Há dois "Novo produto" na loja vazia (o do topo e o do vazio): `.first()`.
+- Há um só botão "Novo produto", na linha do título, com a loja vazia também (o vazio traz só a frase): não precisa de `.first()`.
 - No celular, Produtos não está na barra de baixo: só pelo "Mais" (a barra marca "Estoque" como a área).
 - "Importar planilha" fica desligado sem conexão, com o motivo "Importar planilha precisa de conexão.": é `aria-disabled`, e o `click()` do Playwright espera até estourar o tempo; use `click({ force: true })` para provar que nada abre.
 - A importação vai a uma linha a cada 7 s: use poucas linhas por drive. A pausa do regime do plano Free ("O servidor está ocupado. A importação continua sozinha às HH:MM.", com "Parar a importação") não acontece no workerd local: responda a uma chamada de `product/importBatch` com a página da plataforma (`page.route`, 503 com `cf-ray`, sem a marca do Worker) e diga isso na evidência.
