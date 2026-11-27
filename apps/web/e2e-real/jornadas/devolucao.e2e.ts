@@ -405,6 +405,7 @@ test("devolver e cancelar se excluem: venda com devolução não se cancela por 
     sql
   );
 
+  const sold = await read();
   const returned = await rpc.sale.return({
     commandId: nextCommandId(),
     commandVersion: 1,
@@ -413,14 +414,17 @@ test("devolver e cancelar se excluem: venda com devolução não se cancela por 
     saleId,
   });
   expect(returned.replayed).toBe(false);
-  const afterReturn = await read();
-  expect(afterReturn).toMatchObject({
+  const afterReturn = {
+    ...sold,
     bottle: 7,
     cancelled: 0,
-    mug: 9,
     movements: 1,
+    mug: 9,
     records: 1,
-  });
+    restocked: 1,
+    returned: 1,
+  };
+  await expect.poll(read).toEqual(afterReturn);
 
   // on screen the detail offers the return and no longer offers the cancellation
   await page.goto(`/sales/detail?saleId=${saleId}`);
@@ -443,24 +447,28 @@ test("devolver e cancelar se excluem: venda com devolução não se cancela por 
   );
   expect(cancelRefused.code).toMatch(BUSINESS_REFUSAL);
   expect(cancelRefused.reason).toBe("sale_has_returns");
-  expect(await read()).toEqual(afterReturn);
+  await expect.poll(read).toEqual(afterReturn);
 
   // a second sale, cancelled: the stock of its lines is back and a return of it is refused
   const cancelledId = await sell();
+  const soldAgain = await readSale(cancelledId);
   await rpc.sale.cancel({
     commandId: nextCommandId(),
     commandVersion: 1,
     organizationId,
     saleId: cancelledId,
   });
-  const afterCancel = await readSale(cancelledId);
-  expect(afterCancel).toMatchObject({
+  const afterCancel = {
+    ...soldAgain,
     bottle: 7,
     cancelled: 1,
-    mug: 9,
     movements: 1,
+    mug: 9,
     records: 0,
-  });
+    restocked: null,
+    returned: null,
+  };
+  await expect.poll(() => readSale(cancelledId)).toEqual(afterCancel);
   const returnRefused = await refusal(
     rpc.sale.return({
       commandId: nextCommandId(),
@@ -472,7 +480,7 @@ test("devolver e cancelar se excluem: venda com devolução não se cancela por 
   );
   expect(returnRefused.code).toMatch(BUSINESS_REFUSAL);
   expect(returnRefused.reason).toBe("sale_not_returnable");
-  expect(await readSale(cancelledId)).toEqual(afterCancel);
+  await expect.poll(() => readSale(cancelledId)).toEqual(afterCancel);
 
   await page.goto(`/sales/detail?saleId=${cancelledId}`);
   await expect(
