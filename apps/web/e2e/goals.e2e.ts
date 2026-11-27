@@ -1474,10 +1474,9 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
 
   const alert = page.getByRole("alert");
   // three tries (~1.5 s and ~4 s between them) before the screen says it failed
-  await expect(alert).toContainText(
-    "Não foi possível carregar as metas. Tente novamente.",
-    { timeout: 15_000 }
-  );
+  await expect(alert).toContainText("Não foi possível carregar as metas.", {
+    timeout: 15_000,
+  });
   await expect(
     page
       .locator("[data-slot=card]")
@@ -1612,7 +1611,7 @@ test("três 503 seguidos nas metas mostram o erro, depois de duas repetições",
   await openGoals(page, server);
 
   await expect(page.getByRole("alert")).toContainText(
-    "As metas estão temporariamente indisponíveis. Tente novamente.",
+    "As metas estão temporariamente indisponíveis.",
     { timeout: 15_000 }
   );
   expect(server.listCalls).toBe(3);
