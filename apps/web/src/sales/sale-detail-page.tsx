@@ -1,5 +1,4 @@
 import type { SaleDetailReadModel } from "@polaris/contracts";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type ComponentProps,
   type ReactNode,
@@ -9,10 +8,11 @@ import {
   useState,
 } from "react";
 
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { HelpTip } from "@/ui/help-tip";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 import { type TitleBack, TitleLine } from "../app-shell/screen-title";
 import { invalidatePreviousWindow } from "../home/previous-window-copy";
@@ -146,15 +146,12 @@ function CustomerLine({ link }: { link: SaleCustomerLink }) {
           role="status"
           tabIndex={-1}
         >
-          {currentView.label}
+          {failed ? withoutRetryAsk(currentView.label) : currentView.label}
         </span>
-        {failed ? (
-          <Button onClick={retry} size="sm" type="button" variant="link">
-            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-            Tentar novamente
-          </Button>
-        ) : null}
       </p>
+      {failed ? (
+        <RetryButton className="justify-self-start" onClick={retry} />
+      ) : null}
       <CurrentCustomerSummary
         customerId={link.linkedCustomerId}
         load={link.state.currentCustomer}
@@ -367,17 +364,9 @@ function SaleDetailContent({
       ) : null}
       {load.status === "error" ? (
         <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {load.message}
-            <Button
-              onClick={handleRetry}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-              Tentar novamente
-            </Button>
+          <AlertDescription className="grid justify-items-start gap-2">
+            {withoutRetryAsk(load.message)}
+            <RetryButton onClick={handleRetry} />
           </AlertDescription>
         </Alert>
       ) : null}

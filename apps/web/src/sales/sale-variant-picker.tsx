@@ -7,10 +7,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
-import { Button } from "@/ui/button";
 import {
   Combobox,
   ComboboxContent,
@@ -22,6 +22,7 @@ import {
 } from "@/ui/combobox";
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon } from "@/ui/input-group";
+import { RetryButton } from "@/ui/retry-button";
 import { SkeletonArt } from "@/ui/skeleton-art";
 import { orpcClient } from "../lib/orpc";
 import { useDebouncedValue } from "../lib/use-debounced-value";
@@ -284,11 +285,9 @@ export function VariantSearch({
             {view.kind === "loading" ? view.message : null}
             {view.kind === "empty" ? view.message : null}
             {view.kind === "error" ? (
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-destructive">
-                {view.message}
-                <Button onClick={retry} size="sm" type="button" variant="link">
-                  Tentar novamente
-                </Button>
+              <span className="grid justify-items-start gap-2 text-destructive">
+                {withoutRetryAsk(view.message)}
+                <RetryButton onClick={retry} />
               </span>
             ) : null}
           </ComboboxEmpty>

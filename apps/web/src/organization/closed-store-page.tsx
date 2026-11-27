@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import { RetryButton } from "@/ui/retry-button";
 import { documentTitle } from "../app-shell/navigation-model";
 import {
   type DataExportCalls,
@@ -627,13 +628,7 @@ export function PanelBody({
         <Alert role="alert" variant="destructive">
           <AlertDescription>{PANEL_LOAD_FAILED_TEXT}</AlertDescription>
         </Alert>
-        <Button
-          className="w-fit max-md:w-full"
-          onClick={onRefresh}
-          variant="outline"
-        >
-          Tentar novamente
-        </Button>
+        <RetryButton className="w-fit" onClick={onRefresh} />
       </>
     );
   }

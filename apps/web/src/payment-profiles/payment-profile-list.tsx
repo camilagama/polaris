@@ -11,6 +11,7 @@ import LandmarkIcon from "lucide-react/dist/esm/icons/landmark";
 import QrCodeIcon from "lucide-react/dist/esm/icons/qr-code";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { type ReactNode, useCallback } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
@@ -28,6 +29,7 @@ import { Field, FieldLabel } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { InsetBlock } from "@/ui/inset-block";
 import { ListBlock } from "@/ui/list-block";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { describeFee, settlementText } from "./payment-fee-model";
@@ -299,11 +301,9 @@ function ListBody({
     return (
       <Alert variant="destructive">
         <CircleAlertIcon aria-hidden="true" />
-        <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          {loadError}
-          <Button onClick={onRetry} size="sm" type="button" variant="link">
-            Tentar novamente
-          </Button>
+        <AlertDescription className="grid justify-items-start gap-2">
+          {withoutRetryAsk(loadError)}
+          <RetryButton onClick={onRetry} />
         </AlertDescription>
       </Alert>
     );

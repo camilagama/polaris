@@ -146,6 +146,7 @@ import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
+import { RetryButton } from "@/ui/retry-button";
 import { RowTile } from "@/ui/row-tile";
 import { ScrollArea } from "@/ui/scroll-area";
 import { SearchField } from "@/ui/search-field";
@@ -1576,8 +1577,9 @@ export function UiGallery() {
             <Alert variant="destructive">
               <TriangleAlertIcon aria-hidden="true" />
               <AlertTitle>Não deu para carregar os perfis.</AlertTitle>
-              <AlertDescription>
+              <AlertDescription className="grid justify-items-start gap-2">
                 Confira a conexão e tente de novo.
+                <RetryButton />
               </AlertDescription>
             </Alert>
             <Alert>

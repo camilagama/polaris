@@ -7,6 +7,7 @@ import type { ReactNode, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { Button } from "@/ui/button";
+import { RetryButton } from "@/ui/retry-button";
 import { SearchField } from "@/ui/search-field";
 import type { ProductListStatus } from "./product-list";
 import {
@@ -14,6 +15,7 @@ import {
   TITLE_ACTION_CLASS,
   TitleLine,
 } from "../app-shell/screen-title";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { useIsMobile } from "@/lib/use-mobile";
 
 /* The small parts of the products screen: the title with its button, the notices, the search and the two lists. */
@@ -274,23 +276,12 @@ export function ActionFeedback({
           <CircleAlertIcon aria-hidden="true" />
           <AlertDescription
             className={
-              onRetryError
-                ? "flex flex-wrap items-center gap-x-3 gap-y-1"
-                : undefined
+              onRetryError ? "grid justify-items-start gap-2" : undefined
             }
           >
-            {error}
+            {onRetryError ? withoutRetryAsk(error) : error}
             {errorExtra}
-            {onRetryError ? (
-              <Button
-                onClick={onRetryError}
-                size="sm"
-                type="button"
-                variant="link"
-              >
-                Tentar novamente
-              </Button>
-            ) : null}
+            {onRetryError ? <RetryButton onClick={onRetryError} /> : null}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -316,11 +307,9 @@ export function LoadErrorNotice({ message, onRetry }: LoadErrorProps) {
   return (
     <Alert variant="destructive">
       <CircleAlertIcon aria-hidden="true" />
-      <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {message}
-        <Button onClick={onRetry} size="sm" type="button" variant="link">
-          Tentar novamente
-        </Button>
+      <AlertDescription className="grid justify-items-start gap-2">
+        {withoutRetryAsk(message)}
+        <RetryButton onClick={onRetry} />
       </AlertDescription>
     </Alert>
   );

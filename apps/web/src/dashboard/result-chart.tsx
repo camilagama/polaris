@@ -2,7 +2,6 @@ import { useCallback, useId, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { BlockHeader as Heading } from "@/ui/block-header";
-import { Button } from "@/ui/button";
 import { CardFrame, CardFrameHeader, CardFramePanel } from "@/ui/card";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import {
@@ -11,6 +10,7 @@ import {
   useChartsFailed,
 } from "@/ui/charts/on-demand";
 import { MoneyText } from "@/ui/hidden-values";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 import { SlowReadNote } from "../app-shell/read-wait";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -63,9 +63,7 @@ export function ChartFailed() {
       <p className="text-muted-foreground text-support">
         O gráfico não abriu. Os totais estão acima e a tabela, abaixo.
       </p>
-      <Button onClick={reloadPage} size="sm" type="button" variant="outline">
-        Tentar novamente
-      </Button>
+      <RetryButton onClick={reloadPage} />
     </div>
   ) : (
     <p className="text-muted-foreground text-support">

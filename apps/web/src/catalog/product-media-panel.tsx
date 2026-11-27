@@ -21,10 +21,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { CheckableOption } from "@/ui/checkable-option";
 import { Field, FieldDescription, FieldLegend, FieldSet } from "@/ui/field";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
 import {
@@ -752,11 +754,9 @@ export function ProductMediaPanel({
   } else if (loadError) {
     list = (
       <Alert variant="destructive">
-        <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          {loadError}
-          <Button onClick={handleReload} size="sm" type="button" variant="link">
-            Tentar novamente
-          </Button>
+        <AlertDescription className="grid justify-items-start gap-2">
+          {withoutRetryAsk(loadError)}
+          <RetryButton onClick={handleReload} />
         </AlertDescription>
       </Alert>
     );
