@@ -197,8 +197,9 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
     })
     .click();
   await expect(historyRows(page)).toHaveCount(1);
-  await expect(historyRows(page)).toContainText(MONEY);
-  expect(amountIn(await historyRows(page).innerText())).toBe(TOTAL_CENTS);
+  await expect
+    .poll(async () => amountIn(await historyRows(page).innerText()))
+    .toBe(TOTAL_CENTS);
   await page
     .getByRole("button", { exact: true, name: "Tirar o filtro Situação" })
     .click();
@@ -206,7 +207,9 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
   await expect(footer).toContainText(PERIOD_LABEL);
   await expect(footer).not.toContainText(SCREEN_LABEL);
   await expect(footer.locator("[data-list-total-skeleton]")).toHaveCount(0);
-  expect(amountIn(await footer.innerText())).toBe(TOTAL_CENTS);
+  await expect
+    .poll(async () => amountIn(await footer.innerText()))
+    .toBe(TOTAL_CENTS);
 
   // Detalhe: the two parts in the order typed and the total once
   await historyRows(page).getByRole("link").first().click();
@@ -220,5 +223,7 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
   ).not.toContainText("300,00");
   const totals = page.locator("[data-receipt-totals]");
   await expect(totals.getByText(MONEY)).toHaveCount(1);
-  expect(amountIn(await totals.getByText(MONEY).innerText())).toBe(TOTAL_CENTS);
+  await expect
+    .poll(async () => amountIn(await totals.getByText(MONEY).innerText()))
+    .toBe(TOTAL_CENTS);
 });

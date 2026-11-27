@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { localDate } from "../calendar";
-import { expect, openJourney, runT0, test } from "../fixtures";
+import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
 import { cents, numericCents } from "../oracle";
 
 const ZONE = "America/Sao_Paulo";
@@ -389,4 +389,417 @@ test("categoria: remover com produto é recusado; sem produto vira tombstone e r
   await addCategory(page, `  ${free}  `);
   await expect(refusal(page, DUPLICATE_NAME)).toBeVisible();
   expect(await categoriesOf(sql, organizationId)).toHaveLength(2);
+});
+
+const QUANTITY_FOR_COST =
+  "Informe quantos você tem para guardar o custo, ou apague o custo.";
+const PRICE_INVALID = "Informe um valor em reais, como 59,90.";
+const NAME_INVALID = "Informe um nome de produto válido.";
+const BELL = String.fromCodePoint(0x00_07);
+const RIGHT_TO_LEFT_OVERRIDE = String.fromCodePoint(0x20_2e);
+
+interface CatalogCounts {
+  audits: number;
+  balances: number;
+  movements: number;
+  products: number;
+  variants: number;
+}
+
+async function catalogCounts(
+  sql: Sql,
+  organizationId: string
+): Promise<CatalogCounts> {
+  const { rows } = await sql.query(
+    `SELECT (SELECT count(*)::int FROM products WHERE organization_id = $1) AS products,
+            (SELECT count(*)::int FROM product_variants WHERE organization_id = $1) AS variants,
+            (SELECT count(*)::int FROM inventory_balances WHERE organization_id = $1) AS balances,
+            (SELECT count(*)::int FROM stock_movements WHERE organization_id = $1) AS movements,
+            (SELECT count(*)::int FROM tenant_audit_event
+              WHERE organization_id = $1 AND entity_type IN ('product', 'stock_movement')) AS audits`,
+    [organizationId]
+  );
+  return rows[0] as CatalogCounts;
+}
+
+async function openNewProduct(page: Page) {
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+}
+
+async function fillNewProduct(
+  page: Page,
+  fields: {
+    cost?: string;
+    name: string;
+    price?: string;
+    quantity?: string;
+  }
+) {
+  await page.getByLabel("Nome do produto").fill(fields.name);
+  if (fields.price !== undefined) {
+    await page.getByLabel("Preço de tabela").fill(fields.price);
+  }
+  if (fields.quantity !== undefined) {
+    await page.getByLabel("Quantos você tem agora").fill(fields.quantity);
+  }
+  if (fields.cost !== undefined) {
+    await page.getByLabel("Custo de cada unidade").fill(fields.cost);
+  }
+}
+
+const saveProduct = (page: Page) =>
+  page.getByRole("button", { name: "Cadastrar produto" }).click();
+
+/** Saves and waits for the server's answer to `product.create`, so what is read next comes after the write. */
+async function saveProductAndWaitForServer(page: Page): Promise<number> {
+  const answered = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.startsWith("/rpc/product/create")
+  );
+  await saveProduct(page);
+  return (await answered).status();
+}
+
+const productCard = (page: Page, name: string) =>
+  page.locator("[data-product-id]", { hasText: name });
+
+/** A cost with no quantity has no stock to be the cost of: the field says so, and nothing is written. */
+test("produto: custo sem quantidade é erro de campo e nada é gravado", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "produto-custo-so", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const name = `Camiseta ${journey.name}`;
+  const before = await catalogCounts(sql, organizationId);
+
+  await page.goto("/products");
+  await openNewProduct(page);
+  await fillNewProduct(page, { cost: "12,50", name, price: "59,90" });
+  await saveProduct(page);
+
+  await expect(page.getByText(QUANTITY_FOR_COST)).toBeVisible();
+  await expect(page.getByLabel("Quantos você tem agora")).toHaveAttribute(
+    "aria-invalid",
+    "true"
+  );
+  await expect(productCard(page, name)).toHaveCount(0);
+  expect(await catalogCounts(sql, organizationId)).toEqual(before);
+
+  // the same dialog saves once the quantity is there: the refusal left nothing half done behind
+  await page.getByLabel("Quantos você tem agora").fill("10");
+  await saveProduct(page);
+  await expect(productCard(page, name)).toBeVisible();
+  await expect
+    .poll(async () => await wholeProducts(sql, organizationId, name))
+    .toEqual([
+      expect.objectContaining({
+        balance: 10,
+        movements: 1,
+        movementType: "receipt",
+        variants: 1,
+      }),
+    ]);
+  const [saved] = await wholeProducts(sql, organizationId, name);
+  expect(saved?.movementCost).toMatch(UNIT_COST_12_50);
+});
+
+/** A price below zero or with three places is refused in the field, and nothing is written. */
+test("produto: preço negativo ou com três casas é erro de campo e nada é gravado", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "produto-preco", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const name = `Camiseta ${journey.name}`;
+  const before = await catalogCounts(sql, organizationId);
+
+  await page.goto("/products");
+  await openNewProduct(page);
+  await page.getByLabel("Nome do produto").fill(name);
+  for (const price of ["-5", "1,999"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one price after the other in the same open dialog
+    await page.getByLabel("Preço de tabela").fill(price);
+    await saveProduct(page);
+    await expect(page.getByText(PRICE_INVALID)).toBeVisible();
+    await expect(page.getByLabel("Preço de tabela")).toHaveAttribute(
+      "aria-invalid",
+      "true"
+    );
+    await expect(productCard(page, name)).toHaveCount(0);
+    expect(await catalogCounts(sql, organizationId)).toEqual(before);
+  }
+
+  // the same dialog saves once the price reads: the refusals left nothing half done behind
+  await page.getByLabel("Preço de tabela").fill("1,99");
+  await saveProduct(page);
+  await expect(productCard(page, name)).toBeVisible();
+  await expect
+    .poll(async () => {
+      const { rows } = await sql.query<{ list_price: string }>(
+        `SELECT v.list_price::text AS list_price
+           FROM products p JOIN product_variants v ON v.product_id = p.id
+          WHERE p.organization_id = $1 AND p.name = $2`,
+        [organizationId, name]
+      );
+      return rows.map((row) => numericCents(row.list_price));
+    })
+    .toEqual([cents("1,99")]);
+});
+
+/**
+ * A quantity of 0 is an empty quantity: only the product and its default variant are made, with no movement and no
+ * balance, and the version starts at 1.
+ */
+test("produto: quantidade 0 cria só o produto e a variante padrão, sem movimento nem saldo", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "produto-qtd-zero", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const name = `Camiseta ${journey.name}`;
+
+  await page.goto("/products");
+  await openNewProduct(page);
+  await fillNewProduct(page, { name, quantity: "0" });
+  await saveProduct(page);
+  await expect(productCard(page, name)).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const { rows } = await sql.query<{
+        balances: number;
+        movements: number;
+        variants: number;
+        version: number;
+      }>(
+        `SELECT p.version,
+                (SELECT count(*)::int FROM product_variants v WHERE v.product_id = p.id) AS variants,
+                (SELECT count(*)::int FROM stock_movements m WHERE m.product_id = p.id) AS movements,
+                (SELECT count(*)::int FROM inventory_balances b WHERE b.product_id = p.id) AS balances
+           FROM products p
+          WHERE p.organization_id = $1 AND p.name = $2`,
+        [organizationId, name]
+      );
+      return rows;
+    })
+    .toEqual([{ balances: 0, movements: 0, variants: 1, version: 1 }]);
+  expect(await catalogCounts(sql, organizationId)).toMatchObject({
+    balances: 0,
+    movements: 0,
+    products: 1,
+    variants: 1,
+  });
+});
+
+interface WholeProduct {
+  balance: number | null;
+  id: string;
+  movementCost: string | null;
+  movementDay: string | null;
+  movements: number;
+  movementType: string | null;
+  price: number | null;
+  variants: number;
+  version: number;
+}
+
+async function wholeProducts(
+  sql: Sql,
+  organizationId: string,
+  name: string
+): Promise<WholeProduct[]> {
+  const { rows } = await sql.query(
+    `SELECT p.id, p.version,
+            (SELECT count(*)::int FROM product_variants v WHERE v.product_id = p.id) AS variants,
+            (SELECT v.list_price::text FROM product_variants v WHERE v.product_id = p.id LIMIT 1) AS price,
+            (SELECT b.quantity FROM inventory_balances b WHERE b.product_id = p.id LIMIT 1) AS balance,
+            (SELECT count(*)::int FROM stock_movements m WHERE m.product_id = p.id) AS movements,
+            (SELECT m.movement_type FROM stock_movements m WHERE m.product_id = p.id LIMIT 1) AS movement_type,
+            (SELECT m.unit_cost::text FROM stock_movements m WHERE m.product_id = p.id LIMIT 1) AS movement_cost,
+            (SELECT m.occurred_on::text FROM stock_movements m WHERE m.product_id = p.id LIMIT 1) AS movement_day
+       FROM products p
+      WHERE p.organization_id = $1 AND p.name = $2
+      ORDER BY p.id`,
+    [organizationId, name]
+  );
+  const found = rows as {
+    balance: number | null;
+    id: string;
+    movement_cost: string | null;
+    movement_day: string | null;
+    movement_type: string | null;
+    movements: number;
+    price: string | null;
+    variants: number;
+    version: number;
+  }[];
+  return found.map((row) => ({
+    balance: row.balance,
+    id: row.id,
+    movementCost: row.movement_cost,
+    movementDay: row.movement_day,
+    movements: row.movements,
+    movementType: row.movement_type,
+    price: row.price === null ? null : numericCents(row.price),
+    variants: row.variants,
+    version: row.version,
+  }));
+}
+
+/**
+ * Name, price, quantity and cost make everything at once: the product, its variant, the balance, the receipt and the
+ * audit of each. The same name again is a second product: names repeat inside a store.
+ */
+test("produto: nome, preço, quantidade e custo criam tudo junto, e o mesmo nome de novo cria outro produto", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "produto-tudo-junto", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const name = `Camiseta ${journey.name}`;
+  const fields = { cost: "12,50", name, price: "59,90", quantity: "10" };
+  const before = await catalogCounts(sql, organizationId);
+
+  await page.goto("/products");
+  await openNewProduct(page);
+  await fillNewProduct(page, fields);
+  await saveProduct(page);
+  await expect(productCard(page, name)).toHaveCount(1);
+
+  await expect
+    .poll(async () => await catalogCounts(sql, organizationId))
+    .toEqual({
+      audits: before.audits + 2,
+      balances: 1,
+      movements: 1,
+      products: 1,
+      variants: 1,
+    });
+  const [first] = await wholeProducts(sql, organizationId, name);
+  expect(first).toMatchObject({
+    balance: 10,
+    movements: 1,
+    movementType: "receipt",
+    price: cents("59,90"),
+    variants: 1,
+    version: 1,
+  });
+  expect(first?.movementCost).toMatch(UNIT_COST_12_50);
+  expect(first?.movementDay).toBe(localDate(runT0(), ZONE));
+  const { rows: audits } = await sql.query<{
+    entity_type: string;
+    event_type: string;
+  }>(
+    `SELECT a.entity_type, a.event_type
+       FROM tenant_audit_event a
+      WHERE a.organization_id = $1 AND a.entity_type IN ('product', 'stock_movement')
+      ORDER BY a.event_type`,
+    [organizationId]
+  );
+  expect(audits).toEqual([
+    {
+      entity_type: "stock_movement",
+      event_type: "inventory.movement_recorded",
+    },
+    { entity_type: "product", event_type: "product.created" },
+  ]);
+
+  await openNewProduct(page);
+  await fillNewProduct(page, fields);
+  await saveProduct(page);
+  await expect(productCard(page, name)).toHaveCount(2);
+
+  await expect
+    .poll(async () => await wholeProducts(sql, organizationId, name))
+    .toHaveLength(2);
+  const both = await wholeProducts(sql, organizationId, name);
+  expect(new Set(both.map((product) => product.id)).size).toBe(2);
+  expect(both).toEqual([
+    expect.objectContaining({ balance: 10, movements: 1, variants: 1 }),
+    expect.objectContaining({ balance: 10, movements: 1, variants: 1 }),
+  ]);
+  expect(await catalogCounts(sql, organizationId)).toEqual({
+    audits: before.audits + 4,
+    balances: 2,
+    movements: 2,
+    products: 2,
+    variants: 2,
+  });
+});
+
+/**
+ * A name with a control character or one that controls the direction of the text is refused, on the screen and by the
+ * server, and nothing is written; a line break in the description is fine.
+ */
+test("produto: nome com caractere de controle ou de direção é recusado e nada é gravado; quebra de linha na descrição vale", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "produto-nome-proibido",
+    {
+      organization: { timezone: ZONE },
+    }
+  );
+  const { page, user } = journey;
+  const organizationId = journey.organizationId as string;
+  const base = `Camiseta ${journey.name}`;
+  const before = await catalogCounts(sql, organizationId);
+
+  await page.goto("/products");
+  await openNewProduct(page);
+  for (const forbidden of [BELL, RIGHT_TO_LEFT_OVERRIDE]) {
+    const name = `${base}${forbidden}`;
+    // biome-ignore lint/performance/noAwaitInLoops: one name after the other in the same open dialog
+    await fillNewProduct(page, { name, price: "59,90" });
+    expect(await saveProductAndWaitForServer(page)).toBe(400);
+    await expect(
+      page.getByRole("alert").filter({ hasText: NAME_INVALID })
+    ).toBeVisible();
+    expect(await catalogCounts(sql, organizationId)).toEqual(before);
+    const { rows } = await sql.query(
+      "SELECT 1 FROM products WHERE organization_id = $1 AND name LIKE $2",
+      [organizationId, `${base}%`]
+    );
+    expect(rows).toHaveLength(0);
+  }
+
+  for (const forbidden of [BELL, RIGHT_TO_LEFT_OVERRIDE]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one refusal after the other
+    const code = await refusedWith(
+      user.rpc.product.create({ name: `${base}${forbidden}`, organizationId })
+    );
+    expect(code).toBe("BAD_REQUEST");
+  }
+  expect(await catalogCounts(sql, organizationId)).toEqual(before);
+
+  const description = "Primeira linha\nSegunda linha";
+  await page.getByLabel("Nome do produto").fill(base);
+  await page.getByRole("button", { name: "Mais detalhes" }).click();
+  await page.getByLabel("Descrição").fill(description);
+  await saveProduct(page);
+  await expect(productCard(page, base)).toBeVisible();
+  await expect
+    .poll(async () => {
+      const { rows } = await sql.query<{ description: string | null }>(
+        "SELECT description FROM products WHERE organization_id = $1 AND name = $2",
+        [organizationId, base]
+      );
+      return rows.map((row) => row.description);
+    })
+    .toEqual([description]);
 });
