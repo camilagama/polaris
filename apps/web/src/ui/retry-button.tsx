@@ -1,0 +1,22 @@
+import type { ComponentProps } from "react";
+import { Button } from "./button";
+
+type RetryButtonProps = Omit<
+  ComponentProps<typeof Button>,
+  "children" | "size" | "type" | "variant"
+>;
+
+/**
+ * "Tentar novamente" under the sentence of a notice that says a read failed: outline, small, no icon, always the same
+ * word. The notice that holds it puts the sentence above and the button below, to the left
+ * (`grid justify-items-start gap-2`), never on the same line: the sentence is what the person reads, and the button
+ * does not compete with it. It is an action, not a link in a text, so it is never `variant="link"`
+ * (`scripts/ui-source-rules.test.ts`).
+ */
+export function RetryButton(props: RetryButtonProps) {
+  return (
+    <Button size="sm" type="button" variant="outline" {...props}>
+      Tentar novamente
+    </Button>
+  );
+}
