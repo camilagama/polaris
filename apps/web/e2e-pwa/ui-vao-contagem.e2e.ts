@@ -1,6 +1,8 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { expenseStates } from "./ui-expense-states";
+import { customerStates } from "./ui-lot2-states";
 import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
 
@@ -153,5 +155,75 @@ test.describe("o vão entre os controles e a lista a 1280 px", () => {
     );
     expect(controls?.filterRight).toBeCloseTo(controls?.frameRight ?? 0, 0);
     expect(controls?.gap).toBeCloseTo(GAP, 0);
+  });
+});
+
+/**
+ * Where the count of the header of the list ends and where the "…" of the first row ends: the text itself (a `Range`
+ * around it, not the box that reserves 112 px) and the last dot of the row menu.
+ */
+function countAndMenuEdges(page: Page) {
+  return page.evaluate(() => {
+    const count = document.querySelector("[data-list-count]");
+    const title = document.querySelector("[data-list-block] h2");
+    const menu = document.querySelector(
+      "[data-list-block-row] button[aria-label^='Mais ações']"
+    );
+    const text = count?.firstChild;
+    if (!(count && title && menu && text)) {
+      return null;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const drawn = range.getBoundingClientRect();
+    const dotsRight = Array.from(menu.querySelectorAll("svg circle")).map(
+      (dot) => dot.getBoundingClientRect().right
+    );
+    return {
+      countLeft: drawn.left,
+      countRight: drawn.right,
+      countTop: drawn.top,
+      menuRight:
+        dotsRight.length > 0
+          ? Math.max(...dotsRight)
+          : menu.getBoundingClientRect().right,
+      titleBottom: title.getBoundingClientRect().bottom,
+      titleLeft: title.getBoundingClientRect().left,
+    };
+  });
+}
+
+const COUNT_LISTS = [
+  { name: "Clientes", open: customerStates.list },
+  { name: "Produtos", open: productStates.list },
+  { name: "Despesas", open: expenseStates.list },
+];
+
+test.describe("a contagem do cabeçalho da lista no celular", () => {
+  for (const list of COUNT_LISTS) {
+    test(`${list.name} a 360 px: o texto da contagem termina na vertical do menu da primeira linha`, async ({
+      page,
+    }) => {
+      await list.open(page);
+      const edges = await countAndMenuEdges(page);
+      expect(edges).not.toBeNull();
+      expect(edges?.countTop).toBeLessThan(edges?.titleBottom ?? 0);
+      expect(
+        Math.abs((edges?.countRight ?? 0) - (edges?.menuRight ?? 99))
+      ).toBeLessThanOrEqual(TOLERANCE);
+    });
+  }
+
+  test("Despesas a 320 px: a contagem desce e começa na vertical do título", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 320 });
+    await expenseStates.list(page);
+    const edges = await countAndMenuEdges(page);
+    expect(edges).not.toBeNull();
+    expect(edges?.countTop).toBeGreaterThanOrEqual(edges?.titleBottom ?? 0);
+    expect(
+      Math.abs((edges?.countLeft ?? 0) - (edges?.titleLeft ?? 99))
+    ).toBeLessThanOrEqual(TOLERANCE);
   });
 });

@@ -5,6 +5,7 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -103,6 +104,73 @@ function useOverflowX() {
   return { overflows, ref };
 }
 
+/**
+ * The right edge of what the row menu draws: its rightmost dot, not the 36 px button that holds them. The dots are
+ * not in left-to-right order in the SVG (the icon draws the middle one first and the left one last), so the
+ * rightmost is taken by position.
+ */
+function menuGlyphRight(block: Element) {
+  const icon = block.querySelector(
+    "[data-list-block-row] [aria-haspopup='menu'] svg"
+  );
+  if (!icon) {
+    return;
+  }
+  const dots = Array.from(icon.querySelectorAll("circle"));
+  if (dots.length === 0) {
+    return icon.getBoundingClientRect().right;
+  }
+  return Math.max(...dots.map((dot) => dot.getBoundingClientRect().right));
+}
+
+/**
+ * Where the count sits below 760 px. Sharing the line with the title it ends on the vertical where the "…" of the
+ * rows ends: it stops short of the right edge of its box by the measured `--count-inset`, as padding that never
+ * exceeds the room the text leaves in the box, so the box and the wrap do not change (0 when the rows have no menu).
+ * Once it dropped under the title it starts at the title's vertical. The wrap is decided by the width reserved for
+ * the count, so only the browser's layout knows which of the two it is.
+ */
+function useCountPlace(active: boolean, rowCount: number, count: string) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [onOwnLine, setOnOwnLine] = useState(false);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    const header = element?.closest<HTMLElement>('[data-slot="block-header"]');
+    const title = header?.firstElementChild;
+    if (!(active && element && header && title)) {
+      return;
+    }
+    const measure = () => {
+      if (header.clientWidth === 0) {
+        return;
+      }
+      const box = element.getBoundingClientRect();
+      const onOwnLineNow = box.top >= title.getBoundingClientRect().bottom - 1;
+      const glyph = onOwnLineNow
+        ? undefined
+        : menuGlyphRight(element.closest("[data-list-block]") ?? header);
+      const text = new Range();
+      text.selectNodeContents(element);
+      const room = Math.max(0, box.width - text.getBoundingClientRect().width);
+      const inset =
+        glyph === undefined
+          ? 0
+          : Math.min(
+              room,
+              Math.max(0, Math.round((box.right - glyph) * 10) / 10)
+            );
+      element.style.setProperty("--count-inset", `${inset}px`);
+      setOnOwnLine(onOwnLineNow);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    observer.observe(title);
+    return () => observer.disconnect();
+  }, [active, count, rowCount]);
+  return { onOwnLine, ref };
+}
+
 function sortParts(children: ReactNode) {
   const header: ReactNode[] = [];
   const rows: ReactNode[] = [];
@@ -177,6 +245,11 @@ function ListBlockRoot({
   const { overflows, ref } = useOverflowX();
   const loading = stateProps.state === "loading";
   const showCount = count !== undefined || action || loading;
+  const countPlace = useCountPlace(
+    Boolean(showCount) && !action,
+    rows.length,
+    count ?? ""
+  );
   return (
     <Block
       aria-labelledby={headingId}
@@ -197,9 +270,14 @@ function ListBlockRoot({
                 "min-h-5 text-muted-foreground text-support md:text-right",
                 action
                   ? ["max-md:grow", loading ? "min-w-28" : "md:min-w-28"]
-                  : "min-w-28"
+                  : [
+                      "min-w-28",
+                      !countPlace.onOwnLine &&
+                        "max-md:pr-(--count-inset) max-md:text-right",
+                    ]
               )}
               data-list-count=""
+              ref={countPlace.ref}
             >
               {loading ? "" : (count ?? "")}
             </p>
