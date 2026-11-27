@@ -744,7 +744,7 @@ export function newSaleOfflineText(
   }
   return titleSaysNoConnection
     ? null
-    : "Sem conexão: para vender é preciso conexão.";
+    : "Sem conexão. Não dá para vender agora.";
 }
 
 /**

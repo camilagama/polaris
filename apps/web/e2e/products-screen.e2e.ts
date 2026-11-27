@@ -2602,7 +2602,7 @@ test("sem internet no produto aberto: a faixa com 'Tentar agora', Salvar desliga
   const save = dialog.getByRole("button", { name: "Salvar alterações" });
   await expect(save).toHaveAttribute("aria-disabled", "true");
   await expect(save).toHaveAccessibleDescription(
-    "Sem conexão: salvar precisa de conexão."
+    "Sem conexão. Não dá para salvar agora."
   );
   await save.click({ force: true });
   // the picked image and its crop are still there, on the device
