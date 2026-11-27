@@ -227,7 +227,7 @@ export function StatusCard({
       <div className="flex flex-wrap gap-3">
         {store.phase === "purged" ? null : (
           <a
-            className={cn(buttonVariants(), "max-sm:w-full")}
+            className={cn(buttonVariants(), "max-md:w-full")}
             href={`#${COPY_SECTION_ID}`}
           >
             {DOWNLOAD_BUTTON}
@@ -235,7 +235,7 @@ export function StatusCard({
         )}
         {undo ? (
           <Button
-            className="max-sm:w-full"
+            className="max-md:w-full"
             onClick={handleUndo}
             variant="outline"
             {...offlineOff(online)}
@@ -244,7 +244,7 @@ export function StatusCard({
           </Button>
         ) : null}
         <Button
-          className="max-sm:w-full"
+          className="max-md:w-full"
           variant="outline"
           {...refreshButtonProps(online, reading, onRefresh)}
         >
@@ -628,7 +628,7 @@ export function PanelBody({
           <AlertDescription>{PANEL_LOAD_FAILED_TEXT}</AlertDescription>
         </Alert>
         <Button
-          className="w-fit max-sm:w-full"
+          className="w-fit max-md:w-full"
           onClick={onRefresh}
           variant="outline"
         >
@@ -654,7 +654,7 @@ export function PanelBody({
         <a
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "w-fit max-sm:w-full"
+            "w-fit max-md:w-full"
           )}
           href="/"
         >

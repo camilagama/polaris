@@ -42,7 +42,7 @@ export function RefreshFailedNotice({
       <AlertDescription className="grid gap-3">
         <span>{PANEL_REFRESH_FAILED_TEXT}</span>
         <Button
-          className="w-fit max-sm:w-full"
+          className="w-fit max-md:w-full"
           ref={retry}
           variant="outline"
           {...refreshButtonProps(online, reading, onRefresh)}

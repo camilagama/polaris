@@ -276,7 +276,7 @@ function RequestCard({
         <div className="grid justify-items-start gap-3">
           <Button
             aria-busy={sending}
-            className="max-sm:w-full"
+            className="max-md:w-full"
             disabled={sending}
             onClick={handleRequest}
             {...requestControlProps(online, blocked)}
