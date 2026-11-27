@@ -7,6 +7,7 @@ import {
   saleDetailAnswers,
 } from "../e2e-pwa/sale-detail-fixture";
 import {
+  assertItemLineEndsApart,
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
@@ -217,6 +218,62 @@ for (const fontPixels of FONTS) {
       );
       expect(await axeFaults(page, `[aria-label="${PARTS_NAME}"]`)).toEqual([]);
       await assertNothingClipped(block);
+      await assertNoPageScroll(page);
+    }
+  );
+}
+
+const ITEMS_NAME = "Itens";
+const SUBTOTAL = /^Subtotal$/;
+const ID_LABEL = "Identificador da venda";
+
+for (const fontPixels of FONTS) {
+  reflowTest(
+    `a 320 px com letra de ${fontPixels} px cada item tem a conta à esquerda e o total na coluna do Subtotal, sem "=" nem "×" no fim da linha, e o identificador tem rótulo e quebra sem rolar`,
+    async ({ page }) => {
+      await openPaymentBlock(page, fontPixels);
+      const items = page.getByRole("region", { name: ITEMS_NAME });
+      const lines = items.locator("li > p");
+      await expect(lines).toHaveCount(2);
+      await expect(lines.nth(0)).toContainText("tabela R$ 139,90");
+      await expect(lines.nth(1)).not.toContainText("tabela");
+      await expect(items).not.toContainText("=");
+      const subtotalRight = await page
+        .locator("dl > div")
+        .filter({ has: page.locator("dt", { hasText: SUBTOTAL }) })
+        .locator("dd")
+        .evaluate((cell) => cell.getBoundingClientRect().right);
+      const measured = await lines.evaluateAll((paragraphs) =>
+        paragraphs.map((paragraph) => {
+          const total = paragraph.lastElementChild as Element;
+          const quantity = paragraph.querySelector(
+            ".whitespace-nowrap"
+          ) as Element;
+          const range = document.createRange();
+          range.selectNodeContents(quantity);
+          const boxes = [...range.getClientRects()];
+          const tallest = Math.max(...boxes.map((box) => box.height));
+          const span =
+            Math.max(...boxes.map((box) => box.bottom)) -
+            Math.min(...boxes.map((box) => box.top));
+          return {
+            onOneLine: span <= tallest * 1.5,
+            quantityText: quantity.textContent ?? "",
+            totalRight: total.getBoundingClientRect().right,
+          };
+        })
+      );
+      for (const line of measured) {
+        expect(
+          line.onOneLine,
+          `"${line.quantityText}" fica numa linha só`
+        ).toBe(true);
+        expect(Math.abs(line.totalRight - subtotalRight)).toBeLessThanOrEqual(
+          1
+        );
+      }
+      expect(await assertItemLineEndsApart(items)).toBe(2);
+      await expect(page.getByText(ID_LABEL, { exact: true })).toBeVisible();
       await assertNoPageScroll(page);
     }
   );

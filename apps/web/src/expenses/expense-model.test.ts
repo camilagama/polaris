@@ -2,11 +2,16 @@ import type {
   ExpenseCategoryReadModel,
   ExpenseCategoryTotalReadModel,
 } from "@polaris/contracts";
-import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
+import {
+  EARLIEST_EXPENSE_COMPETENCE,
+  MAX_EXPENSE_COMPETENCE_DAYS_AHEAD,
+} from "@polaris/domain/expenses/expense";
 import { describe, expect, it } from "vitest";
 import { formatDate } from "@/ui/date-values";
 import {
+  addDays,
   categoryFieldsDiffer,
+  COMPETENCE_TOO_FAR_AHEAD_MESSAGE,
   categoryShareRows,
   EARLIEST_COMPETENCE_REASON,
   EARLIEST_EXPENSE_MONTH,
@@ -285,8 +290,17 @@ describe("validateExpenseDraft", () => {
     payee: "  ",
   };
 
+  const today = "2026-11-27";
+
+  function check(
+    value: ExpenseDraft,
+    saved: string | null = null
+  ): ReturnType<typeof validateExpenseDraft> {
+    return validateExpenseDraft(value, today, saved);
+  }
+
   it("builds the API input from a good draft", () => {
-    expect(validateExpenseDraft(draft)).toEqual({
+    expect(check(draft)).toEqual({
       errors: {},
       input: {
         amount: "1500.50",
@@ -296,13 +310,13 @@ describe("validateExpenseDraft", () => {
         payee: null,
       },
     });
-    expect(
-      validateExpenseDraft({ ...draft, payee: " Imobiliária " }).input?.payee
-    ).toBe("Imobiliária");
+    expect(check({ ...draft, payee: " Imobiliária " }).input?.payee).toBe(
+      "Imobiliária"
+    );
   });
 
   it("points at every wrong field", () => {
-    const result = validateExpenseDraft({
+    const result = check({
       amount: "abc",
       categoryId: "",
       competenceOn: "",
@@ -321,29 +335,67 @@ describe("validateExpenseDraft", () => {
 
   it("refuses an impossible or too old competence date", () => {
     expect(
-      validateExpenseDraft({ ...draft, competenceOn: "2026-02-30" }).errors
-        .competenceOn
+      check({ ...draft, competenceOn: "2026-02-30" }).errors.competenceOn
     ).toBeDefined();
     expect(
-      validateExpenseDraft({ ...draft, competenceOn: "1999-12-31" }).errors
-        .competenceOn
+      check({ ...draft, competenceOn: "1999-12-31" }).errors.competenceOn
     ).toContain("2000");
     expect(
-      validateExpenseDraft({ ...draft, competenceOn: "2000-01-01" }).input
+      check({ ...draft, competenceOn: "2000-01-01" }).input
     ).not.toBeNull();
   });
 
   it("limits the description to 200 characters and the payee to 120", () => {
     expect(
-      validateExpenseDraft({ ...draft, description: "d".repeat(200) }).input
+      check({ ...draft, description: "d".repeat(200) }).input
     ).not.toBeNull();
     expect(
-      validateExpenseDraft({ ...draft, description: "d".repeat(201) }).errors
-        .description
+      check({ ...draft, description: "d".repeat(201) }).errors.description
     ).toContain("200");
+    expect(check({ ...draft, payee: "p".repeat(120) }).input).not.toBeNull();
+  });
+
+  it("takes the competence up to today plus the domain window and refuses the next day", () => {
+    const last = addDays(today, MAX_EXPENSE_COMPETENCE_DAYS_AHEAD);
+    expect(last).toBe("2027-11-28");
+    expect(check({ ...draft, competenceOn: last }).input).not.toBeNull();
+    const result = check({ ...draft, competenceOn: addDays(last, 1) });
+    expect(result.input).toBeNull();
+    expect(result.errors.competenceOn).toBe(COMPETENCE_TOO_FAR_AHEAD_MESSAGE);
+    expect(COMPETENCE_TOO_FAR_AHEAD_MESSAGE).toBe(
+      "A data de competência pode ser no máximo um ano à frente."
+    );
+  });
+
+  it("counts the window from the organization's day, across a leap day", () => {
+    const leap = (competenceOn: string) =>
+      validateExpenseDraft({ ...draft, competenceOn }, "2027-12-31", null);
+    expect(leap("2028-12-31").input).not.toBeNull();
+    expect(leap("2029-01-01").errors.competenceOn).toBe(
+      COMPETENCE_TOO_FAR_AHEAD_MESSAGE
+    );
+  });
+
+  it("keeps the format message first and the lower limit unchanged", () => {
     expect(
-      validateExpenseDraft({ ...draft, payee: "p".repeat(120) }).input
+      check({ ...draft, competenceOn: "2099-02-30" }).errors.competenceOn
+    ).toBe("Informe uma data de competência válida.");
+    expect(
+      check({ ...draft, competenceOn: "1999-12-31" }).errors.competenceOn
+    ).toBe("A data de competência não pode ser anterior a 2000.");
+  });
+
+  it("does not punish an edit that leaves the saved date alone", () => {
+    const saved = "2028-06-15";
+    expect(
+      check({ ...draft, competenceOn: saved }, saved).input
     ).not.toBeNull();
+    expect(
+      check({ ...draft, competenceOn: "2028-06-16" }, saved).errors.competenceOn
+    ).toBe(COMPETENCE_TOO_FAR_AHEAD_MESSAGE);
+    expect(
+      check({ ...draft, competenceOn: saved }, "2026-10-13").errors.competenceOn
+    ).toBe(COMPETENCE_TOO_FAR_AHEAD_MESSAGE);
   });
 });
 

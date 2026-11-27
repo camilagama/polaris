@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
   assertAmountsOnOneLine,
+  assertItemLineEndsApart,
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
@@ -152,9 +153,10 @@ reflowTest(
     await openDetail(page, 20);
     const items = page.getByRole("region", { name: "Itens" });
     await expect(items.locator("li")).toHaveText([
-      "Camiseta básica3 × R$ 1.234,50 (tabela R$ 1.300,00) = R$ 3.703,50Custo unitário registrado: R$ 17,00.",
+      "Camiseta básica3 × R$ 1.234,50, tabela R$ 1.300,00Total do item: R$ 3.703,50Custo unitário registrado: R$ 17,00.",
     ]);
     expect(await assertAmountsOnOneLine(items)).toBe(4);
+    expect(await assertItemLineEndsApart(items)).toBe(1);
     // the punched holes of the perforation sit half outside the card on purpose, and the card hides them
     await assertNothingClipped(page.locator("main"), {
       allowScroll: ['[data-slot="card"]'],

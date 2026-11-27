@@ -104,9 +104,13 @@ export function SaleReceipt({
           />
         )}
         <p className="text-muted-foreground text-support">{sale.note}</p>
-        <p className="pt-1 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
-          <span className="sr-only">Identificador da venda: </span>
-          {sale.saleId}
+        <p className="grid gap-0.5 pt-1">
+          <span className="text-muted-foreground text-support">
+            Identificador da venda
+          </span>
+          <span className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
+            {sale.saleId}
+          </span>
         </p>
       </div>
     </Block>
