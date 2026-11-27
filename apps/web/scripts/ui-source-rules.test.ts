@@ -861,9 +861,8 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   );
 
   it("a lista de largura de botão está em ordem, tem o motivo escrito e cada arquivo dela ainda usa a classe (uma lista velha deixaria passar outra coisa)", () => {
-    expect(PAGE_ACTION_ALLOWED.map((entry) => entry.file)).toEqual(
-      PAGE_ACTION_ALLOWED.map((entry) => entry.file).toSorted()
-    );
+    const files = PAGE_ACTION_ALLOWED.map((entry) => entry.file);
+    expect(files).toEqual([...files].sort());
     for (const entry of PAGE_ACTION_ALLOWED) {
       expect(entry.why, entry.file).not.toBe("");
       expect(PAGE_ACTION_SCOPE, entry.file).toContain(entry.file);
