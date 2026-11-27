@@ -235,9 +235,17 @@ export function DeviceItem({
           <p className="font-medium [overflow-wrap:anywhere]">
             {row.labelText}
           </p>
+          {/* below 640 px each fact keeps its own line (a dot would end or start one); from there the dot walks with the fact it opens */}
           <p className="text-muted-foreground text-support">
-            Registrado em {row.registeredText} · visto por último em{" "}
-            {row.lastSeenText}
+            <span className="max-sm:block sm:inline-block">
+              Registrado em{" "}
+              <span className="whitespace-nowrap">{row.registeredText}</span>
+            </span>{" "}
+            <span className="max-sm:block sm:inline-block">
+              <span className="max-sm:hidden">{"· "}</span>
+              visto por último em{" "}
+              <span className="whitespace-nowrap">{row.lastSeenText}</span>
+            </span>
           </p>
           {row.isCurrent && !sessionGone ? (
             <p className="text-muted-foreground text-support">

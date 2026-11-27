@@ -260,6 +260,14 @@ describe("a device row, its tile and its badge", () => {
     }
   });
 
+  it("keeps each date fact whole: stacked below 640 px with no dot, one line with the dot from there", () => {
+    const html = render();
+    const block = "max-sm:block sm:inline-block";
+    const registered = `<span class="${block}">Registrado em <span class="whitespace-nowrap">01/10/2026, 09:00</span></span>`;
+    const seen = `<span class="${block}"><span class="max-sm:hidden">· </span>visto por último em <span class="whitespace-nowrap">13/10/2026, 07:00</span></span>`;
+    expect(html).toContain(`${registered} ${seen}`);
+  });
+
   it("reads name, support, state and then the action, and the state is a word in the badge", () => {
     const current = render({ row: row({ isCurrent: true }) });
     const order = ["Celular da Ana", "Registrado em", "Este aparelho"].map(
