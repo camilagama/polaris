@@ -279,10 +279,10 @@ function SplitPaymentDetails({ split }: { split: SplitEvaluation }) {
         const ordinal = index + 1;
         return (
           <div className="grid gap-1.5" key={ordinal}>
-            {/* the name wraps inside its own column (basis + grow) so the amount stays on its first line; the amount only drops below when 320 px with a big font leaves no room for both */}
+            {/* the name wraps inside its own column (basis + grow) so the amount stays on its first line; the basis is small because rem grows with the browser font: a 10 rem basis plus the amount does not fit 320 px at a 20 px font, so a short name would send the amount to the second line */}
             <dl className="grid">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <dt className="min-w-0 flex-1 basis-40 font-medium">
+                <dt className="min-w-0 flex-1 basis-24 font-medium">
                   Parte {ordinal} · {part.methodText}
                 </dt>
                 <dd className="ms-auto text-right font-medium">
