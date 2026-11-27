@@ -176,6 +176,8 @@ async function openScreen(
 const title = (page: Page) =>
   page.getByRole("heading", { exact: true, level: 2, name: "Assinatura" });
 const planTitle = (page: Page) => page.locator("#subscription-plan-title");
+const planBlock = (page: Page) =>
+  page.locator('[aria-labelledby="subscription-plan-title"]');
 const terms = (page: Page) => page.getByTestId("subscription-terms");
 
 test.beforeEach(async ({ page }) => {
@@ -384,6 +386,11 @@ test("cada estado tem título e linha de apoio próprios (AS-9)", async ({
     ],
     [ACTIVE, "Plano Pro", null],
     [
+      { ...ACTIVE, method: null },
+      "Plano Pro",
+      "Próxima cobrança em 23/11/2026, R$ 24,90.",
+    ],
+    [
       {
         ...ACTIVE,
         nextCharge: null,
@@ -404,7 +411,11 @@ test("cada estado tem título e linha de apoio próprios (AS-9)", async ({
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await openScreen(page, { plans: [answer] });
     await expect(planTitle(page)).toHaveText(heading);
-    if (support !== null) {
+    if (support === null) {
+      await expect(planBlock(page)).toBeVisible();
+      const sentence = planBlock(page).getByText("Próxima cobrança em");
+      await expect(sentence).toHaveCount(0);
+    } else {
       await expect(page.getByText(support, { exact: true })).toBeVisible();
     }
   }
@@ -425,9 +436,10 @@ test("Pro ativo e renovação cancelada: como paga, o ciclo, a próxima cobranç
   await expect(payment).toContainText("Mensal");
   await expect(payment).not.toContainText("Mensal · R$");
   await expect(payment).toContainText("23/11/2026 · R$ 24,90");
-  await expect(page.getByText("R$ 24,90")).toHaveCount(1);
-  await expect(page.getByText("23/11/2026")).toHaveCount(1);
-  await expect(page.getByText("Próxima cobrança em")).toHaveCount(0);
+  const card = planBlock(page);
+  await expect(card.getByText("R$ 24,90")).toHaveCount(1);
+  await expect(card.getByText("23/11/2026")).toHaveCount(1);
+  await expect(card.getByText("Próxima cobrança em")).toHaveCount(0);
   await expect(page.getByRole("radiogroup")).toHaveCount(0);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
