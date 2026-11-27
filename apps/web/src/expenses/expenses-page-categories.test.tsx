@@ -192,6 +192,43 @@ function renameCommand(name: string) {
   });
 }
 
+describe("the Categorias part is a list block per group", () => {
+  it("names each group's region by its title and keeps the rows, the badge and the actions in it", async () => {
+    names[FRETE] = { archived: true, name: "Frete" };
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText(FIRST_ROW);
+    await openCategories(user);
+    await user.click(
+      screen.getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
+    );
+
+    const region = await screen.findByRole("region", {
+      name: "Operacional/Administrativa",
+    });
+    const rows = within(region).getAllByRole("listitem");
+    expect(rows.map((row) => row.getAttribute("data-category-id"))).toEqual([
+      FRETE,
+      ALUGUEL,
+    ]);
+    const frete = rows[0] as HTMLElement;
+    expect(within(frete).getByText("Arquivada")).toBeTruthy();
+    expect(
+      within(frete).getByRole("button", { name: "Renomear categoria Frete" })
+    ).toBeTruthy();
+    expect(
+      within(frete).getByRole("button", { name: "Restaurar categoria Frete" })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "Operacional/Administrativa",
+      })
+    ).toBeTruthy();
+    expect(region.querySelector("[data-list-count]")).toBeNull();
+  });
+});
+
 describe("renaming a category on the Categorias part", () => {
   it("reads the list again and the split by category shows the new name", async () => {
     const user = userEvent.setup();
