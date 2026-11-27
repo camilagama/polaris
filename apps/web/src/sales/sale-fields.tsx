@@ -1,6 +1,7 @@
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { type ChangeEvent, type ReactNode, useCallback } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
@@ -449,7 +450,7 @@ export function CatalogNotice({ onRetry, view }: CatalogNoticeProps) {
     return (
       <Alert variant="destructive">
         <AlertDescription className="grid justify-items-start gap-2">
-          {view.message}
+          {withoutRetryAsk(view.message)}
           <RetryButton onClick={onRetry} />
         </AlertDescription>
       </Alert>

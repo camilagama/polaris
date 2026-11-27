@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
@@ -734,7 +735,7 @@ function CustomerPanelBody({
       {currentView.kind === "error" ? (
         <Alert variant="destructive">
           <AlertDescription className="grid justify-items-start gap-2">
-            {currentView.label}
+            {withoutRetryAsk(currentView.label)}
             <RetryButton onClick={link.handleRetry} />
           </AlertDescription>
         </Alert>
@@ -753,7 +754,11 @@ function CustomerPanelBody({
               ref={link.nameLine}
               tabIndex={-1}
             >
-              <span role="status">{currentView.label}</span>
+              <span role="status">
+                {currentView.kind === "customer-error"
+                  ? withoutRetryAsk(currentView.label)
+                  : currentView.label}
+              </span>
               {currentView.kind === "customer-error" ? (
                 <RetryButton onClick={link.retryName} />
               ) : null}

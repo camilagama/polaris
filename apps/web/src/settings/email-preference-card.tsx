@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { FieldError } from "@/ui/field";
 import { Label } from "@/ui/label";
@@ -229,7 +230,7 @@ export function EmailPreferenceCard({
         {preference || loadError ? null : <Skeleton className="h-10 w-full" />}
         {loadError ? (
           <div className="grid justify-items-start gap-2">
-            <FieldError>{loadError}</FieldError>
+            <FieldError>{withoutRetryAsk(loadError)}</FieldError>
             <RetryButton
               aria-busy={readingNow}
               onClick={handleRetry}

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { HelpTip } from "@/ui/help-tip";
@@ -145,7 +146,7 @@ function CustomerLine({ link }: { link: SaleCustomerLink }) {
           role="status"
           tabIndex={-1}
         >
-          {currentView.label}
+          {failed ? withoutRetryAsk(currentView.label) : currentView.label}
         </span>
       </p>
       {failed ? (
@@ -364,7 +365,7 @@ function SaleDetailContent({
       {load.status === "error" ? (
         <Alert variant="destructive">
           <AlertDescription className="grid justify-items-start gap-2">
-            {load.message}
+            {withoutRetryAsk(load.message)}
             <RetryButton onClick={handleRetry} />
           </AlertDescription>
         </Alert>

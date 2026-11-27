@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { InsetBlock } from "@/ui/inset-block";
 import { RetryButton } from "@/ui/retry-button";
@@ -222,7 +223,7 @@ export function ProductVariantsPanel({
     content = (
       <Alert variant="destructive">
         <AlertDescription className="grid justify-items-start gap-2">
-          {loadError}
+          {withoutRetryAsk(loadError)}
           <RetryButton onClick={handleReload} />
         </AlertDescription>
       </Alert>

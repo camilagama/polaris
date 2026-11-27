@@ -11,6 +11,7 @@ import LandmarkIcon from "lucide-react/dist/esm/icons/landmark";
 import QrCodeIcon from "lucide-react/dist/esm/icons/qr-code";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { type ReactNode, useCallback } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
@@ -301,7 +302,7 @@ function ListBody({
       <Alert variant="destructive">
         <CircleAlertIcon aria-hidden="true" />
         <AlertDescription className="grid justify-items-start gap-2">
-          {loadError}
+          {withoutRetryAsk(loadError)}
           <RetryButton onClick={onRetry} />
         </AlertDescription>
       </Alert>

@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import {
@@ -226,7 +227,7 @@ export function BlockError({
   return (
     <Alert className={className} variant="destructive">
       <TriangleAlertIcon aria-hidden="true" />
-      <AlertTitle>{message}</AlertTitle>
+      <AlertTitle>{onRetry ? withoutRetryAsk(message) : message}</AlertTitle>
       {onRetry ? (
         <AlertDescription>
           <RetryButton className="mt-1.5" onClick={onRetry} />

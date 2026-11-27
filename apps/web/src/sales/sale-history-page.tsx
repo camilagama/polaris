@@ -2,6 +2,7 @@ import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
@@ -318,7 +319,7 @@ export function SaleHistoryPage() {
       {view.kind === "error" ? (
         <Alert variant="destructive">
           <AlertDescription className="grid justify-items-start gap-2">
-            {view.message}
+            {withoutRetryAsk(view.message)}
             <RetryButton
               onBlur={focus.onBlur}
               onClick={reload}

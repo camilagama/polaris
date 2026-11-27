@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { CheckableOption } from "@/ui/checkable-option";
@@ -754,7 +755,7 @@ export function ProductMediaPanel({
     list = (
       <Alert variant="destructive">
         <AlertDescription className="grid justify-items-start gap-2">
-          {loadError}
+          {withoutRetryAsk(loadError)}
           <RetryButton onClick={handleReload} />
         </AlertDescription>
       </Alert>

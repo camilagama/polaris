@@ -15,6 +15,7 @@ import {
   TITLE_ACTION_CLASS,
   TitleLine,
 } from "../app-shell/screen-title";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { useIsMobile } from "@/lib/use-mobile";
 
 /* The small parts of the products screen: the title with its button, the notices, the search and the two lists. */
@@ -278,7 +279,7 @@ export function ActionFeedback({
               onRetryError ? "grid justify-items-start gap-2" : undefined
             }
           >
-            {error}
+            {onRetryError ? withoutRetryAsk(error) : error}
             {errorExtra}
             {onRetryError ? <RetryButton onClick={onRetryError} /> : null}
           </AlertDescription>
@@ -307,7 +308,7 @@ export function LoadErrorNotice({ message, onRetry }: LoadErrorProps) {
     <Alert variant="destructive">
       <CircleAlertIcon aria-hidden="true" />
       <AlertDescription className="grid justify-items-start gap-2">
-        {message}
+        {withoutRetryAsk(message)}
         <RetryButton onClick={onRetry} />
       </AlertDescription>
     </Alert>

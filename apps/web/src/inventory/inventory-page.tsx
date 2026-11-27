@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
@@ -487,7 +488,7 @@ export function InventoryPage() {
       {view.kind === "error" ? (
         <Alert variant="destructive">
           <AlertDescription className="grid justify-items-start gap-2">
-            {view.message}
+            {withoutRetryAsk(view.message)}
             <RetryButton
               onBlur={focus.onBlur}
               onClick={handleReload}

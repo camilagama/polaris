@@ -8,6 +8,7 @@ import {
   type Ref,
   useCallback,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
@@ -282,7 +283,7 @@ export function LoadError({ busy, message, onRetry }: LoadErrorProps) {
     <Alert variant="destructive">
       <CircleAlertIcon aria-hidden="true" />
       <AlertDescription className="grid justify-items-start gap-2">
-        {message}
+        {withoutRetryAsk(message)}
         <RetryButton disabled={busy} onClick={onRetry} />
       </AlertDescription>
     </Alert>

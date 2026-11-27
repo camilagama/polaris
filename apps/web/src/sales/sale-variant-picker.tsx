@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
 import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
@@ -285,7 +286,7 @@ export function VariantSearch({
             {view.kind === "empty" ? view.message : null}
             {view.kind === "error" ? (
               <span className="grid justify-items-start gap-2 text-destructive">
-                {view.message}
+                {withoutRetryAsk(view.message)}
                 <RetryButton onClick={retry} />
               </span>
             ) : null}

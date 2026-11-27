@@ -750,9 +750,7 @@ test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o 
   const alert = page.getByRole("alert");
   // three tries (~1.5 s and ~4 s between them) before the screen says it failed
   await expect(alert).toHaveCount(1, { timeout: 15_000 });
-  await expect(alert).toContainText(
-    "Não foi possível abrir o produto. Tente novamente."
-  );
+  await expect(alert).toContainText("Não foi possível abrir o produto.");
   await expect(page.getByText("Camiseta do teste")).toBeVisible();
   // the person is taken to the alert, which is where the button is
   await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
