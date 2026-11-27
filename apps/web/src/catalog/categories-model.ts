@@ -37,8 +37,8 @@ export const EMPTY_TEXT: Record<
     support: "Adicione a primeira do catálogo.",
     title: "Nenhuma categoria ativa.",
   },
-  archived: { title: "Não há categorias arquivadas." },
-  deleted: { title: "Não há categorias removidas." },
+  archived: { title: "Nenhuma categoria arquivada." },
+  deleted: { title: "Nenhuma categoria removida." },
 };
 
 export function categoryNameIsTooLong(name: string): boolean {

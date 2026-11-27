@@ -160,10 +160,10 @@ describe("the list of categories", () => {
     expect(active).not.toContain("<button");
     const archived = render({ categories: [], status: "archived" });
     expect(archived).toContain('role="status"');
-    expect(archived).toContain("Não há categorias arquivadas.");
+    expect(archived).toContain("Nenhuma categoria arquivada.");
     const deleted = render({ categories: [], status: "deleted" });
     expect(deleted).toContain('role="status"');
-    expect(deleted).toContain("Não há categorias removidas.");
+    expect(deleted).toContain("Nenhuma categoria removida.");
   });
 
   it.each(["active", "archived", "deleted"] as const)(
