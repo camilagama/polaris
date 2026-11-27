@@ -866,6 +866,7 @@ test("a competência além de um ano à frente é recusada no campo da data e n�
   await pickDate(page, COMPETENCE_LABEL, lastDay);
   await expect(field).not.toHaveAttribute("aria-invalid", "true");
   await expect(message).toHaveCount(0);
+  // counts the whole page: a copy of the phrase outside the field's describedby ids would not be caught by `message`
   await expect(
     page.getByText(COMPETENCE_TOO_FAR_AHEAD),
     "a frase da competência continua na página depois de a data voltar à janela: ela sobrou em algum ponto fora do campo, apague-a de lá (ou, se é de propósito, conte esse ponto à parte)"
