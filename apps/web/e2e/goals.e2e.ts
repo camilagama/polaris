@@ -17,7 +17,6 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
-import { expectAllMono, expectGeist, expectMono } from "./mono-face";
 import {
   assertNoPageScroll,
   assertNothingClipped,
@@ -25,6 +24,7 @@ import {
   openReflowViewport,
   reflowTest,
 } from "./reflow";
+import { expectAllMono, expectGeist, expectMono } from "./mono-face";
 import { expectSamePlaces, placesOf } from "./same-place";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -1018,30 +1018,25 @@ test("o histórico do alvo ocupa a mesma altura esperando a resposta e depois de
   await openHistory(changedName);
   await openHistory(intactName);
   const waiting = await Promise.all(
-    cases.map(async ({ goal }) => {
-      const body = page.locator(`#goal-history-${goal.id}`);
+    cases.map(async (item) => {
+      const body = page.locator(`#goal-history-${item.goal.id}`);
       await expect(body.getByRole("status")).toBeVisible();
-      return heightOf(body);
+      return { ...item, body, before: await heightOf(body) };
     })
   );
   release();
-  const arrived = await Promise.all(
-    cases.map(async ({ goal, text }) => {
-      const body = page.locator(`#goal-history-${goal.id}`);
+  await Promise.all(
+    waiting.map(async ({ before, body, name, text }) => {
       await expect(body.getByText(text)).toBeVisible();
       await expect(body.getByRole("status")).toHaveCount(0);
-      return heightOf(body);
+      const after = await heightOf(body);
+      expect(before, `${name}: a espera tem altura`).toBeGreaterThan(10);
+      expect(
+        Math.abs(after - before),
+        `${name}: esperando ${before} px, com a resposta ${after} px`
+      ).toBeLessThanOrEqual(1);
     })
   );
-  cases.forEach(({ name }, index) => {
-    const before = waiting[index] ?? 0;
-    const after = arrived[index] ?? 0;
-    expect(before, `${name}: a espera tem altura`).toBeGreaterThan(10);
-    expect(
-      Math.abs(after - before),
-      `${name}: esperando ${before} px, com a resposta ${after} px`
-    ).toBeLessThanOrEqual(1);
-  });
 });
 
 test("cancela a meta só depois da confirmação", async ({ page }) => {
@@ -1544,13 +1539,13 @@ for (const viewport of FORM_VIEWPORTS) {
     const region = page.getByRole("region", { exact: true, name: "Metas" });
     const parts = {
       button: page.getByRole("button", { name: "Nova meta" }),
+      support: region.getByText("Também estimativas."),
       screenTitle: page.getByRole("heading", {
         exact: true,
         includeHidden: true,
         level: 1,
         name: "Resultado",
       }),
-      support: region.getByText("Também estimativas."),
       tab: page.getByRole("tab", { name: GOALS_TAB }),
     };
     const newButtons = page.getByRole("button", { name: "Nova meta" });
