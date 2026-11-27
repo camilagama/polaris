@@ -431,13 +431,14 @@ test("Pro ativo e renovação cancelada: como paga, o ciclo, a próxima cobranç
 }) => {
   await openScreen(page, { plans: [ACTIVE] });
   await expect(page.getByText("Ativo", { exact: true })).toBeVisible();
-  const payment = page.locator("dl");
+  const card = planBlock(page);
+  const payment = card.locator("dl");
+  await expect(payment).toHaveCount(1);
   await expect(payment).toContainText("Como paga");
   await expect(payment).toContainText("Cartão de crédito");
   await expect(payment).toContainText("Mensal");
   await expect(payment).not.toContainText("Mensal · R$");
   await expect(payment).toContainText("23/11/2026 · R$ 24,90");
-  const card = planBlock(page);
   await expect(card.getByText("R$ 24,90")).toHaveCount(1);
   await expect(card.getByText("23/11/2026")).toHaveCount(1);
   await expect(card.getByText("Próxima cobrança em")).toHaveCount(0);
@@ -455,7 +456,7 @@ test("Pro ativo e renovação cancelada: como paga, o ciclo, a próxima cobranç
     ],
   });
   await expect(page.getByText("Renovação cancelada")).toBeVisible();
-  await expect(page.locator("dl")).toContainText("Nenhuma");
+  await expect(planBlock(page).locator("dl")).toContainText("Nenhuma");
   await expect(
     page.getByText(
       "Dá para assinar de novo depois de 23/11/2026, quando este período termina."
@@ -498,7 +499,7 @@ test("Pro ativo sem forma de pagamento registrada: a frase sob o selo sem o valo
     const card = planBlock(page);
     await expect(planTitle(page), label).toHaveText("Plano Pro");
     await expect(card.getByText("Ativo", { exact: true }), label).toBeVisible();
-    await expect(page.locator("dl"), label).toHaveCount(0);
+    await expect(card.locator("dl"), label).toHaveCount(0);
     await expect(card.getByText(REAIS_SIGN), label).toHaveCount(0);
     if (sentence === null) {
       await expect(card.getByText("Próxima cobrança"), label).toHaveCount(0);
