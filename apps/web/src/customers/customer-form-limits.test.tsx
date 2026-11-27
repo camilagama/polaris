@@ -53,7 +53,7 @@ function Harness() {
 const FIELDS = [
   { filler: "a", label: "Nome", limit: MAX_CUSTOMER_NAME_LENGTH },
   { filler: "1", label: "Telefone", limit: MAX_CUSTOMER_PHONE_LENGTH },
-  { filler: "a", label: "Email", limit: MAX_CUSTOMER_EMAIL_LENGTH },
+  { filler: "a", label: "E-mail", limit: MAX_CUSTOMER_EMAIL_LENGTH },
   { filler: "a", label: "Observações", limit: MAX_CUSTOMER_NOTES_LENGTH },
 ] as const;
 

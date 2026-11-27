@@ -26,7 +26,7 @@ export const STATUS_OPTIONS: ReadonlyArray<
 ];
 
 export const CONTACT_REQUIRED_TEXT =
-  "Informe ao menos um telefone ou email para o cliente.";
+  "Informe ao menos um telefone ou e-mail para o cliente.";
 export const NAME_REQUIRED_TEXT = "Informe o nome do cliente.";
 
 const MOBILE_OR_LANDLINE = /^(\d\d)(\d{4,5})(\d{4})$/;
@@ -142,7 +142,7 @@ export function customerErrorMessage(
     code === "BAD_REQUEST" &&
     (action === "save" || action === "duplicate-check")
   ) {
-    return "Confira o nome e informe ao menos um telefone ou email válido.";
+    return "Confira o nome e informe ao menos um telefone ou e-mail válido.";
   }
   if (code === "CONFLICT") {
     return "Os dados do cliente mudaram em outra solicitação. Atualize a lista e tente novamente.";
