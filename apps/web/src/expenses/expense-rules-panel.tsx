@@ -368,6 +368,7 @@ export function ExpenseRulesPanel({
           </FieldLabel>
         </Field>
         <Button
+          className="h-auto min-h-ctl-md max-w-full whitespace-normal py-1 text-center"
           data-rule-new=""
           disabled={busy !== null}
           onClick={handleNew}

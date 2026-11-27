@@ -157,7 +157,7 @@ describe("PaymentProfileList, the states of the list", () => {
 
   it("draws only the EmptyState, with no frame, when nothing was ever registered", () => {
     setup({ hasAnyProfile: false, profiles: [] });
-    expect(screen.getByText("Nenhum perfil cadastrado")).toBeTruthy();
+    expect(screen.getByText("Nenhum perfil cadastrado.")).toBeTruthy();
     expect(document.querySelector("[data-list-block]")).toBeNull();
   });
 

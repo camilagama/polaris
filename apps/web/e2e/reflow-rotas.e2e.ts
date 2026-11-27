@@ -104,15 +104,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
     selector: "main#conteudo > h1",
   },
   {
-    clientWidth: 272,
-    reason:
-      'na aba Recorrentes, o cartão tem 272 px e o conteúdo (o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra) mede 331 px: passa 59 px da borda direita do cartão',
-    screens: ["despesas recorrentes e o diálogo da regra"],
-    scrollWidth: 331,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
     clientWidth: 320,
     reason:
       "no diálogo de produto, o conteúdo do corpo mede 342 px em 320 px e passa 22 px: o painel Variantes (as seções de opções e de combinações, com o formulário de cada uma) pede 318 px numa coluna de 272 px; a faixa de abas Dados, Variantes e Imagens rola dentro da própria caixa e já não alarga o corpo",

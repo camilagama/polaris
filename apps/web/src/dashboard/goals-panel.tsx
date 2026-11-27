@@ -103,7 +103,7 @@ function GoalList({
           afterRead
           icon={TargetIcon}
           support="Acompanhe as vendas líquidas, o resultado estimado ou o número de vendas de um período."
-          title="Nenhuma meta ainda"
+          title="Nenhuma meta ainda."
         />
       ) : null}
       {groups.active.length > 0 ? (
