@@ -5,7 +5,7 @@ import { choose, confirmSale, fillSale } from "../pages/venda";
 import { seedCashSale, seedProduct, seedStock } from "../seed";
 
 const AGENDA = /Agenda 2027/;
-const EMAIL_FIELD = /^Email/;
+const EMAIL_FIELD = /^E-mail/;
 
 /** Journey 4: a customer registered on screen is in the list, one row in the organization, and is chosen on a sale. */
 test("cliente: cadastro, lista e escolha na venda", async ({

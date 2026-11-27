@@ -27,7 +27,7 @@ describe("o grupo de contato do cadastro de cliente", () => {
 
   it("marca os dois campos quando falta contato, ligados à mensagem do formulário", () => {
     const html = render(
-      "Informe ao menos um telefone ou email para o cliente."
+      "Informe ao menos um telefone ou e-mail para o cliente."
     );
     expect(html.match(/aria-invalid="true"/g)).toHaveLength(2);
     expect(

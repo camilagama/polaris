@@ -131,7 +131,7 @@ export function ContactGroup({
           autoComplete="email"
           id="customer-email"
           invalid={contactError !== null}
-          label="Email"
+          label="E-mail"
           maxLength={MAX_CUSTOMER_EMAIL_LENGTH}
           onChange={onEmail}
           type="email"
@@ -139,7 +139,7 @@ export function ContactGroup({
         />
       </div>
       <FieldDescription id="customer-contact-help">
-        Email e telefone podem se repetir entre clientes.
+        E-mail e telefone podem se repetir entre clientes.
       </FieldDescription>
     </FieldSet>
   );
@@ -152,10 +152,10 @@ interface CandidateProps {
   onUseExisting: (customer: CustomerReadModel) => void;
 }
 
-/** What the two customers have in common, in the order the person reads it: "Mesmo email e telefone". */
+/** What the two customers have in common, in the order the person reads it: "Mesmo e-mail e telefone". */
 function matchLabel(matchedBy: Array<"email" | "phone">): string {
   const fields = [
-    matchedBy.includes("email") ? "email" : null,
+    matchedBy.includes("email") ? "e-mail" : null,
     matchedBy.includes("phone") ? "telefone" : null,
   ].filter((field) => field !== null);
   return `Mesmo ${fields.join(" e ")}`;
