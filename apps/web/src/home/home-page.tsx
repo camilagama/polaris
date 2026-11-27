@@ -700,7 +700,7 @@ function HomeHeader({
           ) : null}
         </div>
       </div>
-      <div className="-mt-4 flex w-full flex-wrap items-start gap-2 min-[47.5rem]:col-start-2 min-[47.5rem]:row-start-1 min-[47.5rem]:mt-0 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
+      <div className="-mt-2 flex w-full flex-wrap items-start gap-2 min-[47.5rem]:col-start-2 min-[47.5rem]:row-start-1 min-[47.5rem]:mt-0 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
         {period?.picker}
         {refresh ? (
           <HomeRefresh

@@ -501,7 +501,7 @@ test.describe("loja com venda", () => {
     });
   }
 
-  test("a 360 px, com a frase numa linha, o vão entre ela e a fileira de ações não passa do vão entre dois cartões", async ({
+  test("a 360 px, com a frase numa linha, o vão entre ela e a fileira de ações não passa de 24 px", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -512,11 +512,7 @@ test.describe("loja com venda", () => {
     );
     const { actionsTop, lines, phraseBottom } = await headerGeometry(page);
     expect(lines, "a frase de sexta, 23/10, cabe numa linha").toBe(1);
-    const cardGap = await page
-      .locator("[aria-busy]:has(#home-today)")
-      .evaluate((grid) => Number.parseFloat(getComputedStyle(grid).rowGap));
-    expect(cardGap, "o vão entre os blocos do Início, `gap-4`").toBe(16);
-    expect(actionsTop - phraseBottom).toBeLessThanOrEqual(cardGap);
+    expect(actionsTop - phraseBottom).toBeLessThanOrEqual(24);
   });
 
   for (const [width, at, name] of [
@@ -533,6 +529,10 @@ test.describe("loja com venda", () => {
       await expect(updated).toContainText("atualizado às");
       const settledState = await headerGeometry(page);
       expect(settledState.lines, "a frase quebra em duas linhas").toBe(2);
+      expect(
+        settledState.actionsTop - settledState.phraseBottom,
+        "com duas linhas sobram 8 px entre a frase e a fileira, nunca 0"
+      ).toBeCloseTo(8, 0);
       let answer: () => void = () => undefined;
       server.held.set(
         "report/periodSummary",
