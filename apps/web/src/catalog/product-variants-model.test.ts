@@ -231,7 +231,9 @@ describe("validação das combinações", () => {
     const full = Array.from({ length: MAX_VARIANTS }, (_, index) => row(index));
 
     it("nenhuma opção marcada", () => {
-      const blocker = validateVariantDrafts([], values, []).addBlocker;
+      const result = validateVariantDrafts([], values, []);
+      const blocker = result.addBlocker;
+      expect(result.canAdd).toBe(false);
       expect(blocker).toBe("no_options");
       expect(addCombinationReason(blocker)).toBe(
         "Marque ao menos uma opção para adicionar combinações."
@@ -287,6 +289,19 @@ describe("validação das combinações", () => {
       expect(validateVariantDrafts([], repeated, full).addBlocker).toBe(
         "no_options"
       );
+    });
+
+    it("cada causa desliga canAdd", () => {
+      const repeated = { color: ["Azul", "azul"], model: [], size: ["P"] };
+      const missingValues = { color: ["Azul"], model: [], size: [] };
+      for (const result of [
+        validateVariantDrafts([], values, []),
+        validateVariantDrafts(names, missingValues, []),
+        validateVariantDrafts(names, repeated, []),
+        validateVariantDrafts(names, values, full),
+      ]) {
+        expect(result.canAdd).toBe(false);
+      }
     });
 
     it("sem causa, o botão pode adicionar", () => {
