@@ -388,13 +388,13 @@ export function addAllCombinations(
 export const ALL_COMBINATIONS_PRESENT =
   "Todas as combinações já estão na lista.";
 
-export const ADD_NEEDS_OPTION =
+const ADD_NEEDS_OPTION =
   "Marque ao menos uma opção para adicionar combinações.";
 
 export const ADD_NEEDS_VALUES =
   "Preencha os valores de cada opção para adicionar combinações.";
 
-export const ADD_FIX_VALUES =
+const ADD_FIX_VALUES =
   "Corrija os valores das opções para adicionar combinações.";
 
 export const ADD_AT_LIMIT = `O limite é de ${MAX_VARIANTS} combinações por produto.`;
