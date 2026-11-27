@@ -125,7 +125,10 @@ describe("the sale as a receipt", () => {
 
   it("writes an item with two ends: quantity and charged price at the left, the total of the item at the right, with no equals sign", () => {
     const line = render().match(ITEM_LINE)?.[0] ?? "";
-    const text = line.replace(/<[^>]+>/g, "");
+    const text = line
+      .split("<")
+      .map((piece) => piece.slice(piece.indexOf(">") + 1))
+      .join("");
     expect(text).toBe(
       "2 × R$ 114,95, tabela R$ 139,90Total do item: R$ 229,90"
     );
