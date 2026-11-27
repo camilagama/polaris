@@ -40,7 +40,8 @@ interface AllowedLabel {
 /**
  * Labels over the word limit that keep their text until the design decides. The key is file, line and
  * text: an entry that no longer matches a label (text or line moved) fails, so the list cannot outlive the
- * button; when only the line moved, set the entry's `line` to the one the violation reports.
+ * button. The line is the one of the `>` that closes the button's opening tag (the label text is on the next
+ * line); when only it moved, set the entry's `line` to the one the violation reports.
  */
 const ALLOWED: readonly AllowedLabel[] = [
   {
