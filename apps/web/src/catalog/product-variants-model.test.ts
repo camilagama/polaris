@@ -4,6 +4,7 @@ import { planRoom } from "../subscription/limit-help-model";
 import {
   ALL_COMBINATIONS_PRESENT,
   addAllCombinations,
+  addCombinationReason,
   addAllCombinationsLabel,
   clearDefaultSkuLabel,
   clearedDefaultSkuNotice,
@@ -221,6 +222,101 @@ describe("validação das combinações", () => {
     const result = validateVariantDrafts([], values, []);
     expect(result.canAdd).toBe(false);
     expect(result.canSubmit).toBe(false);
+  });
+
+  describe("o motivo de não poder adicionar, uma frase por causa", () => {
+    const row = (index: number) => ({
+      values: { color: "Azul", size: String(index) },
+    });
+    const full = Array.from({ length: MAX_VARIANTS }, (_, index) => row(index));
+
+    it("nenhuma opção marcada", () => {
+      const result = validateVariantDrafts([], values, []);
+      const blocker = result.addBlocker;
+      expect(result.canAdd).toBe(false);
+      expect(blocker).toBe("no_options");
+      expect(addCombinationReason(blocker)).toBe(
+        "Marque ao menos uma opção para adicionar combinações."
+      );
+    });
+
+    it("opção marcada sem valor", () => {
+      const missingValues = { color: ["Azul"], model: [], size: [] };
+      const blocker = validateVariantDrafts(
+        names,
+        missingValues,
+        []
+      ).addBlocker;
+      expect(blocker).toBe("missing_values");
+      expect(addCombinationReason(blocker)).toBe(
+        "Preencha os valores de cada opção para adicionar combinações."
+      );
+    });
+
+    it("valor repetido ou acima de 80 caracteres", () => {
+      const repeated = { color: ["Azul", "azul"], model: [], size: ["P"] };
+      const tooLong = { color: ["a".repeat(81)], model: [], size: ["P"] };
+      for (const bad of [repeated, tooLong]) {
+        const blocker = validateVariantDrafts(names, bad, []).addBlocker;
+        expect(blocker).toBe("invalid_values");
+        expect(addCombinationReason(blocker)).toBe(
+          "Corrija os valores das opções para adicionar combinações."
+        );
+      }
+    });
+
+    it("50 combinações", () => {
+      const blocker = validateVariantDrafts(names, values, full).addBlocker;
+      expect(blocker).toBe("limit");
+      expect(addCombinationReason(blocker)).toBe(
+        "O limite é de 50 combinações por produto."
+      );
+    });
+
+    it("com mais de uma causa vale a ordem: nenhuma opção, sem valor, repetido ou longo, limite", () => {
+      const missingAndRepeated = {
+        color: ["Azul", "azul"],
+        model: [],
+        size: [],
+      };
+      expect(
+        validateVariantDrafts(names, missingAndRepeated, full).addBlocker
+      ).toBe("missing_values");
+      const repeated = { color: ["Azul", "azul"], model: [], size: ["P"] };
+      expect(validateVariantDrafts(names, repeated, full).addBlocker).toBe(
+        "invalid_values"
+      );
+      expect(validateVariantDrafts([], repeated, full).addBlocker).toBe(
+        "no_options"
+      );
+    });
+
+    it("cada causa desliga canAdd", () => {
+      const repeated = { color: ["Azul", "azul"], model: [], size: ["P"] };
+      const missingValues = { color: ["Azul"], model: [], size: [] };
+      for (const result of [
+        validateVariantDrafts([], values, []),
+        validateVariantDrafts(names, missingValues, []),
+        validateVariantDrafts(names, repeated, []),
+        validateVariantDrafts(names, values, full),
+      ]) {
+        expect(result.canAdd).toBe(false);
+      }
+    });
+
+    it("sem causa, o botão pode adicionar", () => {
+      expect(validateVariantDrafts(names, values, full.slice(1))).toMatchObject(
+        {
+          addBlocker: null,
+          canAdd: true,
+        }
+      );
+      expect(validateVariantDrafts(names, values, [])).toMatchObject({
+        addBlocker: null,
+        canAdd: true,
+      });
+      expect(addCombinationReason(null)).toBeNull();
+    });
   });
 
   it("com opções válidas já se pode adicionar, mas salvar pede ao menos uma combinação completa", () => {

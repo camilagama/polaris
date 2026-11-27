@@ -55,7 +55,7 @@ export function LegalLoadFailure({
           : "Não foi possível abrir esta página. Tente de novo."}
       </EntryAlert>
       <Button
-        className="w-full sm:w-fit"
+        className="w-full md:w-fit"
         onClick={onRetry}
         size="lg"
         type="button"

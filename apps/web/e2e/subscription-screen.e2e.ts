@@ -456,6 +456,7 @@ test("Pro ativo e renovação cancelada: como paga, o ciclo, a próxima cobranç
     ],
   });
   await expect(page.getByText("Renovação cancelada")).toBeVisible();
+  // toContainText on a locator that matches a second dl in the card fails in strict mode, so this also proves the card has exactly one
   await expect(planBlock(page).locator("dl")).toContainText("Nenhuma");
   await expect(
     page.getByText(
