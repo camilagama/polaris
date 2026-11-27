@@ -60,12 +60,15 @@ function CategoryRow({
   );
 
   return (
-    <ListBlock.Row className="flex-wrap gap-y-2" data-category-id={category.id}>
+    <ListBlock.Row
+      className="w-0 min-w-full flex-wrap gap-y-2"
+      data-category-id={category.id}
+    >
       <span className="flex min-w-0 flex-[1_1_10rem] flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
         {category.name}
         {archived ? <Badge variant="warning">Arquivada</Badge> : null}
       </span>
-      <span className="flex gap-2">
+      <span className="flex flex-wrap gap-2">
         <Button
           aria-label={`Renomear categoria ${category.name}`}
           data-category-rename=""
@@ -297,7 +300,9 @@ export function ExpenseCategoriesPanel({
             id={`expense-group-${section.key}`}
             key={section.key}
             state="rows"
-            title={section.label}
+            title={
+              <span className="[overflow-wrap:anywhere]">{section.label}</span>
+            }
           >
             {section.items.map((category) => (
               <CategoryRow
