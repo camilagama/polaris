@@ -1063,7 +1063,10 @@ test.describe("o diálogo pequeno mais alto que a janela rola inteiro", () => {
     await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    const back = dialog.getByRole("button", { exact: true, name: "Voltar" });
+    const back = dialog.getByRole("button", {
+      exact: true,
+      name: "Manter meta",
+    });
     await expect(back).toBeFocused();
     await page.evaluate(
       () =>

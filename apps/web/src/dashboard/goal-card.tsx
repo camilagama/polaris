@@ -285,7 +285,7 @@ function CancelDialog({
             type="button"
             variant="outline"
           >
-            Voltar
+            Manter meta
           </Button>
           <Button
             aria-disabled={busy || undefined}
