@@ -255,7 +255,7 @@ export function ClosedQueueSection({ store }: { store: ClosedStore }) {
         )}
         {view.kind === "after" && queue.kind === "counted" ? (
           <>
-            <Button className="max-sm:w-full" onClick={open} variant="outline">
+            <Button className="max-md:w-full" onClick={open} variant="outline">
               {DISCARD_BUTTON}
             </Button>
             <DiscardDialog

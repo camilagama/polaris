@@ -87,7 +87,7 @@ function SecuritySection() {
         <a
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "self-start max-sm:w-full"
+            "self-start max-md:w-full"
           )}
           href={tabHref("account", "senha")}
         >
