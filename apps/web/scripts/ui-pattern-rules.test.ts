@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  * - R4: `ListTotalFooter`, `ListNotice` e `RowTile` só vivem em `ui/`: a tela usa o `ListBlock` (o total é o
  *   `ListBlock.Total`), nunca as peças soltas.
  * - R5 (aviso, não reprova): um `Block` cujo conteúdo faz `.map(` de linhas fora de um `ListBlock`. `R5_EXEMPT` guarda
- *   os arquivos cujas linhas não são lista de registros (painel de várias ações, links de navegação, relato de estado).
+ *   os arquivos cujas linhas não são lista de registros (painel de várias ações, relato de estado).
  *
  * A varredura é `src/**` fora de `ui/`, da galeria e dos testes. Cada regra tem uma lista de dívida com os arquivos de
  * antes do padrão, uma linha de comentário por pasta separando os grupos (dois pacotes de pastas diferentes não
@@ -244,7 +244,6 @@ export function blockMapHits(text: string): number {
 /** The only reasons a file may give to stay out of the `ListBlock`: its rows are not a list of records. */
 export const R5_EXEMPT_REASONS = [
   "multi-action-panel",
-  "navigation-links",
   "status-report",
 ] as const;
 
@@ -266,19 +265,19 @@ export const R5_EXEMPT: readonly R5Exemption[] = [
     file: "src/catalog/public-catalog-panels.tsx",
     blocks: 1,
     reason: "multi-action-panel",
-    why: "Cada produto do catálogo público tem a própria ação de mostrar ou esconder, dentro de um painel de várias ações: não é uma lista de registros.",
+    why: "O cartão Produtos tem duas ações no cabeçalho (Mostrar todos e Tirar todos), frase de contagem, mensagens, busca e carregar mais no mesmo painel; a ListBlock só tem lugar para uma ação. Converter é redesenho.",
   },
   {
     file: "src/data-export/data-export-list.tsx",
     blocks: 1,
     reason: "status-report",
-    why: "Cada cópia dos dados é o relato de um pedido, com situação, prazo e o link para baixar: lê-se como um relatório de estado, não como uma lista de registros.",
+    why: "Cada cópia é um pequeno relato de estado (data do pedido, formatos, uma frase e botões de arquivo que quebram de linha), não uma linha de registro; são poucos itens.",
   },
   {
     file: "src/organization/closed-store-page.tsx",
     blocks: 1,
-    reason: "navigation-links",
-    why: "A página da loja encerrada diz a situação em frases e leva à cópia dos dados; a escolha entre lojas é uma lista de links, que é navegação e não registro.",
+    reason: "status-report",
+    why: "O cartão de situação da loja encerrada mostra frases corridas sobre a fase da loja, não linhas de registro; a lista de links da escolha de loja fica fora de Block e a trava não a conta.",
   },
 ];
 
@@ -874,14 +873,14 @@ describe("R5: Block com .map de linhas fora de um ListBlock (aviso)", () => {
 
   describe("a isenção de R5", () => {
     const FILE = "src/x/lista.tsx";
-    const WHY = "Cada linha é um link para outra página, não um registro.";
+    const WHY = "Cada linha é um relato de estado da fase, não um registro.";
     const exemption = (
       overrides: Partial<R5Exemption> = {}
     ): readonly R5Exemption[] => [
       {
         file: FILE,
         blocks: 1,
-        reason: "navigation-links",
+        reason: "status-report",
         why: WHY,
         ...overrides,
       },
