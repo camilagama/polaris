@@ -715,6 +715,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-real/harness/relogio-retry.e2e.ts": ["home"],
   "apps/web/e2e-real/harness/relogio.e2e.ts": ["home"],
   "apps/web/e2e-real/jornadas/catalogo-publico-leitura.e2e.ts": ["home"],
+  "apps/web/e2e-real/jornadas/catalogo-publico.e2e.ts": ["home", "settings"],
   "apps/web/e2e-real/jornadas/cliente.e2e.ts": ["home", "sale", "customers"],
   "apps/web/e2e-real/jornadas/despesa.e2e.ts": [
     "home",
