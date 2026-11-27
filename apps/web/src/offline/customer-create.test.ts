@@ -7,6 +7,7 @@ import { signOfflineLease } from "../lib/offline-lease-token";
 import { isTransientReadFailure } from "../lib/rpc-error";
 import {
   createOfflineCustomer,
+  discardPendingCustomer,
   pendingCustomers,
   restorePendingCustomers,
 } from "./customer-create";
@@ -214,6 +215,99 @@ describe("creating a customer offline", () => {
 
     expect(await restorePendingCustomers(outbox, writer)).toBe(1);
     expect(writer.customer(uuid(201))?.name).toBe("Ana");
+  });
+});
+
+describe("discarding a pending customer", () => {
+  let queued = 0;
+  const queueOther = async (
+    outbox: Outbox,
+    lease: string,
+    payload: Record<string, string>
+  ) => {
+    queued += 1;
+    return await outbox.enqueue({
+      baseVersion: null,
+      commandId: uuid(500 + queued),
+      deviceId,
+      lease,
+      organizationId,
+      payload,
+      type: "sale.confirm",
+    });
+  };
+
+  it("refuses while the command is being sent: the command and the local row stay", async () => {
+    const { create, outbox, writer } = await setup();
+    const { command } = await create({ name: "Ana", phone: "1" });
+    await outbox.markSending(command.commandId);
+
+    await expect(
+      discardPendingCustomer(outbox, writer, command.commandId)
+    ).rejects.toThrow("customer_is_sending");
+
+    expect((await outbox.snapshot()).commands).toMatchObject([
+      { commandId: uuid(101), status: "sending" },
+    ]);
+    expect(writer.customer(uuid(201))?.name).toBe("Ana");
+  });
+
+  it("refuses while a later command refers to the customer: the queue and the device do not change", async () => {
+    const { create, outbox, writer } = await setup();
+    const { command } = await create({ name: "Ana", phone: "1" });
+    const sale = await queueOther(outbox, command.lease, {
+      customerId: uuid(201),
+    });
+    const queueBefore = (await outbox.snapshot()).commands;
+
+    await expect(
+      discardPendingCustomer(outbox, writer, command.commandId)
+    ).rejects.toThrow("customer_has_dependent_commands");
+
+    expect((await outbox.snapshot()).commands).toEqual(queueBefore);
+    expect(queueBefore.map((c) => c.commandId)).toEqual([
+      command.commandId,
+      sale.commandId,
+    ]);
+    expect(writer.customer(uuid(201))?.name).toBe("Ana");
+  });
+
+  it("refuses a command of another type and one that does not exist, changing nothing", async () => {
+    const { create, outbox, writer } = await setup();
+    const { command } = await create({ name: "Ana", phone: "1" });
+    const lookalike = await queueOther(outbox, command.lease, {
+      customerId: uuid(299),
+      name: "Cliente de outro tipo",
+    });
+    const queueBefore = (await outbox.snapshot()).commands;
+
+    await expect(
+      discardPendingCustomer(outbox, writer, lookalike.commandId)
+    ).rejects.toThrow("not_a_pending_customer");
+    await expect(
+      discardPendingCustomer(outbox, writer, uuid(999))
+    ).rejects.toThrow("not_a_pending_customer");
+
+    expect((await outbox.snapshot()).commands).toEqual(queueBefore);
+    expect(writer.customer(uuid(201))?.name).toBe("Ana");
+  });
+
+  it("removes the command and the local row, and leaves an unrelated command queued", async () => {
+    const { create, outbox, writer } = await setup();
+    const ana = await create({ name: "Ana", phone: "1" });
+    const bia = await create({ name: "Bia", phone: "2" });
+    const unrelated = await queueOther(outbox, ana.command.lease, {
+      note: "sem cliente",
+    });
+
+    await discardPendingCustomer(outbox, writer, ana.command.commandId);
+
+    expect((await outbox.snapshot()).commands.map((c) => c.commandId)).toEqual([
+      bia.command.commandId,
+      unrelated.commandId,
+    ]);
+    expect(writer.customer(uuid(201))).toBeUndefined();
+    expect(writer.customer(uuid(202))?.name).toBe("Bia");
   });
 });
 
