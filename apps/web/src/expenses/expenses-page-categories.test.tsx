@@ -296,6 +296,7 @@ describe("renaming a category on the Categorias part", () => {
       expect(within(block).getByText("Transporte")).toBeTruthy()
     );
     expect(within(block).queryByText("Frete")).toBeNull();
+    expect(screen.getByText("Categoria “Transporte” renomeada.")).toBeTruthy();
   });
 
   it("keeps the second page and shows the new name in the rows and in the split", async () => {

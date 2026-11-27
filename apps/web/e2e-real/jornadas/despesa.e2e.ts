@@ -548,7 +548,9 @@ test("categoria de despesa: renomear muda o nome e o banco guarda o mesmo id e o
   await form.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByRole("status").filter({ hasText: "Categoria renomeada." })
+    page
+      .getByRole("status")
+      .filter({ hasText: `Categoria “${renamed}” renomeada.` })
   ).toBeVisible();
 
   await expect
