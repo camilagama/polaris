@@ -588,7 +588,7 @@ test("o botão de desfazer some quando a janela acaba, sem nova leitura (AC-8, A
 const undoDialog = (page: Page) =>
   page.getByRole("dialog", { name: "Desfazer o encerramento?" });
 const confirmUndo = (page: Page) =>
-  undoDialog(page).getByRole("button", { name: "Sim, desfazer" });
+  undoDialog(page).getByRole("button", { name: "Desfazer encerramento" });
 const REOPENED = /reaberta/i;
 
 test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () => {
@@ -602,7 +602,9 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
       "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado não é enviado sozinho: fica em Pendências e precisa ser refeito."
     );
     await expect(confirmUndo(page)).toBeVisible();
-    await undoDialog(page).getByRole("button", { name: "Voltar" }).click();
+    await undoDialog(page)
+      .getByRole("button", { name: "Manter encerramento" })
+      .click();
     await expect(undoDialog(page)).toHaveCount(0);
     await undoButton(page).click();
     await page.keyboard.press("Escape");
@@ -639,7 +641,7 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
     });
     await expect(sending).toHaveAttribute("aria-disabled", "true");
     await expect(
-      undoDialog(page).getByRole("button", { name: "Voltar" })
+      undoDialog(page).getByRole("button", { name: "Manter encerramento" })
     ).toHaveAttribute("aria-disabled", "true");
     await sending.click({ force: true });
     release();
