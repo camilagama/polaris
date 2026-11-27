@@ -445,7 +445,7 @@ test("AC-10 e AC-5: a conexão cai no meio (com uma resposta perdida), a tela di
   await expect(dialog.getByRole("button", { name: "Fechar" })).toHaveCount(0);
 
   await expect(
-    statusIn(dialog, "Sem internet. 1 produto entrou; 2 faltam.")
+    statusIn(dialog, "Sem conexão. 1 produto entrou; 2 faltam.")
   ).toBeVisible({ timeout: 30_000 });
   const again = dialog.getByRole("button", { name: "Continuar de onde parou" });
   await expect(again).toHaveAttribute("aria-disabled", "true");

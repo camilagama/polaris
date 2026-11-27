@@ -107,7 +107,7 @@ test("sem internet o controle fica aria-disabled, descrito pela faixa, e nada sa
   const server = await openPreferenceScreen(page);
   await expect(tips(page)).toBeVisible();
   await page.context().setOffline(true);
-  await expect(page.getByText("Sem internet.")).toHaveCount(1);
+  await expect(page.getByText("Sem conexão.")).toHaveCount(1);
   await expect(tips(page)).toHaveAttribute("aria-disabled", "true");
   await expect(tips(page)).toHaveAttribute("aria-describedby", OFFLINE_REASON);
   await tips(page).click({ force: true });

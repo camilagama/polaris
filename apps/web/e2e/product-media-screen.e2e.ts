@@ -343,7 +343,7 @@ test("remover sem internet anuncia o resultado incerto como alerta, mantém a li
     .getByRole("button", { name: "Remover imagem" })
     .click();
   await expect(page.getByRole("alert")).toHaveText(
-    "Sem internet. Tente de novo quando a conexão voltar; repetir é seguro."
+    "Sem conexão. Tente de novo quando a conexão voltar; repetir é seguro."
   );
   await expect(page.getByText("Imagem 1 de 2")).toBeVisible();
   await expect(
@@ -399,7 +399,7 @@ test("enviar sem internet diz 'Sem internet' e que repetir é seguro, e a imagem
   ).toBeVisible();
   await page.getByRole("button", { name: "Enviar imagem" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Sem internet. Tente de novo quando a conexão voltar; repetir é seguro."
+    "Sem conexão. Tente de novo quando a conexão voltar; repetir é seguro."
   );
   // nothing was lost: the crop area and the button are still there for the next try
   await expect(
@@ -702,7 +702,7 @@ test("a nova tentativa depois de cair a conexão envia os mesmos bytes, com o me
     name: "foto.png",
   });
   await page.getByRole("button", { name: "Enviar imagem" }).click();
-  await expect(page.getByRole("alert")).toContainText("Sem internet.");
+  await expect(page.getByRole("alert")).toContainText("Sem conexão.");
   await page.getByRole("button", { name: "Enviar imagem" }).click();
   await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
 

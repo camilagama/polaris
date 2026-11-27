@@ -173,7 +173,7 @@ test("o calendário vem do seu próprio chunk, baixado quando a galeria pede um"
 });
 
 const FAILED_TEXT = "O calendário não abriu.";
-const OFFLINE_TEXT = "Sem internet. O calendário abre quando a conexão voltar.";
+const OFFLINE_TEXT = "Sem conexão. O calendário abre quando a conexão voltar.";
 
 /** The box of the calendar inside the section of the gallery that shows the month alone. */
 const inlineBox = (page: Page) =>
@@ -194,7 +194,7 @@ test("sem o chunk do calendário, com rede: o seletor abre, diz que o calendári
   await expect(popup.getByRole("button", { name: "Hoje" })).toBeVisible();
 });
 
-test("sem o chunk do calendário e sem internet: diz Sem internet, sem botão, Hoje continua e o calendário abre sozinho quando a conexão volta", async ({
+test("sem o chunk do calendário e sem internet: diz Sem conexão, sem botão, Hoje continua e o calendário abre sozinho quando a conexão volta", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -265,7 +265,7 @@ test("Tentar novamente refaz o pedido do chunk sem recarregar a página e o cale
 const SAFARI_MESSAGE = "Importing a module script failed.";
 const RELOAD_TEXT = "Recarregar a página";
 const RELOAD_OFFLINE_TEXT =
-  "Sem internet. Conecte-se e recarregue a página para abrir o calendário.";
+  "Sem conexão. Conecte-se e recarregue a página para abrir o calendário.";
 
 async function chunkFailsLikeSafari(page: Page, count: { asked: number }) {
   await page.route(CALENDAR_CHUNK, (route) => {
