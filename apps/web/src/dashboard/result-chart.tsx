@@ -422,7 +422,7 @@ const spokenMasked = () => MASKED_SPOKEN;
 const noAxis = () => "";
 
 /**
- * The height of the plot of the Início (140 px on a phone, 200 from 768 px), one for every period and every cost
+ * The height of the plot of the Início (140 px on a phone, 200 from 760 px), one for every period and every cost
  * state, so the card of the chart never changes its box and the two screens draw the same area.
  */
 function usePlotHeight() {
