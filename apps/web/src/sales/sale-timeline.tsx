@@ -35,7 +35,9 @@ export function SaleTimeline({
                 aria-hidden="true"
                 className={`absolute top-1.5 left-0 size-2 rounded-full ${DOT[event.tone]}`}
               />
-              <span>{event.label}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                {event.label}
+              </span>
               <span className="sr-only">, </span>
               <time
                 className="shrink-0 text-muted-foreground text-xs tabular-nums"

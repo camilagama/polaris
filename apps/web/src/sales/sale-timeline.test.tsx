@@ -1,6 +1,7 @@
 import type { SaleDetailReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 import { ReadyDetailTop } from "./sale-detail-page";
@@ -17,7 +18,7 @@ const SALE_LINE = /^Venda feita, \d{1,2} jun \d{2}:\d{2}$/;
 const OL = /<ol[\s>]/g;
 const LI = /<li[\s>]/g;
 const ITEM_TEXT =
-  /<li[^>]*><span aria-hidden="true"[^>]*><\/span><span>([^<]*)<\/span><span class="sr-only">([^<]*)<\/span><time[^>]*>([^<]*)<\/time><\/li>/g;
+  /<li[^>]*><span aria-hidden="true"[^>]*><\/span><span[^>]*>([^<]*)<\/span><span class="sr-only">([^<]*)<\/span><time[^>]*>([^<]*)<\/time><\/li>/g;
 
 const returnAt = (
   n: number,
