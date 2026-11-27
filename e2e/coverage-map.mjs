@@ -708,6 +708,7 @@ export const SPEC_SCREENS = {
     "home",
     "inventory",
     "products",
+    "sale-history",
   ],
   "apps/web/e2e-pwa/ui-visual.e2e.ts": "all",
   "apps/web/e2e-pwa/update-moments.e2e.ts": ["home", "sale"],
