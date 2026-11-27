@@ -40,7 +40,7 @@ test("produtos: criar um produto e vê-lo na lista", async ({
     "Produtos aberto pelo menu, antes de criar"
   );
 
-  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByRole("button", { name: "Novo produto" }).click();
   const dialog = page.getByRole("dialog", { name: "Novo produto" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Nome do produto").fill(productName);

@@ -294,7 +294,7 @@ test.describe("the customer of the sale", () => {
     expect(taps).toBe(5);
   });
 
-  test("removing asks first: Cancelar sends nothing, Sim sends once", async ({
+  test("removing asks first: Manter cliente sends nothing, Remover cliente sends once", async ({
     page,
   }) => {
     const asked = await openCustomer(page);
