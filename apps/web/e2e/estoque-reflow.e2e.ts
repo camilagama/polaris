@@ -542,7 +542,7 @@ const LINE_OFFSET_PIXELS = 1;
 const CONTAINER_LINE_REM = 42;
 
 reflowTest(
-  "a linha de contêiner das três colunas é de 42 rem, a do DESIGN.md",
+  "a linha de contêiner das três colunas é de 42 rem, como o DESIGN.md diz",
   async ({ page }) => {
     await openStock(page, WIDE_WINDOW, 16);
     expect(
