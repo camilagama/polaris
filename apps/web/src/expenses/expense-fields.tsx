@@ -1,7 +1,6 @@
 import type { ExpenseCategoryReadModel } from "@polaris/contracts";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type ChangeEvent,
   type ComponentProps,
@@ -14,6 +13,7 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Field, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { RetryButton } from "@/ui/retry-button";
 import {
   Select,
   SelectContent,
@@ -281,18 +281,9 @@ export function LoadError({ busy, message, onRetry }: LoadErrorProps) {
   return (
     <Alert variant="destructive">
       <CircleAlertIcon aria-hidden="true" />
-      <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <AlertDescription className="grid justify-items-start gap-2">
         {message}
-        <Button
-          disabled={busy}
-          onClick={onRetry}
-          size="sm"
-          type="button"
-          variant="link"
-        >
-          <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-          Tentar novamente
-        </Button>
+        <RetryButton disabled={busy} onClick={onRetry} />
       </AlertDescription>
     </Alert>
   );

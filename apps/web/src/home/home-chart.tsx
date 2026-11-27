@@ -1,6 +1,5 @@
 import { Money } from "@polaris/domain/money/money";
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/ui/button";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import {
   EXTRA_HEIGHT,
@@ -9,6 +8,7 @@ import {
 } from "@/ui/charts/on-demand";
 import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
+import { RetryButton } from "@/ui/retry-button";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount } from "../lib/format";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
@@ -90,9 +90,7 @@ export function ChartFailed() {
   return online ? (
     <div className="grid justify-items-start gap-2">
       <p className="text-muted-foreground text-support">O gráfico não abriu.</p>
-      <Button onClick={reloadPage} size="sm" type="button" variant="outline">
-        Tentar novamente
-      </Button>
+      <RetryButton onClick={reloadPage} />
     </div>
   ) : (
     <p className="text-muted-foreground text-support">

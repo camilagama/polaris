@@ -1,6 +1,5 @@
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { type ChangeEvent, type ReactNode, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
@@ -11,6 +10,7 @@ import { DateRangePicker } from "@/ui/date-range-picker";
 import type { DateRange, IsoDate } from "@/ui/date-values";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { RetryButton } from "@/ui/retry-button";
 import {
   Select,
   SelectContent,
@@ -448,12 +448,9 @@ export function CatalogNotice({ onRetry, view }: CatalogNoticeProps) {
   if (view.kind === "error") {
     return (
       <Alert variant="destructive">
-        <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <AlertDescription className="grid justify-items-start gap-2">
           {view.message}
-          <Button onClick={onRetry} size="sm" type="button" variant="link">
-            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-            Tentar novamente
-          </Button>
+          <RetryButton onClick={onRetry} />
         </AlertDescription>
       </Alert>
     );

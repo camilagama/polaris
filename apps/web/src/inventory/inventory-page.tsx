@@ -1,7 +1,6 @@
 import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PackageIcon from "lucide-react/dist/esm/icons/package";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type MouseEvent,
   type ReactNode,
@@ -21,6 +20,7 @@ import { HelpTip } from "@/ui/help-tip";
 import { MoneyText } from "@/ui/hidden-values";
 import { ListBlock } from "@/ui/list-block";
 import { RefreshButton } from "@/ui/refresh-button";
+import { RetryButton } from "@/ui/retry-button";
 import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
@@ -474,37 +474,25 @@ export function InventoryPage() {
 
       {more.refreshFailed ? (
         <Alert variant="warning">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <AlertDescription className="grid justify-items-start gap-2">
             {LIST_REFRESH_FAILED_TEXT}
-            <Button
+            <RetryButton
               onBlur={focus.onBlur}
               onClick={handleReload}
               onFocus={focus.onFocus}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-              Tentar novamente
-            </Button>
+            />
           </AlertDescription>
         </Alert>
       ) : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <AlertDescription className="grid justify-items-start gap-2">
             {view.message}
-            <Button
+            <RetryButton
               onBlur={focus.onBlur}
               onClick={handleReload}
               onFocus={focus.onFocus}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-              Tentar novamente
-            </Button>
+            />
           </AlertDescription>
         </Alert>
       ) : null}

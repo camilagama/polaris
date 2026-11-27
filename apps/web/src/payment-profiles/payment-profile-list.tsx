@@ -28,6 +28,7 @@ import { Field, FieldLabel } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { InsetBlock } from "@/ui/inset-block";
 import { ListBlock } from "@/ui/list-block";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { describeFee, settlementText } from "./payment-fee-model";
@@ -299,11 +300,9 @@ function ListBody({
     return (
       <Alert variant="destructive">
         <CircleAlertIcon aria-hidden="true" />
-        <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <AlertDescription className="grid justify-items-start gap-2">
           {loadError}
-          <Button onClick={onRetry} size="sm" type="button" variant="link">
-            Tentar novamente
-          </Button>
+          <RetryButton onClick={onRetry} />
         </AlertDescription>
       </Alert>
     );

@@ -11,8 +11,8 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { Button } from "@/ui/button";
 import { InsetBlock } from "@/ui/inset-block";
+import { RetryButton } from "@/ui/retry-button";
 import { Skeleton } from "@/ui/skeleton";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
@@ -221,11 +221,9 @@ export function ProductVariantsPanel({
   } else if (loadError) {
     content = (
       <Alert variant="destructive">
-        <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <AlertDescription className="grid justify-items-start gap-2">
           {loadError}
-          <Button onClick={handleReload} size="sm" type="button" variant="link">
-            Tentar novamente
-          </Button>
+          <RetryButton onClick={handleReload} />
         </AlertDescription>
       </Alert>
     );
