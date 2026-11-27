@@ -233,8 +233,9 @@ function ChosenVariant({
           <span className="font-medium">{item.label}</span>
           {stockState ? (
             <>
+              {" "}
               <span aria-hidden="true" className="text-muted-foreground">
-                {" · "}
+                {"·\u00A0"}
               </span>
               <span
                 className={cn(
