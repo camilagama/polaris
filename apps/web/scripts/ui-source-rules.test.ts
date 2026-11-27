@@ -458,6 +458,52 @@ export function numberFontFaults(path: string, text: string): string[] {
       ];
 }
 
+const PAGE_ACTION_WIDTH = /(?:^|:)(?:max-sm:w-full|sm:w-fit|sm:w-auto)$/;
+
+const PAGE_ACTION_ALLOWED: readonly { file: string; why: string }[] = [
+  {
+    file: "src/expenses/month-picker.tsx",
+    why: "controle de campo",
+  },
+  {
+    file: "src/ui/date-picker.tsx",
+    why: "controle de campo",
+  },
+  {
+    file: "src/ui/date-range-picker.tsx",
+    why: "controle de campo",
+  },
+];
+
+const pageActionWidthTokens = (path: string, text: string) =>
+  TSX.test(path)
+    ? classTokens(text).filter((token) =>
+        PAGE_ACTION_WIDTH.test(token.replace(IMPORTANT, ""))
+      )
+    : [];
+
+export function pageActionWidthFaults(
+  path: string,
+  text: string,
+  allowed: readonly { file: string }[] = PAGE_ACTION_ALLOWED
+): string[] {
+  if (allowed.some((entry) => entry.file === path)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      pageActionWidthTokens(path, text).map(
+        (token) =>
+          `${token}: ação da página: use \`max-md:w-full\` (DESIGN.md, Responsividade e toque)`
+      )
+    ),
+  ];
+}
+
+const PAGE_ACTION_SCOPE = MOTION_SCOPE.filter(
+  (path) => !path.startsWith("src/ui-gallery/")
+);
+
 /** An amount written by `{formatBrlAmount(…)}` as the child of an element, alone or after `?`, `&&`, `||`, `??` or `String(`, or as `children=`, skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks only when it is a prop (`text={`…`}`) or a variable, not when it is itself the child; a prop of a component (`text={…}`) reaches the mask. Only `.tsx` files are read: a model that returns text is not JSX. */
 const BRL_IN_JSX =
   /(?<![=$])\{\s*(?:String\()?formatBrlAmount\(|(?<![=$])\{(?!\s*(?:const|let|return|\w+:))[^{};]*?(?:\?|&&|\|\|)[^{};]*?formatBrlAmount\(|children=\{\s*formatBrlAmount\(|(?<![=$])\{\s*`[^`]*\$\{\s*formatBrlAmount\(/;
@@ -807,6 +853,27 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   );
 
+  it.each(PAGE_ACTION_SCOPE)(
+    "%s: o botão de ação da página não usa max-sm:w-full, sm:w-fit nem sm:w-auto",
+    (path) => {
+      expect(pageActionWidthFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("a lista de largura de botão está em ordem, tem o motivo escrito e cada arquivo dela ainda usa a classe (uma lista velha deixaria passar outra coisa)", () => {
+    expect(PAGE_ACTION_ALLOWED.map((entry) => entry.file)).toEqual(
+      PAGE_ACTION_ALLOWED.map((entry) => entry.file).toSorted()
+    );
+    for (const entry of PAGE_ACTION_ALLOWED) {
+      expect(entry.why, entry.file).not.toBe("");
+      expect(PAGE_ACTION_SCOPE, entry.file).toContain(entry.file);
+      expect(
+        pageActionWidthTokens(entry.file, read(entry.file)).length,
+        entry.file
+      ).toBeGreaterThan(0);
+    }
+  });
+
   it("a lista do número em mono está em ordem, cada arquivo dela existe e ainda tem o que ela conta, com o motivo escrito (uma lista velha deixaria passar outra coisa)", () => {
     const files = NUMBER_FONT_ELSEWHERE.map((entry) => entry.file);
     expect(files).toEqual([...files].sort((a, b) => a.localeCompare(b, "en")));
@@ -877,6 +944,45 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     expect(block).toContain("transition-duration: 0.01ms !important");
     expect(block).toContain("::before");
     expect(block).toContain("::after");
+  });
+});
+
+describe("controle: a largura do botão de ação da página", () => {
+  it.each([
+    'className="w-full sm:w-fit"',
+    'className="max-sm:w-full"',
+    'className="sm:w-auto"',
+    'className="touch:sm:w-fit"',
+    'className="hover:max-sm:w-full p-2"',
+    'className="sm:w-fit!"',
+    'cn("w-full", open && "sm:w-fit")',
+  ])("%s é reprovado", (text) => {
+    expect(pageActionWidthFaults("src/home/x.tsx", text).join("\n")).toContain(
+      "ação da página: use `max-md:w-full`"
+    );
+  });
+
+  it.each([
+    'className="max-md:w-full"',
+    'className="w-full md:w-fit"',
+    'className="md:w-fit"',
+    'className="max-sm:w-fit"',
+    'className="w-full"',
+    '// className="sm:w-fit"',
+  ])("%s passa", (text) => {
+    expect(pageActionWidthFaults("src/home/x.tsx", text)).toEqual([]);
+  });
+
+  it("o arquivo da lista passa e o mesmo texto em outro arquivo reprova; .ts não é lido", () => {
+    const text = 'className="w-full sm:w-fit"';
+    expect(pageActionWidthFaults("src/ui/date-picker.tsx", text)).toEqual([]);
+    expect(pageActionWidthFaults("src/ui/outro.tsx", text)).toHaveLength(1);
+    expect(pageActionWidthFaults("src/home/x.ts", text)).toEqual([]);
+    expect(
+      pageActionWidthFaults("src/home/x.tsx", text, [
+        { file: "src/home/x.tsx" },
+      ])
+    ).toEqual([]);
   });
 });
 
