@@ -539,6 +539,20 @@ for (const width of [WIDE_WINDOW, 1024]) {
 
 const LINE_OFFSET_PIXELS = 1;
 
+const CONTAINER_LINE_REM = 42;
+
+reflowTest(
+  "a linha de contêiner das três colunas é de 42 rem, como o DESIGN.md diz",
+  async ({ page }) => {
+    await openStock(page, WIDE_WINDOW, 16);
+    expect(
+      await containerLineRem(page),
+      `a regra das três colunas (o md:@2xl: da linha, em inventory-page.tsx) não está em ${CONTAINER_LINE_REM} rem (ou o seletor _18.5rem deixou de achá-la); se a linha mudou de propósito, mude o DESIGN.md (Estoque), o nome dos testes de fronteira e CONTAINER_LINE_REM juntos`
+    ).toEqual([CONTAINER_LINE_REM]);
+  },
+  { coarse: false }
+);
+
 for (const [side, sign] of [
   ["acima", 1],
   ["abaixo", -1],

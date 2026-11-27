@@ -833,6 +833,10 @@ test("a competência além de um ano à frente é recusada no campo da data e n�
     category: "Aluguel",
     description: "Conta de luz",
   });
+  expect(
+    MAX_EXPENSE_COMPETENCE_DAYS_AHEAD,
+    "a janela da competência à frente mudou: mude este teste e a regra do domínio juntos (docs/business-rules)"
+  ).toBe(366);
   const lastDay = daysAfterToday(MAX_EXPENSE_COMPETENCE_DAYS_AHEAD);
   const beyond = daysAfterToday(MAX_EXPENSE_COMPETENCE_DAYS_AHEAD + 1);
   const callsBefore = server.calls.length;
