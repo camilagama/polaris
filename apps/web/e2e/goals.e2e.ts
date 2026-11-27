@@ -1049,7 +1049,7 @@ test("cancela a meta só depois da confirmação", async ({ page }) => {
   await goal
     .getByRole("button", { name: "Cancelar meta Meta de vendas" })
     .click();
-  await expect(dialog).toContainText("isso não poderá ser desfeito");
+  await expect(dialog).toContainText("Não dá para desfazer.");
   expect(server.goals[0]?.status).toBe("active");
 
   // back out: nothing was cancelled

@@ -81,8 +81,7 @@ export function ReturnReviewNotice({
         <p>{review.totalsText}</p>
         <p>
           O estoque volta apenas nas quantidades de “Volta ao estoque”, pelo
-          custo de cada item. A venda é preservada. Isso não poderá ser
-          desfeito.
+          custo de cada item. A venda é preservada. Não dá para desfazer.
         </p>
       </AlertDescription>
     </Alert>
