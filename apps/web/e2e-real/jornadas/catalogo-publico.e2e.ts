@@ -4,6 +4,7 @@ import { expect, openJourney, test } from "../fixtures";
 import { seedProduct } from "../seed";
 
 const ADDRESS_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const MIN_ADDRESS = 3;
 const MAX_ADDRESS = 40;
 const RUN_ID_PATTERN = /^[a-f0-9]{12}$/;
 const LEADING_HYPHENS = /^-+/;
@@ -631,4 +632,151 @@ test("catálogo público: o interruptor, a escolha dos produtos e o downgrade qu
   await expect
     .poll(async () => (await storedProfiles(sql, organizationId))[0]?.published)
     .toBe(false);
+
+  // turning on needs the plan: the screen holds the switch off and the command refuses, and the profile stays off as it was
+  const [off] = await storedProfiles(sql, organizationId);
+  expect(off).toMatchObject({ published: false });
+  const turnOn = page.getByRole("button", { name: "Ligar catálogo" });
+  await expect(turnOn).toHaveAttribute("aria-disabled", "true");
+  await expect(turnOn).toHaveAccessibleDescription(PLAN_NOTICE_TEXT);
+  expect(
+    await refusal(
+      user.rpc.publicCatalog.setPublished({
+        expectedVersion: off?.version as number,
+        organizationId,
+        published: true,
+      })
+    )
+  ).toEqual({ code: "CONFLICT", reason: "entitlement_denied" });
+  expect(await storedProfiles(sql, organizationId)).toEqual([off]);
+});
+
+/** Typed out here, not read from the domain, so that a name dropped from the domain's list is a difference. */
+const RESERVED_ADDRESSES = [
+  "admin",
+  "api",
+  "app",
+  "assets",
+  "catalog",
+  "catalogo",
+  "login",
+  "m",
+  "polaris",
+  "robots",
+  "sitemap",
+  "static",
+  "www",
+];
+const QUOTED_NAME = /'([^']+)'/g;
+const NAME_ONLY = /^[a-z0-9]+$/;
+const ALLOWED_SLUG_CONSTRAINT = "public_catalog_profiles_slug_allowed";
+
+/** The names the database's own check refuses, to hold the list above to the database. */
+async function reservedByDatabase(sql: Sql): Promise<string[]> {
+  const { rows } = await sql.query<{ definition: string }>(
+    `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conname = $1 AND conrelid = 'public_catalog_profiles'::regclass`,
+    [ALLOWED_SLUG_CONSTRAINT]
+  );
+  expect(rows, "the check on the address exists").toHaveLength(1);
+  return [...(rows[0]?.definition ?? "").matchAll(QUOTED_NAME)]
+    .map((match) => match[1] as string)
+    .filter((name) => NAME_ONLY.test(name));
+}
+
+async function slugAndVersion(sql: Sql, organizationId: string) {
+  return (await storedProfiles(sql, organizationId)).map(
+    ({ slug, version }) => ({ slug, version })
+  );
+}
+
+/** Distinct per journey and run, never reserved (it starts with a digit): the address of exactly `length` characters. */
+function addressOfLength(journey: Journey, length: number): string {
+  const runId = process.env.E2E_RUN_ID ?? "";
+  expect(runId, "E2E_RUN_ID of the run").toMatch(RUN_ID_PATTERN);
+  const hex = createHash("sha256")
+    .update(`${journey.name}-${runId}`)
+    .digest("hex");
+  const address = `${Number.parseInt(hex.slice(0, 1), 16) % 10}${hex.slice(1, length)}`;
+  expect(address).toHaveLength(length);
+  expect(address).toMatch(ADDRESS_PATTERN);
+  return address;
+}
+
+/**
+ * AC-2.3 at its edges, by the command: every reserved name is refused in any case and with spaces around it, an address
+ * of 2 or 41 characters is refused and of 3 or 40 is saved; the refusals write nothing and the saves write exactly
+ * what was asked, and an address that only starts with a reserved name is saved.
+ */
+test("catálogo público: cada nome reservado e os limites de 3 e 40 caracteres do endereço", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const journey = await openJourney(browser, testInfo, "catalogo-limites");
+  const { page, user } = journey;
+  const organizationId = journey.organizationId as string;
+  await makePro(sql, organizationId);
+  const publicName = `Loja ${journey.name}`;
+  const save = (slug: string, expectedVersion?: number) =>
+    user.rpc.publicCatalog.saveProfile({
+      organizationId,
+      publicName,
+      slug,
+      ...(expectedVersion === undefined ? {} : { expectedVersion }),
+    });
+
+  expect(
+    (await reservedByDatabase(sql)).sort(),
+    "the database refuses the names listed here"
+  ).toEqual([...RESERVED_ADDRESSES].sort());
+  for (const reserved of RESERVED_ADDRESSES) {
+    // the length rule comes first: "m" is shorter than 3 and is refused as such before the list is read
+    const reason =
+      reserved.length < MIN_ADDRESS ? "invalid_slug" : "reserved_slug";
+    for (const typed of [reserved, ` ${reserved.toUpperCase()} `]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one refusal at a time keeps the failing name in the message
+      const refused = await refusal(save(typed));
+      expect(refused, `"${typed}" is reserved`).toEqual({
+        code: "BAD_REQUEST",
+        reason,
+      });
+    }
+  }
+  expect(await profileCount(sql, organizationId)).toBe(0);
+
+  const two = addressOfLength(journey, 2);
+  const three = addressOfLength(journey, 3);
+  const forty = addressOfLength(journey, 40);
+  const fortyOne = addressOfLength(journey, 41);
+  const outOfRange = { code: "BAD_REQUEST", reason: "invalid_slug" };
+  expect(await refusal(save(two)), `"${two}" has 2 characters`).toEqual(
+    outOfRange
+  );
+  expect(
+    await refusal(save(fortyOne)),
+    `"${fortyOne}" has 41 characters`
+  ).toEqual(outOfRange);
+  expect(await profileCount(sql, organizationId)).toBe(0);
+
+  // a name that only starts with a reserved one is not reserved
+  const neighbour = `admin-${addressOfLength(journey, 8)}`;
+  expect((await save(neighbour)).version).toBe(1);
+  expect(await slugAndVersion(sql, organizationId)).toEqual([
+    { slug: neighbour, version: 1 },
+  ]);
+  expect((await save(three, 1)).version).toBe(2);
+  expect(await slugAndVersion(sql, organizationId)).toEqual([
+    { slug: three, version: 2 },
+  ]);
+  expect((await save(forty, 2)).version).toBe(3);
+  expect(await slugAndVersion(sql, organizationId)).toEqual([
+    { slug: forty, version: 3 },
+  ]);
+  expect(await refusal(save(fortyOne, 3))).toEqual(outOfRange);
+  expect(await slugAndVersion(sql, organizationId)).toEqual([
+    { slug: forty, version: 3 },
+  ]);
+  await openCatalog(page);
+  await expect(page.getByLabel("Endereço", { exact: true })).toHaveValue(forty);
 });
