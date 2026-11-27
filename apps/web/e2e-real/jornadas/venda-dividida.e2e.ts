@@ -182,14 +182,12 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
 
   // Resultado: the chain of the month adds the sale once
   await page.goto("/dashboard");
-  await expect(chainValue(page, GROSS_SALES)).toHaveText(MONEY);
-  expect(cents(await chainValue(page, GROSS_SALES).innerText())).toBe(
-    TOTAL_CENTS
-  );
-  await expect(chainValue(page, NET_SALES)).toHaveText(MONEY);
-  expect(cents(await chainValue(page, NET_SALES).innerText())).toBe(
-    TOTAL_CENTS
-  );
+  await expect
+    .poll(async () => cents(await chainValue(page, GROSS_SALES).innerText()))
+    .toBe(TOTAL_CENTS);
+  await expect
+    .poll(async () => cents(await chainValue(page, NET_SALES).innerText()))
+    .toBe(TOTAL_CENTS);
 
   // Histórico: from the sales card, with the period; one row and the net figure of the period
   await salesCard(page)

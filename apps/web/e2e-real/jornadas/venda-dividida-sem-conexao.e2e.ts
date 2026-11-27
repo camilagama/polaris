@@ -580,13 +580,13 @@ test("Refazer uma venda dividida recusada: mesmos itens e as duas partes, a nova
   expect(await soldItems(sql, organizationId)).toEqual([
     {
       charged: 30_000,
-      label: expect.stringContaining("Camiseta lisa"),
+      label: "Camiseta lisa",
       position: 0,
       quantity: 2,
     },
     {
       charged: 15_000,
-      label: expect.stringContaining("Calça jeans"),
+      label: "Calça jeans",
       position: 1,
       quantity: 1,
     },
