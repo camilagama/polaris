@@ -177,7 +177,7 @@ describe("the payment of a sale in two parts, in the view", () => {
       Object.fromEntries(details.map((d) => [d.label, d.value]));
     expect(byLabel(pix?.details ?? [])).toMatchObject({
       "Perfil de pagamento": "Maquininha",
-      Prazo: "prazo estimado de 0 dias — estimativa, não data de liquidação",
+      Prazo: "0 dias (estimativa, não é a data de liquidação)",
     });
     expect(byLabel(credit?.details ?? [])).toMatchObject({
       "Perfil de pagamento": "Sem perfil de pagamento",

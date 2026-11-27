@@ -785,7 +785,7 @@ describe("payment profile choice and fee preview", () => {
     expect(result.feePreview?.processing.tone).toBe("known");
     expect(result.feePreview?.processing.text).toContain("R$ 3,48");
     expect(result.feePreview?.settlementText).toBe(
-      "prazo estimado de 30 dias — estimativa, não data de liquidação"
+      "30 dias (estimativa, não é a data de liquidação)"
     );
   });
 
