@@ -2,8 +2,6 @@ import type { ProductVariantOptionName } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { planRoom } from "../subscription/limit-help-model";
 import {
-  ADD_AT_LIMIT,
-  ADD_NEEDS_VALUES,
   ALL_COMBINATIONS_PRESENT,
   addAllCombinations,
   addCombinationReason,
@@ -226,37 +224,77 @@ describe("validação das combinações", () => {
     expect(result.canSubmit).toBe(false);
   });
 
-  it("o motivo de não poder adicionar: opção sem valor, 50 combinações, ou nenhum", () => {
+  describe("o motivo de não poder adicionar, uma frase por causa", () => {
     const row = (index: number) => ({
       values: { color: "Azul", size: String(index) },
     });
     const full = Array.from({ length: MAX_VARIANTS }, (_, index) => row(index));
-    const missingValues = { color: ["Azul"], model: [], size: [] };
 
-    expect(validateVariantDrafts([], values, []).addBlocker).toBe(
-      "missing_values"
-    );
-    expect(validateVariantDrafts(names, missingValues, []).addBlocker).toBe(
-      "missing_values"
-    );
-    expect(validateVariantDrafts(names, values, full).addBlocker).toBe("limit");
-    expect(
-      validateVariantDrafts(names, values, full.slice(1)).addBlocker
-    ).toBeNull();
-    expect(validateVariantDrafts(names, values, []).addBlocker).toBeNull();
+    it("nenhuma opção marcada", () => {
+      const blocker = validateVariantDrafts([], values, []).addBlocker;
+      expect(blocker).toBe("no_options");
+      expect(addCombinationReason(blocker)).toBe(
+        "Marque ao menos uma opção para adicionar combinações."
+      );
+    });
+
+    it("opção marcada sem valor", () => {
+      const missingValues = { color: ["Azul"], model: [], size: [] };
+      const blocker = validateVariantDrafts(names, missingValues, []).addBlocker;
+      expect(blocker).toBe("missing_values");
+      expect(addCombinationReason(blocker)).toBe(
+        "Preencha os valores de cada opção para adicionar combinações."
+      );
+    });
+
+    it("valor repetido ou acima de 80 caracteres", () => {
+      const repeated = { color: ["Azul", "azul"], model: [], size: ["P"] };
+      const tooLong = { color: ["a".repeat(81)], model: [], size: ["P"] };
+      for (const bad of [repeated, tooLong]) {
+        const blocker = validateVariantDrafts(names, bad, []).addBlocker;
+        expect(blocker).toBe("invalid_values");
+        expect(addCombinationReason(blocker)).toBe(
+          "Corrija os valores das opções para adicionar combinações."
+        );
+      }
+    });
+
+    it("50 combinações", () => {
+      const blocker = validateVariantDrafts(names, values, full).addBlocker;
+      expect(blocker).toBe("limit");
+      expect(addCombinationReason(blocker)).toBe(
+        "O limite é de 50 combinações por produto."
+      );
+    });
+
+    it("com mais de uma causa vale a ordem: nenhuma opção, sem valor, repetido ou longo, limite", () => {
+      const missingAndRepeated = { color: ["Azul", "azul"], model: [], size: [] };
+      expect(
+        validateVariantDrafts(names, missingAndRepeated, full).addBlocker
+      ).toBe("missing_values");
+      const repeated = { color: ["Azul", "azul"], model: [], size: ["P"] };
+      expect(validateVariantDrafts(names, repeated, full).addBlocker).toBe(
+        "invalid_values"
+      );
+      expect(validateVariantDrafts([], repeated, full).addBlocker).toBe(
+        "no_options"
+      );
+    });
+
+    it("sem causa, o botão pode adicionar", () => {
+      expect(validateVariantDrafts(names, values, full.slice(1))).toMatchObject({
+        addBlocker: null,
+        canAdd: true,
+      });
+      expect(validateVariantDrafts(names, values, [])).toMatchObject({
+        addBlocker: null,
+        canAdd: true,
+      });
+      expect(addCombinationReason(null)).toBeNull();
+    });
   });
 
-  it("as frases dos motivos: a do limite leva o número de MAX_VARIANTS", () => {
-    expect(addCombinationReason("missing_values")).toBe(ADD_NEEDS_VALUES);
-    expect(addCombinationReason("limit")).toBe(ADD_AT_LIMIT);
-    expect(addCombinationReason(null)).toBeNull();
-    expect(ADD_NEEDS_VALUES).toBe(
-      "Preencha os valores de cada opção para adicionar combinações."
-    );
-    expect(ADD_AT_LIMIT).toBe(
-      `O limite é de ${MAX_VARIANTS} combinações por produto.`
-    );
-  });
+
 
   it("com opções válidas já se pode adicionar, mas salvar pede ao menos uma combinação completa", () => {
     expect(validateVariantDrafts(names, values, []).canAdd).toBe(true);
