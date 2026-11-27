@@ -206,11 +206,12 @@ export function ExpenseForm({
           </div>
         ) : null}
         <ExpenseTextField
+          addon="R$"
           disabled={disabled}
           error={errors.amount}
           id={fieldId("amount")}
           inputMode="decimal"
-          label="Valor (R$)"
+          label="Valor"
           name="amount"
           onChange={handleChange}
           placeholder="0,00"

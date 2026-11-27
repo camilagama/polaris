@@ -239,7 +239,7 @@ export const expenseStates = {
     await page.getByRole("checkbox", { name: "Mostrar pausadas" }).check();
     await page.getByText("Assinatura do sistema").waitFor();
     await page.getByRole("button", { name: "Nova despesa recorrente" }).click();
-    await page.getByLabel("Valor de cada ocorrência (R$)").waitFor();
+    await page.getByLabel("Valor de cada ocorrência").waitFor();
     await showScreenAlone(page);
   },
 
