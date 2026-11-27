@@ -3,6 +3,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
+import { formatInstant } from "../src/lib/format";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
@@ -358,6 +359,214 @@ async function openDevices(page: Page, state: Scenario) {
   await serve(page, state);
   await page.goto("/devices");
 }
+
+const DATES_LEAD = "Registrado em";
+
+interface DateLines {
+  dateLines: number[];
+  overflow: number;
+  sameLine: boolean;
+  secondBelowFirst: boolean;
+  separatorShown: boolean;
+  separatorWithFact: boolean;
+}
+
+/** A `Range` over a stretch of the paragraph's text counts how many rendered lines it covers: 1 means the stretch is not broken. */
+function measureDateLines(
+  page: Page,
+  dates: { registered: string; lastSeen: string },
+  index: number
+): Promise<DateLines> {
+  return page.evaluate(
+    ({ dates: texts, index: position, lead }) => {
+      const paragraph = [...document.querySelectorAll("p")].filter((node) =>
+        node.textContent?.includes(lead)
+      )[position];
+      if (!paragraph) {
+        throw new Error("the paragraph of the dates is not on the page");
+      }
+      const nodes: { node: Text; start: number }[] = [];
+      let total = 0;
+      const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        nodes.push({ node: node as Text, start: total });
+        total += (node as Text).data.length;
+      }
+      const whole = paragraph.textContent ?? "";
+      const locate = (offset: number) => {
+        const found =
+          nodes.filter((entry) => entry.start <= offset).at(-1) ?? nodes[0];
+        if (!found) {
+          throw new Error("the paragraph has no text");
+        }
+        return { node: found.node, offset: offset - found.start };
+      };
+      const rangeOf = (from: number, to: number) => {
+        const range = document.createRange();
+        const start = locate(from);
+        const end = locate(to);
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        return range;
+      };
+      const linesOf = (range: Range) =>
+        new Set(
+          [...range.getClientRects()]
+            .filter((rect) => rect.width > 0)
+            .map((rect) => Math.round(rect.top))
+        ).size;
+      const span = (text: string, after = 0) => {
+        const from = whole.indexOf(text, after);
+        if (from < 0) {
+          throw new Error(`"${text}" is not in the paragraph`);
+        }
+        return { from, to: from + text.length };
+      };
+      const registered = span(texts.registered);
+      const lastSeen = span(texts.lastSeen, registered.to);
+      const separator = whole.indexOf("·");
+      const separatorRects =
+        separator < 0
+          ? []
+          : [...rangeOf(separator, separator + 1).getClientRects()];
+      const firstTop = (rects: DOMRect[]) =>
+        Math.round(rects.find((rect) => rect.width > 0)?.top ?? -1);
+      const factStart = whole.indexOf("visto", separator < 0 ? 0 : separator);
+      const separatorWithFact =
+        separator >= 0 &&
+        factStart > separator &&
+        firstTop(separatorRects) ===
+          firstTop([...rangeOf(factStart, factStart + 5).getClientRects()]);
+      const registeredRects = [
+        ...rangeOf(registered.from, registered.to).getClientRects(),
+      ];
+      const lastSeenRects = [
+        ...rangeOf(lastSeen.from, lastSeen.to).getClientRects(),
+      ];
+      const tops = new Set([
+        ...registeredRects.map((rect) => Math.round(rect.top)),
+        ...lastSeenRects.map((rect) => Math.round(rect.top)),
+      ]);
+      const scroller = document.scrollingElement;
+      return {
+        dateLines: [
+          linesOf(rangeOf(registered.from, registered.to)),
+          linesOf(rangeOf(lastSeen.from, lastSeen.to)),
+        ],
+        overflow: (scroller?.scrollWidth ?? 0) - (scroller?.clientWidth ?? 0),
+        sameLine: tops.size === 1,
+        secondBelowFirst:
+          firstTop([...rangeOf(factStart, factStart + 5).getClientRects()]) >
+          firstTop(registeredRects),
+        separatorShown: separatorRects.some((rect) => rect.width > 0),
+        separatorWithFact,
+      };
+    },
+    { dates, index, lead: DATES_LEAD }
+  );
+}
+
+async function openDevicesWithDates(
+  page: Page,
+  width: number,
+  fontPixels: number
+) {
+  await page.setViewportSize({ height: 800, width });
+  const session = await page.context().newCDPSession(page);
+  await session.send("Page.setFontSizes", {
+    fontSizes: { fixed: fontPixels, standard: fontPixels },
+  });
+  await openDevices(page, scenario({ devices: twoDevices() }));
+  await expect(deviceItems(page)).toHaveCount(2);
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).fontSize
+    )
+  ).toBe(`${fontPixels}px`);
+}
+
+const DATES_OF_THE_LIST = [
+  {
+    lastSeen: formatInstant(hoursAgo(8)),
+    registered: formatInstant(hoursAgo(318)),
+  },
+  {
+    lastSeen: formatInstant(hoursAgo(32)),
+    registered: formatInstant(hoursAgo(318)),
+  },
+];
+
+test.describe("as datas da linha de cada aparelho", () => {
+  test.skip(
+    ({ browserName }) => browserName !== "chromium",
+    "`Page.setFontSizes` is a Chrome DevTools command"
+  );
+
+  test("a 320 px com a letra do navegador em 20 px, cada data fica inteira numa linha e a página não rola de lado", async ({
+    page,
+  }) => {
+    await openDevicesWithDates(page, 320, 20);
+    // from 320 px up in steps: a date that fits by luck at one width breaks at the next
+    for (const width of [320, 330, 340, 350, 360, 380, 400, 420]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one width after the other
+      await page.setViewportSize({ height: 800, width });
+      for (const [index, dates] of DATES_OF_THE_LIST.entries()) {
+        // biome-ignore lint/performance/noAwaitInLoops: one device after the other
+        const lines = await measureDateLines(page, dates, index);
+        expect(lines, `${width} px, aparelho ${index + 1}`).toMatchObject({
+          dateLines: [1, 1],
+          sameLine: false,
+          secondBelowFirst: true,
+          separatorShown: false,
+        });
+        expect(lines.overflow).toBeLessThanOrEqual(0);
+      }
+    }
+  });
+
+  test("a 700 px as datas seguem numa frase só, com o ponto, e nenhuma data se parte", async ({
+    page,
+  }) => {
+    await openDevicesWithDates(page, 700, 16);
+    for (const [index, dates] of DATES_OF_THE_LIST.entries()) {
+      // biome-ignore lint/performance/noAwaitInLoops: one device after the other
+      const lines = await measureDateLines(page, dates, index);
+      expect(lines).toMatchObject({
+        dateLines: [1, 1],
+        sameLine: true,
+        separatorShown: true,
+        separatorWithFact: true,
+      });
+      expect(lines.overflow).toBeLessThanOrEqual(0);
+    }
+  });
+
+  test("de 640 a 900 px a frase quebra sem partir data e o ponto vai com o fato que ele abre", async ({
+    page,
+  }) => {
+    await openDevicesWithDates(page, 640, 16);
+    const brokenAt: number[] = [];
+    for (const width of [640, 660, 680, 700, 720, 760, 800, 840, 900]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one width after the other
+      await page.setViewportSize({ height: 800, width });
+      for (const [index, dates] of DATES_OF_THE_LIST.entries()) {
+        // biome-ignore lint/performance/noAwaitInLoops: one device after the other
+        const lines = await measureDateLines(page, dates, index);
+        expect(lines, `${width} px, aparelho ${index + 1}`).toMatchObject({
+          dateLines: [1, 1],
+          separatorShown: true,
+          separatorWithFact: true,
+        });
+        expect(lines.overflow).toBeLessThanOrEqual(0);
+        if (lines.secondBelowFirst) {
+          brokenAt.push(width);
+        }
+      }
+    }
+    // the dot rule only means something where the phrase does not fit in one line
+    expect(brokenAt.length).toBeGreaterThan(0);
+  });
+});
 
 test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' como botão de 44 px (P6)", async ({
   page,
