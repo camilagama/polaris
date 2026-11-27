@@ -759,9 +759,7 @@ const EXPENSE_SCREENS = [
         await page
           .getByRole("button", { name: "Nova despesa recorrente" })
           .click();
-        await expect(
-          page.getByLabel("Valor de cada ocorrência (R$)")
-        ).toBeVisible();
+        await expect(page.getByLabel("Valor de cada ocorrência")).toBeVisible();
       }),
   },
   {

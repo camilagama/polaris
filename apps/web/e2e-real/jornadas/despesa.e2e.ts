@@ -76,7 +76,7 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
       .getByRole("button", { exact: true, name: "Nova despesa" })
       .and(page.locator("[data-expense-new]"))
       .click();
-    await form.getByLabel("Valor (R$)").fill(amount);
+    await form.getByLabel("Valor", { exact: true }).fill(amount);
     await choose(page, form, "Categoria", categoryName);
     await pickDate(form, "Data de competência", competenceOn);
     await form.getByLabel("Descrição").fill(description);
@@ -155,7 +155,7 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
       .click();
     // the form is a dialog, outside the panel
     const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
-    await form.getByLabel("Valor de cada ocorrência (R$)").fill(amount);
+    await form.getByLabel("Valor de cada ocorrência").fill(amount);
     await choose(page, form, "Categoria", categoryName);
     await choose(page, form, "Frequência", "Todo mês");
     await pickDate(form, "Começa em", startsOn);
@@ -239,7 +239,7 @@ test("despesa registrada em Despesas aparece no Resultado ao voltar, sem Atualiz
       .and(page.locator("[data-expense-new]"))
       .click();
     const form = page.getByRole("dialog", { name: "Nova despesa" });
-    await form.getByLabel("Valor (R$)").fill(amount);
+    await form.getByLabel("Valor", { exact: true }).fill(amount);
     await choose(page, form, "Categoria", categoryName);
     await pickDate(form, "Data de competência", today);
     await form.getByLabel("Descrição").fill(description);

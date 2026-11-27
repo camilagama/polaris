@@ -330,7 +330,7 @@ test("despesas", async ({ evidence, page }) => {
     .and(page.locator("[data-expense-new]"))
     .click();
   const dialog = page.getByRole("dialog", { name: "Nova despesa" });
-  await dialog.getByLabel("Valor (R$)").fill("120,00");
+  await dialog.getByLabel("Valor", { exact: true }).fill("120,00");
   await dialog
     .getByRole("combobox", { exact: true, name: "Categoria" })
     .click();

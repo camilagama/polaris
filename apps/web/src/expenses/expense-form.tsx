@@ -207,10 +207,11 @@ export function ExpenseForm({
         ) : null}
         <ExpenseTextField
           disabled={disabled}
+          addon="R$"
           error={errors.amount}
           id={fieldId("amount")}
           inputMode="decimal"
-          label="Valor (R$)"
+          label="Valor"
           name="amount"
           onChange={handleChange}
           placeholder="0,00"
