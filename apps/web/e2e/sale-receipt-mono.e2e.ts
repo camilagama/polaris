@@ -215,7 +215,7 @@ interface Measured {
 }
 
 /**
- * Every amount written in the receipt (one per cell: a `dd` of the lines, the line of prices of an item): its text, its
+ * Every amount written in the receipt (one per cell: a `dd` of the lines, the total at the right end of the line of an item): its text, its
  * face and the right edge of the text that shows (what only a screen reader reads is left out).
  */
 const measureAmounts = (page: Page): Promise<Measured[]> =>
@@ -245,7 +245,7 @@ const measureAmounts = (page: Page): Promise<Measured[]> =>
       return range.getBoundingClientRect().right;
     };
     const cells = [
-      ...receipt.querySelectorAll("dd, li > span:nth-child(2)"),
+      ...receipt.querySelectorAll("dd, li > p > span:last-child"),
     ].filter((cell) => AMOUNT.test(cell.textContent ?? ""));
     const groupOf = (cell: Element): Measured["group"] => {
       if (cell.closest('[data-receipt-block="payment"]')) {
