@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/utils";
 import { Block } from "@/ui/block";
+import { SCREEN_TITLE_CLASS } from "./screen-title";
 
 interface StatePanelProps {
   /** The buttons or links under the text. */
@@ -59,7 +60,10 @@ export function StatePanel({
             {eyebrow ? (
               <p className="text-muted-foreground text-support">{eyebrow}</p>
             ) : null}
-            <h1 className="flex items-center gap-2 text-title" id={titleId}>
+            <h1
+              className={cn(SCREEN_TITLE_CLASS, "flex items-center gap-2")}
+              id={titleId}
+            >
               {icon}
               {title}
             </h1>

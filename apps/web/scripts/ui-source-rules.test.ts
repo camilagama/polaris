@@ -2299,3 +2299,61 @@ describe('"Tentar novamente" é o RetryButton', () => {
     ).toEqual([]);
   });
 });
+
+const TITLE_CLASS_FILE = "src/ui/title-class.ts";
+const TITLE_CLASS_WRAP =
+  /text-title[^"]*\[overflow-wrap:anywhere\][^"]*hyphens-auto/;
+const HAND_TITLE = /<h1\b(?:=>|[^>])*?(?<![\w-])text-title(?![\w-])/;
+const TITLE_SCOPE = sourcesUnder("src").filter((path) => TSX.test(path));
+
+export function handTitleFaults(
+  files: readonly string[],
+  source: (path: string) => string
+): string[] {
+  return files
+    .filter((path) => HAND_TITLE.test(withoutComments(source(path))))
+    .map(
+      (path) =>
+        `${path}: <h1> com text-title escrito à mão: use SCREEN_TITLE_CLASS (screen-title.tsx) ou <ScreenTitle>, que levam a mesma proteção de quebra e a hifenização`
+    );
+}
+
+describe("o h1 de tela usa a classe do título, não text-title escrito à mão", () => {
+  it("a árvore de src foi lida e a classe está onde as telas a pegam", () => {
+    expect(TITLE_SCOPE.length).toBeGreaterThan(300);
+    expect(TITLE_SCOPE).toContain("src/app-shell/screen-title.tsx");
+    expect(TITLE_SCOPE).toContain("src/ui-gallery/ui-gallery.tsx");
+    const code = withoutComments(read(TITLE_CLASS_FILE));
+    expect(code).toMatch(TITLE_CLASS_WRAP);
+  });
+
+  it("nenhum .tsx de src tem <h1> com text-title escrito à mão", () => {
+    expect(handTitleFaults(TITLE_SCOPE, read)).toEqual([]);
+  });
+
+  it.each([
+    '<h1 className="text-title">Início</h1>',
+    '<h1 className="flex items-center gap-2 text-title" id={titleId}>',
+    '<h1 className={cn("text-title", className)}>',
+    '<h1\n  className="min-w-0 text-title"\n  ref={ref}\n>',
+    '<h1 onClick={() => go()} className="text-title">',
+    '<h1 className="min-[47.5rem]:text-title">',
+  ])("%s reprova (controle plantado)", (text) => {
+    expect(
+      handTitleFaults(["src/home/home-page.tsx"], () => text)
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    "<h1 className={SCREEN_TITLE_CLASS}>Início</h1>",
+    '<h1 className={cn(SCREEN_TITLE_CLASS, "flex gap-2")} ref={ref} tabIndex={-1}>',
+    "<h1 className={H1_CLASS}>Galeria</h1>",
+    '<h1 className="font-semibold text-2xl">Entrar</h1>',
+    '<p className="font-medium text-title">Resultado</p>',
+    '<h1 className="text-title-foreground">x</h1>',
+    "<h1 className={SCREEN_TITLE_CLASS}>Texto com a classe text-title</h1>",
+    '{/* <h1 className="text-title">x</h1> */}',
+  ])("%s passa (controle plantado)", (text) => {
+    expect(handTitleFaults(["src/home/home-page.tsx"], () => text)).toEqual([]);
+  });
+});
