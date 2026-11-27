@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { ProductReadModel } from "@polaris/contracts";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StaticOrganizationProvider } from "../lib/current-organization";
@@ -9,6 +10,7 @@ import { ProductVariantSkuSection } from "./product-variant-sku-section";
 import {
   ADD_AT_LIMIT,
   ADD_NEEDS_VALUES,
+  addCombinationReason,
   emptyConfigurationDraft,
   MAX_VARIANTS,
   type VariantConfigurationDraft,
@@ -181,6 +183,7 @@ describe("Adicionar todas as combinações", () => {
 
 const ADD_ALL = /^Adicionar todas as combinações/;
 const ADD_ROW = { name: "Adicionar combinação" };
+const MARQUE_AO_MENOS = /Marque ao menos uma opção/;
 
 describe("Adicionar combinação, the last row of the list", () => {
   const withOptions = {
@@ -274,6 +277,100 @@ describe("Adicionar combinação, the last row of the list", () => {
     expect(row.hasAttribute("aria-describedby")).toBe(false);
     expect(screen.queryByText(ADD_AT_LIMIT)).toBeNull();
   });
+
+  const heardBy = (button: HTMLElement) =>
+    (button.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .filter((id) => id !== "")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+  const NEEDS_OPTION = "Marque ao menos uma opção para começar.";
+  const reasons = [
+    {
+      draft: { ...emptyConfigurationDraft },
+      heard: NEEDS_OPTION,
+      name: "no_options",
+    },
+    {
+      draft: {
+        ...emptyConfigurationDraft,
+        selectedOptions: ["color" as const],
+      },
+      heard: ADD_NEEDS_VALUES,
+      name: "missing_values",
+    },
+    {
+      draft: {
+        ...withOptions,
+        valueLines: { ...withOptions.valueLines, color: "Azul\nazul" },
+      },
+      heard: "Corrija os valores das opções para adicionar combinações.",
+      name: "invalid_values",
+    },
+    {
+      draft: {
+        ...withOptions,
+        variants: Array.from({ length: MAX_VARIANTS }, () => ({
+          values: { color: "Azul" },
+        })),
+      },
+      heard: ADD_AT_LIMIT,
+      name: "limit",
+    },
+  ];
+
+  it.each(reasons)(
+    "$name: the reader hears the sentence of the cause through aria-describedby",
+    ({ draft, heard }) => {
+      show(null, draft);
+      const row = screen.getByRole("button", ADD_ROW);
+      expect(row.getAttribute("aria-disabled")).toBe("true");
+      expect(heardBy(row)).toBe(heard);
+    }
+  );
+
+  it("no_options: the sentence at the top is the only one, and the button points to it", () => {
+    show(null, emptyConfigurationDraft);
+    const row = screen.getByRole("button", ADD_ROW);
+    const sentences = screen.getAllByText(MARQUE_AO_MENOS);
+    expect(sentences).toHaveLength(1);
+    expect(row.getAttribute("aria-describedby")).toBe(sentences[0]?.id);
+    expect(sentences[0]?.id).not.toBe("");
+    expect(row.nextElementSibling).not.toBe(sentences[0]);
+    expect(addCombinationReason("no_options")).toBeNull();
+  });
+
+  it("no_options with combinations still in the list: the button still points to the top sentence", () => {
+    show(null, { ...emptyConfigurationDraft, variants: [{ values: {} }] });
+    const row = screen.getByRole("button", ADD_ROW);
+    expect(heardBy(row)).toBe(NEEDS_OPTION);
+    expect(screen.getAllByText(MARQUE_AO_MENOS)).toHaveLength(1);
+  });
+
+  it("the other causes keep the sentence right under the button", () => {
+    for (const { draft, heard, name } of reasons.slice(1)) {
+      show(null, draft);
+      const row = screen.getByRole("button", ADD_ROW);
+      expect(row.nextElementSibling?.textContent, name).toBe(heard);
+      cleanup();
+    }
+  });
+
+  it.each(reasons)(
+    "$name: Enter on the button that is off adds nothing and the focus stays on it",
+    async ({ draft }) => {
+      const user = userEvent.setup();
+      show(null, draft);
+      const row = screen.getByRole("button", ADD_ROW);
+      row.focus();
+      await user.keyboard("{Enter}");
+      await user.keyboard(" ");
+      expect(screen.queryAllByRole("listitem")).toHaveLength(
+        draft.variants.length
+      );
+      expect(document.activeElement).toBe(row);
+    }
+  );
 
   it("changes nothing while a combination can be added: no sentence, no attribute", () => {
     show(null, withOptions);

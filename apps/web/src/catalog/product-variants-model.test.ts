@@ -235,9 +235,7 @@ describe("validação das combinações", () => {
       const blocker = result.addBlocker;
       expect(result.canAdd).toBe(false);
       expect(blocker).toBe("no_options");
-      expect(addCombinationReason(blocker)).toBe(
-        "Marque ao menos uma opção para adicionar combinações."
-      );
+      expect(addCombinationReason(blocker)).toBeNull();
     });
 
     it("opção marcada sem valor", () => {
