@@ -115,9 +115,10 @@ function menuGlyphRight(block: Element) {
 
 /**
  * Where the count sits below 760 px. Sharing the line with the title it ends on the vertical where the "…" of the
- * rows ends (it moves in from the right edge of its box by the measured `--count-inset`, 0 when the rows have no
- * menu); once it dropped under the title it starts at the title's vertical. The wrap is decided by the width
- * reserved for the count, so only the browser's layout knows which of the two it is.
+ * rows ends: it stops short of the right edge of its box by the measured `--count-inset`, as padding that never
+ * exceeds the room the text leaves in the box, so the box and the wrap do not change (0 when the rows have no menu).
+ * Once it dropped under the title it starts at the title's vertical. The wrap is decided by the width reserved for
+ * the count, so only the browser's layout knows which of the two it is.
  */
 function useCountPlace(active: boolean, rowCount: number, count: string) {
   const ref = useRef<HTMLParagraphElement>(null);
@@ -138,13 +139,15 @@ function useCountPlace(active: boolean, rowCount: number, count: string) {
       const glyph = onOwnLineNow
         ? undefined
         : menuGlyphRight(element.closest("[data-list-block]") ?? header);
-      const applied = Number.parseFloat(getComputedStyle(element).right) || 0;
+      const text = new Range();
+      text.selectNodeContents(element);
+      const room = Math.max(0, box.width - text.getBoundingClientRect().width);
       const inset =
         glyph === undefined
           ? 0
           : Math.min(
-              box.width,
-              Math.max(0, Math.round((box.right + applied - glyph) * 10) / 10)
+              room,
+              Math.max(0, Math.round((box.right - glyph) * 10) / 10)
             );
       element.style.setProperty("--count-inset", `${inset}px`);
       setOnOwnLine(onOwnLineNow);
@@ -260,7 +263,7 @@ function ListBlockRoot({
                   : [
                       "min-w-28",
                       !countPlace.onOwnLine &&
-                        "max-md:relative max-md:right-(--count-inset) max-md:text-right",
+                        "max-md:pr-(--count-inset) max-md:text-right",
                     ]
               )}
               data-list-count=""

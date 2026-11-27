@@ -107,7 +107,7 @@ describe("ListBlock: o título e a contagem na árvore de acessibilidade", () =>
     const plain = draw({}, rows);
     const count = COUNT_CLASS.exec(plain)?.[1]?.split(" ");
     expect(count).toContain("max-md:text-right");
-    expect(count).toContain("max-md:right-(--count-inset)");
+    expect(count).toContain("max-md:pr-(--count-inset)");
     const withAction = draw(
       { action: <button type="button">Exportar</button> },
       rows
