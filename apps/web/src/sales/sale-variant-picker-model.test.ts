@@ -135,7 +135,7 @@ describe("pickerView", () => {
       href: null,
       kind: "empty",
       message:
-        "Nenhuma variante encontrada para “azul”. Confira o nome, a variante ou o SKU.",
+        "Nenhuma variante com “azul”. Confira o nome, a variante ou o SKU.",
     });
   });
 
