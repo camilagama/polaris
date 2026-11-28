@@ -242,7 +242,7 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   await expect(undo).toContainText(
     "não é enviado sozinho: fica em Pendências e precisa ser refeito"
   );
-  await undo.getByRole("button", { name: "Sim, desfazer" }).click();
+  await undo.getByRole("button", { name: "Desfazer encerramento" }).click();
   await page.waitForURL(REOPENED);
 
   // AC-3: the grant the sale carries was revoked by the closure and does not come back: the server refuses it for good
