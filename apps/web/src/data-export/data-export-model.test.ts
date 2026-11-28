@@ -137,7 +137,7 @@ describe("each state of a copy (AC-3)", () => {
     const view = exportView(READY, NOW, ZONE);
     expect(view.kind).toBe("ready");
     expect(view.text).toBe(
-      "Sua cópia está pronta. Baixe até 31/10/2026 11:40."
+      "Sua cópia está pronta. Baixe até 31/10/2026, 11:40."
     );
     expect(view.files).toEqual([
       { label: "Baixar dados.json (820 KB)", ordinal: 1 },
@@ -146,7 +146,7 @@ describe("each state of a copy (AC-3)", () => {
         ordinal: 2,
       },
     ]);
-    expect(view.requested).toBe("Pedida em 30/10/2026 11:10");
+    expect(view.requested).toBe("Pedida em 30/10/2026, 11:10");
     expect(view.formats).toBe("JSON e planilha");
   });
 
