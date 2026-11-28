@@ -1,19 +1,19 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { blankRule } from "./payment-profile-draft";
+import { blankRule, type RuleDraft } from "./payment-profile-draft";
 import { PaymentProfileForm } from "./payment-profile-form";
 
 const noop = () => undefined;
 const keepFocus = () => true;
 
-function drawForm(ruleCount: number) {
+function drawForm(ruleCount: number, makeRule: () => RuleDraft = blankRule) {
   render(
     <PaymentProfileForm
       confirmDuplicate={false}
       draft={{
         name: "Maquininha",
-        rules: Array.from({ length: ruleCount }, blankRule),
+        rules: Array.from({ length: ruleCount }, makeRule),
       }}
       editingName={null}
       errors={{}}
@@ -74,5 +74,17 @@ describe("sections of the payment profile form", () => {
     expect(order.indexOf("payment-add-rule")).toBeGreaterThan(
       Math.max(...removeButtons)
     );
+  });
+
+  it("names what each empty selector of a rule chooses, never just 'Escolha'", () => {
+    const dialog = drawForm(1, () => ({
+      ...blankRule(),
+      anticipationFee: { ...blankRule().anticipationFee, mode: "" as never },
+      method: "" as never,
+      processingFee: { ...blankRule().processingFee, mode: "" as never },
+    }));
+    expect(screen.getAllByText("Escolha o método")).toHaveLength(1);
+    expect(screen.getAllByText("Escolha como informar")).toHaveLength(2);
+    expect(within(dialog).queryByText("Escolha")).toBeNull();
   });
 });

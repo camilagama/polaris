@@ -294,7 +294,7 @@ describe("DateRangePanel", () => {
   it("com `only`, os atalhos de fora ficam no lugar, apagados e ligados ao motivo; os dois de dentro seguem ativos", () => {
     const markup = panel({
       only: {
-        reason: "Sem conexão: só este mês e o anterior.",
+        reason: "Sem conexão. Só dá para ver este mês e o anterior.",
         shortcuts: ["este-mes", "mes-passado"],
       },
       shortcuts: ["30-dias", "mes-passado", "este-mes", "este-ano"],
@@ -313,7 +313,9 @@ describe("DateRangePanel", () => {
     }
     const reasonId = attribute(off[0] ?? "", "aria-describedby") ?? "";
     expect(markup).toContain(`id="${reasonId}"`);
-    expect(markup).toContain("Sem conexão: só este mês e o anterior.");
+    expect(markup).toContain(
+      "Sem conexão. Só dá para ver este mês e o anterior."
+    );
   });
 
   it("com `only` não há rodapé nem Limpar (os dias desligados do calendário, que abre sob demanda, são provados no navegador)", () => {

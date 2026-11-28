@@ -214,7 +214,7 @@ const confirm = (page: Page) => page.getByRole("button", { name: SUBMITTED });
 
 async function fillReceipt(page: Page) {
   await page.getByLabel("Quantidade recebida").fill("10");
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("12,50");
 }
 
 /** Opens a select, picks the option and waits for the popup to leave: a slow machine still shows it fading out. */
@@ -229,7 +229,7 @@ async function openCost(page: Page) {
   await page
     .getByRole("button", { name: "Informar custo de Camiseta do teste, Azul" })
     .click();
-  await page.getByLabel("Custo de cada unidade (R$)").waitFor();
+  await page.getByLabel("Custo de cada unidade", { exact: true }).waitFor();
 }
 
 export const stockStates = {
@@ -250,7 +250,9 @@ export const stockStates = {
   /** The cost typed and reviewed: the summary that says it cannot be edited, before the confirmation. */
   async costConfirming(page: Page) {
     await openCost(page);
-    await page.getByLabel("Custo de cada unidade (R$)").fill("12,50");
+    await page
+      .getByLabel("Custo de cada unidade", { exact: true })
+      .fill("12,50");
     await review(page).click();
     await confirm(page).waitFor();
     await showScreenAlone(page);
@@ -267,7 +269,9 @@ export const stockStates = {
       )
     );
     await openCost(page);
-    await page.getByLabel("Custo de cada unidade (R$)").fill("12,50");
+    await page
+      .getByLabel("Custo de cada unidade", { exact: true })
+      .fill("12,50");
     await review(page).click();
     await confirm(page).click();
     await page.getByText("Custo informado: R$ 12,50 por unidade.").waitFor();

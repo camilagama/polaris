@@ -324,7 +324,9 @@ function ListBody({
         count=""
         emptyNotice={
           <>
-            <p className="font-medium">Nenhum perfil ativo</p>
+            <p className="text-muted-foreground" role="status">
+              Nenhum perfil ativo.
+            </p>
             <p className="text-muted-foreground text-support">
               Os perfis arquivados aparecem com “Incluir arquivados”.
             </p>

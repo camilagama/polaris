@@ -82,6 +82,8 @@ interface TextFieldProps {
   label: string;
   maxLength?: number | undefined;
   onChange: (value: string) => void;
+  /** "Opcional" beside the label, in the same words on every form. */
+  optional?: boolean | undefined;
   placeholder?: string | undefined;
   value: string;
 }
@@ -98,6 +100,7 @@ export function TextField({
   label,
   maxLength,
   onChange,
+  optional,
   placeholder,
   value,
 }: TextFieldProps) {
@@ -107,7 +110,15 @@ export function TextField({
   );
   return (
     <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <FieldLabel htmlFor={id}>
+        {label}
+        {optional ? (
+          <>
+            {" "}
+            <span className="font-normal text-muted-foreground">Opcional</span>
+          </>
+        ) : null}
+      </FieldLabel>
       <InputGroup>
         {addon ? <InputGroupAddon>{addon}</InputGroupAddon> : null}
         <InputGroupInput

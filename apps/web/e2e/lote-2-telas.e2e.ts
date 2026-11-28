@@ -1083,13 +1083,20 @@ test("Clientes: anonimizar pede a confirmação na linha, 'Manter cliente' desis
     "customer/list": reply({ customers: [customer(1, "Ana Lima")] }),
   });
   await page.getByRole("button", { name: "Mais ações para Ana Lima" }).click();
-  await page.getByRole("menuitem", { exact: true, name: "Anonimizar" }).click();
+  await activateByKeyboard(
+    page,
+    page.getByRole("menuitem", { exact: true, name: "Anonimizar" })
+  );
   const confirmation = page.getByRole("group", {
     name: "Confirmar a anonimização de Ana Lima",
   });
   await expect(confirmation).toContainText("Não dá para desfazer.");
+  await expectFocusRing(confirmation);
   await confirmation.getByRole("button", { name: "Manter cliente" }).click();
   await expect(confirmation).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Mais ações para Ana Lima" })
+  ).toBeFocused();
   expect(anonymized).toEqual([]);
 
   await page.getByRole("button", { name: "Mais ações para Ana Lima" }).click();

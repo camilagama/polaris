@@ -703,7 +703,7 @@ export interface SaleTimelineEvent {
   label: string;
   /** Where the sale stands: the only dot with a color of its own. */
   tone: "cancelled" | "muted" | "sale";
-  /** The device's local time, with the year only when it differs from the sale's. */
+  /** The device's local time, dd/mm/aaaa HH:mm, as the attribution history writes it. */
   timeText: string;
 }
 
@@ -718,37 +718,6 @@ const TIMELINE_TIE_ORDER: Record<SaleTimelineKind, number> = {
   sale: 3,
 };
 
-const timelineFormatter = new Intl.DateTimeFormat("pt-BR", {
-  day: "numeric",
-  hour: "2-digit",
-  hourCycle: "h23",
-  minute: "2-digit",
-  month: "short",
-  year: "numeric",
-});
-
-function timelineParts(instant: string): Map<string, string> | null {
-  const date = new Date(instant);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return new Map(
-    timelineFormatter.formatToParts(date).map((part) => [part.type, part.value])
-  );
-}
-
-function timelineText(instant: string, saleInstant: string): string {
-  const parts = timelineParts(instant);
-  if (parts === null) {
-    return instant;
-  }
-  const month = (parts.get("month") ?? "").replace(".", "");
-  const year = parts.get("year") ?? "";
-  const sameYear = timelineParts(saleInstant)?.get("year") === year;
-  const date = `${parts.get("day")} ${month}${sameYear ? "" : ` ${year}`}`;
-  return `${date} ${parts.get("hour")}:${parts.get("minute")}`;
-}
-
 /**
  * What happened to a sale and when, newest first: made, registered (only when the server took it 60 s or more after
  * it happened), each return, cancelled. Two instants that are the same moment keep the order of the story, and the
@@ -759,14 +728,13 @@ export function saleTimelineEvents(
 ): SaleTimelineEvent[] {
   const { confirmedAt, occurredAt } = detail.sale.sale;
   const cancelled = detail.cancellation !== null;
-  const at = (instant: string) => timelineText(instant, occurredAt);
   const events: SaleTimelineEvent[] = [
     {
       at: occurredAt,
       key: "sale",
       kind: "sale",
       label: "Venda feita",
-      timeText: at(occurredAt),
+      timeText: formatInstant(occurredAt),
       tone: cancelled ? "muted" : "sale",
     },
   ];
@@ -776,7 +744,7 @@ export function saleTimelineEvents(
       key: "registered",
       kind: "registered",
       label: "Confirmada no servidor",
-      timeText: at(confirmedAt),
+      timeText: formatInstant(confirmedAt),
       tone: "muted",
     });
   }
@@ -786,7 +754,7 @@ export function saleTimelineEvents(
       key: `return-${entry.id}`,
       kind: "return",
       label: "Devolução",
-      timeText: at(entry.returnedAt),
+      timeText: formatInstant(entry.returnedAt),
       tone: "muted",
     });
   }
@@ -796,7 +764,7 @@ export function saleTimelineEvents(
       key: "cancelled",
       kind: "cancelled",
       label: "Cancelada",
-      timeText: at(detail.cancellation.cancelledAt),
+      timeText: formatInstant(detail.cancellation.cancelledAt),
       tone: "cancelled",
     });
   }

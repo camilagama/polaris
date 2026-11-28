@@ -323,7 +323,9 @@ const MEDIA_SCREENS = [
     open: (page: Page) =>
       openMediaPanel(page, async () => {
         await page.getByRole("button", { name: "Remover imagem 2" }).click();
-        await expect(page.getByRole("alertdialog")).toBeVisible();
+        await expect(
+          page.getByRole("group", { name: "Confirmar remoção de imagem 2" })
+        ).toBeVisible();
       }),
   },
   {
@@ -886,7 +888,7 @@ const SCREENS = [
             page.getByRole("heading", { level: 1, name: "Estoque" })
           ).toBeVisible();
           await page.getByRole("button", { name: WRITE_OFF_SHIRT }).click();
-          await expect(page.getByLabel("Observação (opcional)")).toBeVisible();
+          await expect(page.getByLabel("Observação Opcional")).toBeVisible();
         },
         {},
         serveStockRows

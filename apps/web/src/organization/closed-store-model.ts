@@ -40,7 +40,7 @@ export const PANEL_LOAD_FAILED_TEXT =
   "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo.";
 export const PANEL_REFRESH_FAILED_TEXT =
   "Não deu para atualizar. O que está na tela é da última leitura.";
-export const PANEL_REFRESH_RETRY = "Tentar de novo";
+export const PANEL_REFRESH_RETRY = "Tentar novamente";
 export const PANEL_REFRESHING = "Atualizando…";
 export const PANEL_NOT_FOUND_TEXT =
   "Não encontramos uma loja encerrada nesta conta.";
@@ -312,7 +312,7 @@ export function loadWhenReading(previous: PanelLoad, round: number): PanelLoad {
 }
 
 /**
- * A "Tentar de novo" that works removes the button that held the focus: it falls to the body, and the title (stable
+ * A "Tentar novamente" that works removes the button that held the focus: it falls to the body, and the title (stable
  * in every state of the panel) takes it. A focus the person already moved is left where it is.
  */
 export function focusTitleAfterRetry(

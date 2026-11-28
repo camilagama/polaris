@@ -15,7 +15,7 @@ describe("the notice of a refresh that failed", () => {
     expect(html).toContain(
       "Não deu para atualizar. O que está na tela é da última leitura."
     );
-    expect(html).toContain("Tentar de novo");
+    expect(html).toContain("Tentar novamente");
     expect(html).not.toContain('aria-disabled="');
     expect(html).not.toContain("Atualizando…");
   });
@@ -26,7 +26,7 @@ describe("the notice of a refresh that failed", () => {
       "Não deu para atualizar. O que está na tela é da última leitura."
     );
     expect(html).toContain("Atualizando…");
-    expect(html).not.toContain("Tentar de novo");
+    expect(html).not.toContain("Tentar novamente");
     expect(html).toContain('aria-disabled="true"');
     expect(html).not.toMatch(NATIVE_DISABLED);
   });
