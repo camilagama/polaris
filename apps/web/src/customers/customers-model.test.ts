@@ -6,6 +6,7 @@ import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
   customerErrorMessage,
   customerStatusLabel,
+  editedCustomerNotice,
   filterCustomers,
   formatCustomerPhone,
   hasCustomerContact,
@@ -49,6 +50,18 @@ describe("the phone of a customer as the list shows it (P-15)", () => {
     expect(formatCustomerPhone("(11) 90000-0003")).toBe("(11) 90000-0003");
     expect(formatCustomerPhone("5511900000003")).toBe("5511900000003");
     expect(formatCustomerPhone("")).toBe("");
+  });
+});
+
+describe("what a saved edit of a customer says", () => {
+  it("names the customer the server answered with when something changed", () => {
+    expect(editedCustomerNotice(true, "Ana Lima Souza")).toBe(
+      "Cliente “Ana Lima Souza” atualizado."
+    );
+  });
+
+  it("says Nada mudou. and no name when the server found nothing to change", () => {
+    expect(editedCustomerNotice(false, "Ana Lima")).toBe("Nada mudou.");
   });
 });
 

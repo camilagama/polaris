@@ -2,7 +2,7 @@
 import type { Locator, Page, Route } from "@playwright/test";
 import { MAX_EXPENSE_COMPETENCE_DAYS_AHEAD } from "@polaris/domain/expenses/expense";
 import { expect, test } from "@playwright/test";
-import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
+import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   datePickerButton,
   FORM_VIEWPORTS,
@@ -999,15 +999,19 @@ test("o vazio com categoria diz 'Nenhuma despesa encontrada com estes filtros.' 
   await expect(page.getByText("Nenhuma despesa neste período.")).toHaveCount(0);
 
   await filterCategory(page, "Marketing");
-  const empty = page.locator("[data-empty-state]");
-  await expect(empty).toContainText(EMPTY_WITH_FILTERS);
-  await expect(empty).toHaveAttribute("role", "status");
-  expect(await emptyIconFaults(page, 1)).toEqual([]);
+  const empty = page
+    .getByRole("status")
+    .filter({ hasText: EMPTY_WITH_FILTERS });
+  await expect(empty).toBeVisible();
+  await expect(page.locator("[data-empty-state]")).toHaveCount(0);
   await expect(
-    empty.getByRole("button", { exact: true, name: "Nova despesa" })
-  ).toHaveCount(0);
+    page.getByRole("button", { exact: true, name: "Nova despesa" })
+  ).toHaveCount(1);
+  await expect(
+    page.locator("[data-list-block-notice]").getByRole("button")
+  ).toHaveCount(1);
 
-  await empty.getByRole("button", { name: "Limpar filtros" }).click();
+  await page.getByRole("button", { name: "Limpar filtros" }).click();
   await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(1);
   await expect(filterButton(page)).toBeFocused();
@@ -1145,7 +1149,9 @@ async function createMonthlyRule(page: Page, description: string) {
   await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
   // the form is a dialog, outside the panel
   const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
-  await form.getByLabel("Valor de cada ocorrência").fill("1.200");
+  await form
+    .getByLabel("Valor de cada ocorrência", { exact: true })
+    .fill("1.200");
   await choose(page, form, "Categoria", "Aluguel");
   await choose(page, form, "Frequência", "Todo mês");
   await pickDate(form, "Começa em", "2026-07-14");
@@ -1257,22 +1263,34 @@ for (const width of FORM_WIDTHS) {
       name: "Nova despesa recorrente",
     });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toBeFocused();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toBeFocused();
     await expectFormDialogLayout(dialog, width);
 
     // Esc sem digitar não guarda nada, nem o que foi digitado e apagado: reabrir traz o formulário como começou
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
-    await dialog.getByLabel("Valor de cada ocorrência").fill("7");
-    await dialog.getByLabel("Valor de cada ocorrência").fill("");
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("7");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("");
 
-    await dialog.getByLabel("Valor de cada ocorrência").fill("1.200");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("1.200");
     if (width < 760) {
       await expectKeyboardKeepsMainButton(
         page,
@@ -1286,9 +1304,9 @@ for (const width of FORM_WIDTHS) {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(openForm).toBeFocused();
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue(
-      "1.200"
-    );
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("1.200");
 
     await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -1297,8 +1315,12 @@ for (const width of FORM_WIDTHS) {
 
     // o que foi digitado não fica para a próxima vez, e salvar fecha o formulário e diz o resultado
     await openForm.click();
-    await expect(dialog.getByLabel("Valor de cada ocorrência")).toHaveValue("");
-    await dialog.getByLabel("Valor de cada ocorrência").fill("1.200");
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência", { exact: true })
+    ).toHaveValue("");
+    await dialog
+      .getByLabel("Valor de cada ocorrência", { exact: true })
+      .fill("1.200");
     await choose(page, dialog, "Categoria", "Aluguel");
     await choose(page, dialog, "Frequência", "Todo mês");
     await pickDate(dialog, "Começa em", "2026-07-14");
@@ -1906,12 +1928,13 @@ test("o vazio do período é só a frase: o Nova despesa único é o do título,
     .getByRole("status")
     .filter({ hasText: "Nenhuma despesa neste período." });
   await expect(empty).toBeVisible();
-  await expect(empty.getByText("Toque em")).toHaveCount(0);
-  expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
-  expect(await emptyIconFaults(page, 1)).toEqual([]);
+  const notice = page.locator("[data-list-block-notice]");
+  await expect(notice.getByText("Toque em")).toHaveCount(0);
+  expect(await axeFaults(page, "[data-list-block-notice]")).toEqual([]);
+  await expect(page.locator("[data-empty-state]")).toHaveCount(0);
   const only = page.getByRole("button", { exact: true, name: "Nova despesa" });
   await expect(only).toHaveCount(1);
-  await expect(empty.getByRole("button")).toHaveCount(0);
+  await expect(notice.getByRole("button")).toHaveCount(0);
   await expect(newExpenseButton(page)).toBeVisible();
   await only.click();
   await expect(expenseForm(page)).toBeVisible();
