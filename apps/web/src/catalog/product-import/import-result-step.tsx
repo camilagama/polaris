@@ -99,10 +99,10 @@ export function ImportResultStep({
       bodyRef={bodyRef}
       footer={
         <>
-          <Button onClick={onAnother} type="button" variant="outline">
+          <Button onClick={onAnother} size="xl" type="button" variant="outline">
             Importar outro arquivo
           </Button>
-          <Button onClick={handleShowProducts} type="button">
+          <Button onClick={handleShowProducts} size="xl" type="button">
             Ver os produtos
           </Button>
         </>
