@@ -426,7 +426,7 @@ const WITHOUT_ACTION: readonly {
   },
   {
     afterHeader: HEADER_GAP,
-    afterTitle: INTRO_GAP,
+    afterTitle: HEADER_GAP,
     heading: "Aparelhos",
     hiddenFrom1280: false,
     screen: "aparelhos lista",
@@ -486,8 +486,10 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
       return {
         afterHeader,
         afterLine:
-          (line.nextElementSibling as HTMLElement).getBoundingClientRect().top -
-          line.getBoundingClientRect().bottom,
+          (
+            (line.nextElementSibling ??
+              header?.nextElementSibling) as HTMLElement
+          ).getBoundingClientRect().top - line.getBoundingClientRect().bottom,
         headingBox: box(title),
         headingVisible:
           title.getBoundingClientRect().width > srOnlySide &&
