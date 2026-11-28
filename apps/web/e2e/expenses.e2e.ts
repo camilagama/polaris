@@ -2356,7 +2356,7 @@ test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome 
   await form.getByLabel("Nome da categoria").fill("Frete");
   await form.getByRole("button", { name: "Adicionar categoria" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(panel.getByText("Categoria “Frete” criada.")).toBeVisible();
+  await expect(panel.getByText("Categoria “Frete” adicionada.")).toBeVisible();
   await expect(newCategory).toBeFocused();
   await expect(
     panel

@@ -28,7 +28,7 @@ test("produto: categoria, produto, preço e estoque de abertura num passo aparec
   await expect(
     page
       .getByRole("status")
-      .filter({ hasText: `Categoria “${categoryName}” criada.` })
+      .filter({ hasText: `Categoria “${categoryName}” adicionada.` })
   ).toBeVisible();
 
   await page.goto("/products");
@@ -196,7 +196,9 @@ async function addCategory(page: Page, name: string) {
 async function addCategoryAndWait(page: Page, name: string) {
   await addCategory(page, name);
   await expect(
-    page.getByRole("status").filter({ hasText: `Categoria “${name}” criada.` })
+    page
+      .getByRole("status")
+      .filter({ hasText: `Categoria “${name}” adicionada.` })
   ).toBeVisible();
 }
 
