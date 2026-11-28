@@ -36,7 +36,7 @@ describe("line under the title of the product dialog", () => {
       updatedAt: "2026-10-14T12:00:00.000Z",
     } as ProductReadModel;
     expect(dialogTexts(product, false).description).toBe(
-      "Produto · atualizado em 14 de out. de 2026"
+      "Produto · atualizado em 14/10/2026"
     );
   });
 
