@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { refreshButtonProps } from "./closed-refresh-notice";
-import type { ClosedStore } from "./closed-store-model";
+import { type ClosedStore, PANEL_LOAD_FAILED_TEXT } from "./closed-store-model";
 import { PanelBody, StatusCard } from "./closed-store-page";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
@@ -21,6 +21,7 @@ const STORE: ClosedStore = {
   requestedAt: "2026-10-20T12:00:00.000Z",
   timezone: "America/Sao_Paulo",
 };
+const ALERT_INSIDE = /<div[^>]*role="alert"[^>]*>(?<inside>.*)<\/div>/;
 const noop = () => undefined;
 
 const card = (reading: boolean, online = true) =>
@@ -106,5 +107,32 @@ describe("the card and the notice share the read state", () => {
     expect(html.match(/Atualizando…/g)).toHaveLength(2);
     expect(html.match(/aria-disabled="true"/g)).toHaveLength(2);
     expect(refreshButton(html, "Tentar de novo")).toBe("");
+  });
+});
+
+describe("the read error of the panel", () => {
+  const html = renderToStaticMarkup(
+    <PanelBody
+      justClosed={false}
+      load={{ status: "error" }}
+      online
+      onRefresh={noop}
+      reading={false}
+    />
+  );
+  const notice = html.match(ALERT_INSIDE)?.groups?.inside;
+
+  it("holds Tentar novamente inside the alert, under the sentence", () => {
+    expect(notice).toBeDefined();
+    const sentence = notice?.indexOf(PANEL_LOAD_FAILED_TEXT) ?? -1;
+    const button = notice?.indexOf("Tentar novamente") ?? -1;
+    expect(sentence).toBeGreaterThanOrEqual(0);
+    expect(button).toBeGreaterThan(sentence);
+    expect(html.match(/Tentar novamente/g)).toHaveLength(1);
+  });
+
+  it("stacks the button to the left with the spacing given by the notice", () => {
+    expect(notice).toContain("grid justify-items-start gap-2");
+    expect(refreshButton(html, "Tentar novamente")).not.toContain("w-fit");
   });
 });

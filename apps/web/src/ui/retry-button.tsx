@@ -8,10 +8,11 @@ type RetryButtonProps = Omit<
 
 /**
  * "Tentar novamente" under the sentence of a notice that says a read failed: outline, small, no icon, always the same
- * word. The notice that holds it puts the sentence above and the button below, to the left
- * (`grid justify-items-start gap-2`), never on the same line: the sentence is what the person reads, and the button
- * does not compete with it. It is an action, not a link in a text, so it is never `variant="link"`
- * (`scripts/ui-source-rules.test.ts`).
+ * word. The notice that holds it puts the sentence above and the button below, to the left, never on the same line:
+ * the sentence is what the person reads, and the button does not compete with it. The piece brings no spacing; the
+ * notice gives it, in one of two ways: `grid justify-items-start gap-2` on the description, or, where the button is a
+ * direct child of the `AlertDescription`, `className="mt-1.5"` on the button. It is an action, not a link in a text,
+ * so it is never `variant="link"` (`scripts/ui-source-rules.test.ts`).
  */
 export function RetryButton(props: RetryButtonProps) {
   return (
