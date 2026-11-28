@@ -132,10 +132,12 @@ function historyTotalLine(view: HistoryFooterView, className?: string) {
 function HistoryNoSales({
   footer,
   onClearFilters,
+  refreshing,
   view,
 }: {
   footer: HistoryFooterView;
   onClearFilters: () => void;
+  refreshing: boolean;
   view: Extract<HistoryView, { kind: "empty" }>;
 }) {
   if (!view.clearFilters) {
@@ -143,11 +145,41 @@ function HistoryNoSales({
   }
   return (
     <SaleHistoryNoRows
-      count={historyListCount(view, false)}
+      count={shownCount(view, false, refreshing)}
       notice={<HistoryEmptyCard onClearFilters={onClearFilters} view={view} />}
       state="filtered-empty"
       total={historyTotalLine(footer)}
     />
+  );
+}
+
+/** The count beside the title, or the refresh sentence in its place while the first page is read again. */
+function shownCount(
+  view: HistoryView,
+  hasMore: boolean,
+  refreshing: boolean
+): string {
+  return refreshing ? LIST_REFRESHING_TEXT : historyListCount(view, hasMore);
+}
+
+/** "Carregando mais vendas…" is only for the screen reader, the button already says "Carregando…". The refresh reads in the count; a list with no frame has none, so there the sentence stays in view, the only sign that the empty state is not the server's answer yet. */
+function HistoryWaitStatus({
+  busy,
+  refreshing,
+  view,
+}: {
+  busy: boolean;
+  refreshing: boolean;
+  view: HistoryView;
+}) {
+  const frameless = view.kind === "empty" && !view.clearFilters;
+  return (
+    <div aria-live="polite" role="status">
+      {busy ? <p className="sr-only">Carregando mais vendas…</p> : null}
+      {refreshing && frameless ? (
+        <p className="text-muted-foreground">{LIST_REFRESHING_TEXT}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -265,6 +297,7 @@ export function SaleHistoryPage() {
     [setFilters]
   );
   const more = loadMoreView(state, listKey);
+  const refreshingList = more.refreshing && !offline;
   const handleOpenSale = useRememberHistoryOnOpen(organizationId, filters);
   useScrollBackOnce(view.kind === "ready", opening.scrollY);
   const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
@@ -328,12 +361,13 @@ export function SaleHistoryPage() {
         <HistoryNoSales
           footer={footer}
           onClearFilters={handleClearFilters}
+          refreshing={refreshingList}
           view={view}
         />
       ) : null}
       {view.kind === "ready" ? (
         <SaleHistoryList
-          count={historyListCount(view, state.hasMore)}
+          count={shownCount(view, state.hasMore, refreshingList)}
           footer={historyTotalLine(
             footer,
             offline ? undefined : TOTAL_UNDER_VALUES
@@ -343,14 +377,11 @@ export function SaleHistoryPage() {
           rows={view.rows}
         />
       ) : null}
-      <div aria-live="polite" role="status">
-        {more.busy ? (
-          <p className="text-muted-foreground">Carregando mais vendas…</p>
-        ) : null}
-        {more.refreshing && !offline ? (
-          <p className="text-muted-foreground">{LIST_REFRESHING_TEXT}</p>
-        ) : null}
-      </div>
+      <HistoryWaitStatus
+        busy={more.busy}
+        refreshing={refreshingList}
+        view={view}
+      />
       {more.error ? (
         <Alert variant="destructive">
           <AlertDescription>{more.error}</AlertDescription>
