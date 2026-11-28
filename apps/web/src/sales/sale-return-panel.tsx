@@ -289,7 +289,7 @@ export function SaleReturnPanel({
             <ReasonFields
               disabled={confirming}
               errors={errors}
-              legend="Motivo da devolução (opcional)"
+              legend="Motivo da devolução"
               noteCounter={returnNoteCounterText(state.draft)}
               onNoteChange={handleNoteChange}
               onReasonChange={handleReasonChange}

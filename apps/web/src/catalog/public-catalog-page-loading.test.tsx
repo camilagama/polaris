@@ -1,5 +1,11 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const server = vi.hoisted(() => ({
@@ -58,6 +64,24 @@ describe("o catálogo público na primeira leitura", () => {
         (heading) => heading.textContent
       )
     ).toEqual(["Perfil público", "Catálogo", "Produtos"]);
+  });
+
+  it("a explicação da tela vai para o (i) do título e não deixa nada sob ele", () => {
+    const { container } = render(<PublicCatalogPage />);
+    const title = screen.getByRole("heading", {
+      level: 1,
+      name: "Catálogo público",
+    });
+    expect(title.parentElement?.querySelector("p")).toBeNull();
+    expect(container.textContent).not.toContain("Custo, estoque e SKU");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sobre Catálogo público" })
+    );
+    expect(
+      screen.getByText(
+        "Mostre produtos a quem não tem conta, num endereço só seu. Aparecem nome, descrição, fotos e preço de tabela do que você escolher."
+      )
+    ).toBeTruthy();
   });
 
   it("diz «Carregando…» só ao leitor de tela, sem texto visível", () => {

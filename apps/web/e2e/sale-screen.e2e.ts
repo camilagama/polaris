@@ -130,7 +130,7 @@ async function useEveryControl(page: Page) {
   await page
     .getByRole("option", { exact: true, name: "Percentual (%)" })
     .click();
-  await adjustment.getByLabel("Percentual (%)").fill("5");
+  await adjustment.getByLabel("Percentual", { exact: true }).fill("5");
   // the day on the DatePicker (no datetime-local), the time typed beside it
   const day = page.getByRole("button", { name: "Dia, Escolher data" });
   await day.click();
