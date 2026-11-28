@@ -1570,7 +1570,7 @@ export function UiGallery() {
 
             <Alert variant="warning">
               <CloudOffIcon aria-hidden="true" />
-              <AlertTitle>Sem internet.</AlertTitle>
+              <AlertTitle>Sem conexão.</AlertTitle>
               <AlertDescription>
                 Pode vender. 3 vendas aguardam envio.
               </AlertDescription>

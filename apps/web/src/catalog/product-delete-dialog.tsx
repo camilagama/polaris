@@ -242,7 +242,7 @@ function DeleteBody({
           {NAME_REASON_TEXT}
         </span>
       ) : null}
-      <DialogFooter>
+      <DialogFooter className="gap-3">
         <Button
           aria-disabled={pending || undefined}
           onClick={pending ? undefined : onCancel}

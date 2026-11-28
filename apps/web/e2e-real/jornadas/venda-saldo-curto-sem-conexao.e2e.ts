@@ -50,7 +50,9 @@ test("venda com saldo curto sem conexão: o link abre a entrada com a quantidade
   await waitForOfflineShell(page);
   await page.context().setOffline(true);
   await expect(
-    page.getByRole("status").filter({ hasText: "Sem conexão" })
+    page
+      .locator('[data-slot="badge"][role="status"]')
+      .filter({ hasText: "Sem conexão" })
   ).toBeVisible({ timeout: 15_000 });
   await fillSale(
     page,

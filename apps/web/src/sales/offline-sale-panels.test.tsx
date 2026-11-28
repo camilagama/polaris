@@ -2,11 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { PendingSale } from "../offline/sale-confirm";
 import {
+  OfflineSaleNotice,
   SavedSaleRow,
   SavedSalesCard,
   savedSaleLines,
 } from "./offline-sale-panels";
-import type { QueuedSaleView } from "./sale-form-model";
+import { OFFLINE_SALE_DATE_NOTE, type QueuedSaleView } from "./sale-form-model";
 
 const queue = vi.hoisted(() => ({ sales: [] as PendingSale[] }));
 
@@ -34,6 +35,23 @@ const justSaved: QueuedSaleView = {
   stockWarnings: [],
   totalDue: "R$ 45,00",
 };
+
+const OFFLINE_ALERT_TITLE = /data-slot="alert-title"[^>]*>Sem conexão\.</;
+const NOTE_OPENING = "Sem conexão. A venda fica com a data e a hora";
+
+describe("o aviso de offline da Nova venda", () => {
+  it("abre com Sem conexão., como as outras telas, e não diz internet", () => {
+    const markup = renderToStaticMarkup(<OfflineSaleNotice />);
+    expect(markup).toMatch(OFFLINE_ALERT_TITLE);
+    expect(markup).toContain("Pode vender: a venda fica guardada");
+    expect(markup).not.toContain("internet");
+  });
+
+  it("a nota da data abre com a mesma frase", () => {
+    expect(OFFLINE_SALE_DATE_NOTE.startsWith(NOTE_OPENING)).toBe(true);
+    expect(OFFLINE_SALE_DATE_NOTE).not.toContain("internet");
+  });
+});
 
 describe("savedSaleLines (P-3)", () => {
   it("sem venda recém-guardada, lista as da fila na ordem da fila, com o valor formatado", () => {

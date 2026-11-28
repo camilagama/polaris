@@ -3,10 +3,14 @@ import { Button } from "@/ui/button";
 import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
 
-/* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the date as the lists write
-   it, the rows drawn so far and the buttons of a row. */
+/* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the date as the app writes it
+   (dd/mm/aaaa), the rows drawn so far and the buttons of a row. */
 
-const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
+const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
 
 export function formatDate(value: string): string {
   return dateFormatter.format(new Date(value));

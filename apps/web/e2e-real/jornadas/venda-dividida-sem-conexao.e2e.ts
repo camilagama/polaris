@@ -83,7 +83,8 @@ async function payments(sql: Sql, organizationId: string) {
   ).rows.map((row) => ({ ...row, amount: numericCents(row.amount) }));
 }
 
-const syncChip = (page: Page) => page.getByRole("status");
+const syncChip = (page: Page) =>
+  page.locator('[data-slot="badge"][role="status"]');
 const part = (page: Page, ordinal: 1 | 2) =>
   page.getByRole("group", { exact: true, name: `Parte ${ordinal}` });
 

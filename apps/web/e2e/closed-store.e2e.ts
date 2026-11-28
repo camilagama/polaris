@@ -147,7 +147,9 @@ const title = (page: Page, name = "Loja do teste está encerrada") =>
   page.getByRole("heading", { exact: true, level: 1, name });
 const dates = (page: Page) => page.locator("dl");
 const undoButton = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Desfazer encerramento" });
+  page
+    .getByRole("main")
+    .getByRole("button", { exact: true, name: "Desfazer encerramento" });
 const askButton = (page: Page) =>
   page.getByRole("button", { name: "Pedir cópia dos dados" });
 const copies = (page: Page) =>
@@ -309,7 +311,7 @@ test("carregando, sem botão de ação; a leitura que falha dá Tentar novamente
   await expect(undoButton(page)).toHaveCount(0);
   release();
   await expect(page.getByRole("alert")).toHaveText(
-    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo."
+    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo.Tentar novamente"
   );
   await expect(page.getByRole("main")).not.toContainText("está encerrada");
   await page.getByRole("button", { name: "Tentar novamente" }).click();
@@ -480,7 +482,7 @@ test("a primeira leitura que falha continua mostrando só o erro, sem painel (AC
     statuses: [(route) => route.abort("internetdisconnected")],
   });
   await expect(page.getByRole("alert")).toHaveText(
-    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo."
+    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo.Tentar novamente"
   );
   await expect(
     page.getByRole("button", { name: "Tentar de novo" })
@@ -588,7 +590,7 @@ test("o botão de desfazer some quando a janela acaba, sem nova leitura (AC-8, A
 const undoDialog = (page: Page) =>
   page.getByRole("dialog", { name: "Desfazer o encerramento?" });
 const confirmUndo = (page: Page) =>
-  undoDialog(page).getByRole("button", { name: "Sim, desfazer" });
+  undoDialog(page).getByRole("button", { name: "Desfazer encerramento" });
 const REOPENED = /reaberta/i;
 
 test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () => {
@@ -602,7 +604,9 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
       "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado não é enviado sozinho: fica em Pendências e precisa ser refeito."
     );
     await expect(confirmUndo(page)).toBeVisible();
-    await undoDialog(page).getByRole("button", { name: "Voltar" }).click();
+    await undoDialog(page)
+      .getByRole("button", { name: "Manter encerramento" })
+      .click();
     await expect(undoDialog(page)).toHaveCount(0);
     await undoButton(page).click();
     await page.keyboard.press("Escape");
@@ -639,7 +643,7 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
     });
     await expect(sending).toHaveAttribute("aria-disabled", "true");
     await expect(
-      undoDialog(page).getByRole("button", { name: "Voltar" })
+      undoDialog(page).getByRole("button", { name: "Manter encerramento" })
     ).toHaveAttribute("aria-disabled", "true");
     await sending.click({ force: true });
     release();

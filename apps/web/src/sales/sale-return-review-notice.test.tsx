@@ -54,4 +54,14 @@ describe("the review notices, set back into the card", () => {
       "A venda será marcada como cancelada sem motivo informado e o estoque voltará item a item, exceto item de produto removido. Não dá para desfazer."
     );
   });
+
+  it("names the reason in the cancellation review when one was chosen", () => {
+    const html = renderToStaticMarkup(
+      <CancelReviewNotice noticeRef={null} reasonCode="customer_request" />
+    );
+    expect(html).toContain(
+      "A venda será marcada como cancelada (motivo: Cliente desistiu) e o estoque voltará item a item, exceto item de produto removido. Não dá para desfazer."
+    );
+    expect(html).not.toContain("sem motivo informado");
+  });
 });

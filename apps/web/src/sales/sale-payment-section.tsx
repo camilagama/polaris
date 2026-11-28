@@ -215,10 +215,10 @@ function AdjustmentEditor({
             }
             id={`${prefix}-value`}
             inputMode="decimal"
-            label={percentage ? "Percentual (%)" : "Valor (R$)"}
+            label={percentage ? "Percentual" : "Valor"}
             maxLength={22}
             onChange={handleValue}
-            placeholder={percentage ? "2,5" : "15,00"}
+            placeholder={percentage ? "Ex.: 2,5" : "Ex.: 15,00"}
             value={adjustment.value}
           />
         </div>
@@ -342,7 +342,8 @@ function SaleDate({
   return (
     <FieldSet className="gap-3">
       <legend className="font-medium text-sm">
-        Data e hora da venda (opcional)
+        Data e hora da venda{" "}
+        <span className="font-normal text-muted-foreground">Opcional</span>
       </legend>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
         <DateField
@@ -1176,7 +1177,7 @@ export function PaymentSection({
           )}
           {offline ? (
             <p className="-mt-3 text-muted-foreground text-support" role="note">
-              Sem conexão: estes são os perfis da última vez com conexão.{" "}
+              Sem conexão. Estes são os perfis da última leitura.{" "}
               {splitOn
                 ? "Se o perfil de uma parte mudar até o servidor confirmar a venda, ela é recusada inteira e fica em Pendências para você refazer com as duas partes."
                 : "Se o perfil mudar até o servidor confirmar a venda, ela é recusada e você pode reenviá-la sem perfil em Pendências."}
