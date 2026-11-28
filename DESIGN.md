@@ -123,6 +123,8 @@ No primeiro contato, cada elemento diz o número, o nome e no máximo uma linha 
 
 Forma: período sempre "1 a 23/10", nunca "de 1 a 23 de outubro"; "vs." só dentro da ajuda ou do nome acessível de um chip; sem ponto final em linha de apoio de uma frase só.
 
+Na frase de falha ao gravar, "tente de novo"; o botão do aviso de erro de leitura é "Tentar novamente" (`RetryButton`). A regra vale para texto novo: a frase que já existe troca quando o arquivo for mexido por outro motivo, sem varredura.
+
 Ação sem volta: frase própria, "Não dá para desfazer." (com o objeto quando longe da ação), sem negrito. Exceção até haver autorização para os e2e protegidos: o painel da loja encerrada segue com "Isso não tem volta.".
 
 ## Gráficos
