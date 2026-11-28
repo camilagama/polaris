@@ -67,7 +67,7 @@ describe("targetBalanceText", () => {
 
 describe("targetMovementText", () => {
   it("says the day, month and time of the last movement", () => {
-    expect(targetMovementText(target(), NOW)).toBe("14/10 09:00");
+    expect(targetMovementText(target(), NOW)).toBe("14/10, 09:00");
   });
 
   it("writes the year of a movement from another year", () => {
@@ -76,7 +76,7 @@ describe("targetMovementText", () => {
         target({ updatedAt: new Date(2025, 9, 14, 9, 0).toISOString() }),
         NOW
       )
-    ).toBe("14/10/2025 09:00");
+    ).toBe("14/10/2025, 09:00");
   });
 
   it("writes the year across New Year's Eve, by the device's own calendar", () => {
@@ -86,13 +86,13 @@ describe("targetMovementText", () => {
         target({ updatedAt: new Date(2025, 11, 31, 23, 30).toISOString() }),
         afterMidnight
       )
-    ).toBe("31/12/2025 23:30");
+    ).toBe("31/12/2025, 23:30");
     expect(
       targetMovementText(
         target({ updatedAt: new Date(2026, 0, 1, 0, 10).toISOString() }),
         afterMidnight
       )
-    ).toBe("01/01 00:10");
+    ).toBe("01/01, 00:10");
   });
 
   it("says a variant that never moved", () => {

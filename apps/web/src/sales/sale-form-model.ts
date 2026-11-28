@@ -1360,7 +1360,7 @@ export function timeOfDay(now: Date): string {
 }
 
 /**
- * The closed line of the date and adjustments: "Agora · Sem ajuste", "02/11/2026 14:30 · 1 ajuste". Without a
+ * The closed line of the date and adjustments: "Agora · Sem ajuste", "02/11/2026, 14:30 · 1 ajuste". Without a
  * connection the date is always now (a typed one is not kept).
  */
 export function saleExtrasSummary(
@@ -1377,7 +1377,7 @@ export function saleExtrasSummary(
           saleTimeText(time),
         ]
           .filter((part) => part !== "")
-          .join(" ");
+          .join(", ");
   const count = form.adjustments.length;
   const adjustmentsText =
     count === 0

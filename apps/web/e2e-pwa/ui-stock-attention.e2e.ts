@@ -12,7 +12,7 @@ import { NEAR_MIDNIGHT_STORE_DAY, stockStates } from "./ui-stock-states";
  * finds nothing on either screen.
  */
 const JEANS_PANEL = /^Saldo atual: 3 · custo médio R\$ 62,40$/;
-const LAST_MOVEMENT_DATE = /^\d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}$/;
+const LAST_MOVEMENT_DATE = /^\d{2}\/\d{2}(\/\d{4})?, \d{2}:\d{2}$/;
 const DATE_BUTTON = /^Data/;
 const CONFIRM_BUTTON = /^Confirmar/;
 const RECEIVE_JEANS = /^Receber estoque de Calça jeans/;
