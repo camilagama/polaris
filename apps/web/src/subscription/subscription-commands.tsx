@@ -193,7 +193,6 @@ function useDialogExits(
   return { back, guarded };
 }
 
-const DIALOG = "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md";
 const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 interface CommandDialogProps {
@@ -254,7 +253,7 @@ function CancelRenewalDialog({
   const text = cancelDialogText(plan);
   return (
     <Dialog onOpenChange={guarded} open={open}>
-      <DialogContent className={DIALOG} showCloseButton={false}>
+      <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{text.title}</DialogTitle>
           <DialogDescription>{text.description}</DialogDescription>
@@ -346,7 +345,7 @@ function RefundDialog({
   const text = refundDialogText(amount);
   return (
     <Dialog onOpenChange={guarded} open={open}>
-      <DialogContent className={DIALOG} showCloseButton={false}>
+      <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{text.title}</DialogTitle>
           <DialogDescription>{text.description}</DialogDescription>

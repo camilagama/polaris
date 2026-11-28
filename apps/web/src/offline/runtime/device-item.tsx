@@ -136,8 +136,8 @@ export function RevokeForm({
         <Button
           aria-describedby={offline ? reasonId : undefined}
           aria-disabled={blocked || undefined}
-          // the label is long ("…e encerrar outras sessões"): it wraps, so it fits a 320 px dialog
-          className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
+          // the label is long ("…e encerrar outras sessões"): it wraps and shrinks (Button is shrink-0), so it stays inside the 384 px dialog beside "Manter aparelho"
+          className="h-auto! min-h-ctl-md min-w-0 shrink whitespace-normal py-1.5 text-center"
           onClick={blocked ? undefined : onRevoke}
           type="button"
           variant="destructive"
@@ -271,11 +271,7 @@ export function DeviceItem({
             Revogar
           </Button>
           <Dialog onOpenChange={handleOpenChange} open={confirming}>
-            <DialogContent
-              className="sm:max-w-md"
-              finalFocus={finalFocus}
-              showCloseButton={false}
-            >
+            <DialogContent finalFocus={finalFocus} showCloseButton={false}>
               <RevokeBody
                 actionError={actionError}
                 busy={busy}

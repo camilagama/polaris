@@ -98,7 +98,6 @@ import {
 
 const PAGE_TITLE = "Loja encerrada";
 const COPY_SECTION_ID = "copia-dos-dados";
-const UNDO_DIALOG = "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md";
 const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 const TITLE_ID = "titulo-do-painel";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -326,7 +325,7 @@ function UndoDialog({ onBack, onConfirm, open, pending }: UndoDialogProps) {
   );
   return (
     <Dialog onOpenChange={guarded} open={open}>
-      <DialogContent className={UNDO_DIALOG} showCloseButton={false}>
+      <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{UNDO_TITLE}</DialogTitle>
           <DialogDescription>{UNDO_EFFECTS_TEXT}</DialogDescription>
