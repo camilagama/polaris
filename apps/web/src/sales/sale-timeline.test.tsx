@@ -17,6 +17,7 @@ const REGISTERED_LINE =
   /^Confirmada no servidor, \d{2}\/06\/2026,? \d{2}:\d{2}$/;
 const SALE_LINE = /^Venda feita, \d{2}\/06\/2026,? \d{2}:\d{2}$/;
 const OL = /<ol[\s>]/g;
+const CANCELLED_NOTE = /<p>(O registro original[^<]*)<\/p>/;
 const LI = /<li[\s>]/g;
 const ITEM_TEXT =
   /<li[^>]*><span aria-hidden="true"[^>]*><\/span><span[^>]*>([^<]*)<\/span><span class="sr-only">([^<]*)<\/span><time[^>]*>([^<]*)<\/time><\/li>/g;
@@ -251,6 +252,16 @@ describe("the timeline inside the detail", () => {
     expect(receipt).toBeGreaterThan(-1);
     expect(timeline).toBeGreaterThan(receipt);
     expect(returns).toBeGreaterThan(timeline);
+  });
+
+  it("tells on the cancelled sale's note that the cancellation cannot be undone", () => {
+    const html = top(cancelled);
+    expect(html).toContain("Venda cancelada");
+    const paragraph = CANCELLED_NOTE.exec(html);
+    expect(paragraph?.[1]).toBe(
+      "O registro original abaixo foi preservado, sem edição. Não dá para desfazer o cancelamento."
+    );
+    expect(top(detail())).not.toContain("Não dá para desfazer");
   });
 
   it("is not in the detail of a sale with a single event", () => {
