@@ -22,8 +22,9 @@ interface OperationActionsProps {
 }
 
 /**
- * The buttons of a cancellation or of a return: review and close while editing; confirm and back on the last
- * step. A destructive button exists only on that last step (auditoria v5.1, rule 1).
+ * The buttons of a cancellation or of a return, secondary first and main last, so the form footer stacks them
+ * with the main one on top on a phone: close and review while editing; back and confirm on the last step. A
+ * destructive button exists only on that last step (auditoria v5.1, rule 1).
  */
 export function OperationActions({
   closeLabel,
@@ -39,34 +40,33 @@ export function OperationActions({
   reviewLabel,
   submitting,
 }: OperationActionsProps) {
+  if (confirming) {
+    return (
+      <>
+        {locked ? null : (
+          <Button onClick={onBack} type="button" variant="ghost">
+            Voltar
+          </Button>
+        )}
+        <Button
+          disabled={submitting}
+          onClick={onConfirm}
+          type="button"
+          variant={destructive && !retrying ? "destructive" : "default"}
+        >
+          {confirmLabel}
+        </Button>
+      </>
+    );
+  }
   return (
-    <div className="flex flex-wrap gap-3">
-      {confirming ? (
-        <>
-          <Button
-            disabled={submitting}
-            onClick={onConfirm}
-            type="button"
-            variant={destructive && !retrying ? "destructive" : "default"}
-          >
-            {confirmLabel}
-          </Button>
-          {locked ? null : (
-            <Button onClick={onBack} type="button" variant="ghost">
-              Voltar
-            </Button>
-          )}
-        </>
-      ) : (
-        <>
-          <Button onClick={onReview} type="button">
-            {reviewLabel}
-          </Button>
-          <Button onClick={onClose} type="button" variant="ghost">
-            {closeLabel}
-          </Button>
-        </>
-      )}
-    </div>
+    <>
+      <Button onClick={onClose} type="button" variant="ghost">
+        {closeLabel}
+      </Button>
+      <Button onClick={onReview} type="button">
+        {reviewLabel}
+      </Button>
+    </>
   );
 }
