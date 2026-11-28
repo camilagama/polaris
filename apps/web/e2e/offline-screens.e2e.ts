@@ -1036,7 +1036,7 @@ async function rememberProfile(page: Page, version: number) {
 }
 
 test.describe("venda com perfil de pagamento sem conexão", () => {
-  test("oferece o perfil da última vez com conexão, guarda a venda com ele, e o servidor aceita se a versão é a atual", async ({
+  test("oferece o perfil da última leitura, guarda a venda com ele, e o servidor aceita se a versão é a atual", async ({
     page,
   }) => {
     await rememberProfile(page, 3);

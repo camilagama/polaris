@@ -1,10 +1,9 @@
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
-import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import UploadIcon from "lucide-react/dist/esm/icons/upload";
 import type { ReactNode, Ref } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Alert, AlertDescription } from "@/ui/alert";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { Button } from "@/ui/button";
 import { RetryButton } from "@/ui/retry-button";
@@ -161,20 +160,6 @@ export function ProductsImportFooter({
 
 /** The id of the offline notice: the archived notice's "Desfazer" points at it while it is off for lack of connection. */
 export const OFFLINE_NOTICE_ID = "products-offline-notice";
-
-/** Said while there is no connection: what still works and what waits. */
-export function OfflineNotice() {
-  return (
-    <Alert id={OFFLINE_NOTICE_ID} variant="warning">
-      <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem conexão.</AlertTitle>
-      <AlertDescription>
-        Cadastrar funciona e é enviado depois; editar, arquivar, variantes e
-        imagens precisam de conexão.
-      </AlertDescription>
-    </Alert>
-  );
-}
 
 interface FeedbackProps {
   error: string | null;
