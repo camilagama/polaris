@@ -744,7 +744,7 @@ const MUG_PANEL =
   /Caneca esmaltada · Sem opções\. Saldo atual: 0 · custo médio desconhecido$/;
 const COUNT_LINE = /^\d+ variantes?/;
 
-test("sem internet com o filtro de custo ativo: sem contagem e a lista diz que só carrega com conexão", async ({
+test("sem internet com o filtro de custo ativo: sem contagem e a lista diz que não carrega agora", async ({
   page,
 }) => {
   await openStockLab(page, "claro", {
@@ -753,13 +753,13 @@ test("sem internet com o filtro de custo ativo: sem contagem e a lista diz que s
   });
   // the lab's own checkbox takes the network away; the screen then works from the device
   await page.getByLabel("Rede disponível").uncheck();
-  await expect(page.getByText("Sem conexão.")).toBeVisible();
+  await expect(page.getByText("Sem conexão.", { exact: true })).toBeVisible();
   await expectPills(page, ["Custo desconhecido"]);
   await expect(pill(page, "Custo desconhecido")).toHaveCount(0);
   await expect(bar(page)).toContainText("Só com conexão");
   await expect(
     page.getByText(
-      "Sem internet. A lista de variantes sem custo só carrega com conexão."
+      "Sem conexão. A lista de variantes sem custo não carrega agora."
     )
   ).toBeVisible();
   // the device does not know how many variants lack a cost: no zero is written
