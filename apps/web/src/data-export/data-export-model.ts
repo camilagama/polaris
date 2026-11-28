@@ -1,4 +1,4 @@
-import { formatFileSize } from "../lib/format";
+import { formatFileSize, formatInstant } from "../lib/format";
 import {
   isConnectionFailure,
   isPlatformCut,
@@ -97,24 +97,6 @@ function shortFormats(formats: readonly ExportFormat[]): string {
   return `${names.slice(0, -1).join(", ")} e ${names.at(-1)}`;
 }
 
-function instantIn(value: string, timeZone: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  const parts = new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-    timeZone,
-    year: "numeric",
-  }).formatToParts(date);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((item) => item.type === type)?.value ?? "";
-  return `${part("day")}/${part("month")}/${part("year")} ${part("hour")}:${part("minute")}`;
-}
-
 type ExportViewKind =
   | "preparing"
   | "ready"
@@ -150,7 +132,7 @@ export function exportView(
   const base = {
     formats: shortFormats(item.formats),
     id: item.id,
-    requested: `Pedida em ${instantIn(item.requestedAt, timeZone)}`,
+    requested: `Pedida em ${formatInstant(item.requestedAt, timeZone)}`,
   };
   const expiresAt =
     item.expiresAt === null ? Number.NaN : Date.parse(item.expiresAt);
@@ -164,7 +146,7 @@ export function exportView(
           ordinal: file.ordinal,
         })),
       kind: "ready",
-      text: `Sua cópia está pronta. Baixe até ${instantIn(item.expiresAt as string, timeZone)}.`,
+      text: `Sua cópia está pronta. Baixe até ${formatInstant(item.expiresAt as string, timeZone)}.`,
     };
   }
   if (item.status === "ready" || item.status === "expired") {

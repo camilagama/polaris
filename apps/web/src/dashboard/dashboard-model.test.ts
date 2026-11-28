@@ -108,7 +108,7 @@ describe("formatLastConfirmed", () => {
   it("says the date and time of the copy the device kept, in the organization's zone", () => {
     expect(
       formatLastConfirmed("2026-10-14T15:30:00.000Z", "America/Sao_Paulo")
-    ).toBe("Último resultado confirmado: 14/10/2026 12:30");
+    ).toBe("Último resultado confirmado: 14/10/2026, 12:30");
   });
 });
 

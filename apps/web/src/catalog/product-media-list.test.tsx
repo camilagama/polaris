@@ -90,6 +90,18 @@ describe("the list of images of a product", () => {
     expect(button(html, "Mover imagem 2 para antes")).not.toContain(OFF);
   });
 
+  it("draws Remover as text in ghost sm at the end of the item header, never as the filled red", () => {
+    const html = render({ assets: [asset(0)] });
+    const tag = button(html, "Remover imagem 1");
+    expect(tag).toContain("hover:bg-accent");
+    expect(tag).toContain("h-ctl-sm");
+    expect(tag).not.toContain("bg-destructive");
+    expect(html.indexOf(tag)).toBeLessThan(html.indexOf("<fieldset"));
+    expect(html.slice(html.indexOf("<fieldset"))).not.toContain(
+      'data-media-action="remove"'
+    );
+  });
+
   it("turns off every action while a command runs", () => {
     const html = render({ busy: true });
     for (const label of [
@@ -113,8 +125,10 @@ describe("the list of images of a product", () => {
     expect(html).toContain("As variantes que a usam deixam de mostrá-la.");
     expect(html).toContain("Manter imagem");
     expect(html).toContain("Remover imagem");
+    expect(html).not.toContain('aria-label="Remover imagem 2"');
     // the other rows keep their actions
     expect(html).toContain('aria-label="Mover imagem 1 para depois"');
+    expect(html).toContain('aria-label="Remover imagem 1"');
   });
 
   it("names the replacement for what it does: the image goes now", () => {

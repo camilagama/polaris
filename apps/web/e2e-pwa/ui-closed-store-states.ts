@@ -21,9 +21,9 @@ const RPC_PREFIX = /^.*\/rpc\//;
 const DOWNLOAD = /^Baixar dados\.json \(820 KB\)$/;
 /** What the fields of `READY_COPY` that the screen shows read as: a change in one of them fails here. */
 const READY_COPY_ON_SCREEN = [
-  "Pedida em 30/10/2026 11:10",
+  "Pedida em 30/10/2026, 11:10",
   "JSON e planilha",
-  "Sua cópia está pronta. Baixe até 31/10/2026 11:40.",
+  "Sua cópia está pronta. Baixe até 31/10/2026, 11:40.",
 ];
 const procedureOf = (route: Route) =>
   new URL(route.request().url()).pathname.replace(RPC_PREFIX, "");
