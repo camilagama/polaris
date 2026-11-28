@@ -485,8 +485,13 @@ test("a primeira leitura que falha continua mostrando só o erro, sem painel (AC
     "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo."
   );
   await expect(
-    page.getByRole("button", { name: "Tentar de novo" })
+    page.getByText(
+      "Não deu para atualizar. O que está na tela é da última leitura."
+    )
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { exact: true, name: "Tentar novamente" })
+  ).toHaveCount(1);
 });
 
 test("sem loja no endereço, lista as encerradas do dono e abre a única ou deixa escolher (e-mail)", async ({
