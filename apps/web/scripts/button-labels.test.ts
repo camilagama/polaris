@@ -15,7 +15,8 @@ import { afterAll, describe, expect, it } from "vitest";
  * The button says the choice ("Excluir venda" / "Manter"), never "OK", "Sim" or "Sim, <verbo>" (DESIGN.md,
  * "Diálogo de formulário"). The scan reads every `.tsx` of `src` as text, so a label added to any screen is caught, and
  * also the `*-texts.ts` constants that hold button text; a plain `.ts` is not read, because it would flag
- * strings that are not labels. Only the gallery and the labs, which are not product screens, stay out, and
+ * strings that are not labels. The `*-model.ts` files, where some confirmation labels live, are read only
+ * for "Sim, <verbo>", since their other strings are not button text. Only the gallery and the labs, which are not product screens, stay out, and
  * the exclusions are listed exactly. A second rule bounds a literal `<Button>` label at 5 words and no final
  * period; it reads the text written straight before `</Button>`, joining the pieces that JSX splits with
  * `{" "}` and line breaks, so a label that comes from a constant or a prop, or that is followed by an
@@ -25,7 +26,9 @@ const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const EXCLUDED_FOLDERS = ["offline-poc/", "ui-gallery/"];
 const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
 const TEXTS_CONSTANTS = /-texts\.ts$/;
+const MODEL_CONSTANTS = /-model\.ts$/;
 const JSX_TEXT = />\s*(OK|Ok|Sim(?:,[^<>{}]*?)?)[.!]?\s*<\//g;
+const SIM_VERB_LITERAL = /["'`](Sim, [^"'`\n]*?)[.!]?["'`]/g;
 const STRING_LITERAL = /["'`](OK|Ok|Sim(?:, [^"'`\n]*?)?)[.!]?["'`]/g;
 const JSX_SPACE = String.raw`\{\s*(?:"\s+"|'\s+')\s*\}`;
 const BUTTON_LITERAL_TEXT = new RegExp(
@@ -87,20 +90,29 @@ function buttonLabelFindings(source: string, file: string): LabelFinding[] {
   });
 }
 
-function sourceFiles(directory: string): string[] {
+function simVerbLabels(source: string): string[] {
+  return [...source.matchAll(SIM_VERB_LITERAL)].map((match) => match[1] ?? "");
+}
+
+function sourceFiles(
+  directory: string,
+  isSource: (name: string) => boolean
+): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      return sourceFiles(path);
+      return sourceFiles(path, isSource);
     }
-    const isSource =
-      entry.name.endsWith(".tsx") || TEXTS_CONSTANTS.test(entry.name);
-    return isSource && !TEST_FILE.test(entry.name) ? [path] : [];
+    return isSource(entry.name) && !TEST_FILE.test(entry.name) ? [path] : [];
   });
 }
 
-function scan(root: string): string[] {
-  return sourceFiles(root)
+function isScreenSource(name: string): boolean {
+  return name.endsWith(".tsx") || TEXTS_CONSTANTS.test(name);
+}
+
+function scanWith(root: string, isSource: (name: string) => boolean): string[] {
+  return sourceFiles(root, isSource)
     .map((path) => relative(root, path).split(sep).join("/"))
     .filter(
       (path) => !EXCLUDED_FOLDERS.some((folder) => path.startsWith(folder))
@@ -108,12 +120,24 @@ function scan(root: string): string[] {
     .sort();
 }
 
+function scan(root: string): string[] {
+  return scanWith(root, isScreenSource);
+}
+
+function scanModels(root: string): string[] {
+  return scanWith(root, (name) => MODEL_CONSTANTS.test(name));
+}
+
 function findings(root: string): string[] {
-  return scan(root).flatMap((path) =>
-    genericButtonLabels(readFileSync(join(root, path), "utf8")).map(
-      (label) => `${path}: ${label}`
-    )
-  );
+  const read = (path: string) => readFileSync(join(root, path), "utf8");
+  return [
+    ...scan(root).flatMap((path) =>
+      genericButtonLabels(read(path)).map((label) => `${path}: ${label}`)
+    ),
+    ...scanModels(root).flatMap((path) =>
+      simVerbLabels(read(path)).map((label) => `${path}: ${label}`)
+    ),
+  ];
 }
 
 function describeFinding(found: LabelFinding): string {
@@ -160,6 +184,15 @@ describe("button labels say the choice, not OK, Sim or Sim, <verbo>", () => {
     expect(scanned).toContain("legal/acceptance/acceptance-texts.ts");
     expect(scanned).toContain("sign-in/password-texts.ts");
     expect(scanned).toContain("sign-in/sign-in-texts.ts");
+    const models = scanModels(SRC);
+    expect(models.length).toBeGreaterThan(30);
+    for (const name of [
+      "devices-model.ts",
+      "closed-store-model.ts",
+      "closed-queue-model.ts",
+    ]) {
+      expect(models.some((path) => path.endsWith(`/${name}`))).toBe(true);
+    }
     expect(
       readdirSync(SRC)
         .filter((name) => EXCLUDED_FOLDERS.includes(`${name}/`))
@@ -207,6 +240,38 @@ describe("button labels say the choice, not OK, Sim or Sim, <verbo>", () => {
       "ui-gallery/sample-texts.ts": 'export const d = "OK";',
     });
     expect(scan(root)).toEqual(["legal/sample-texts.ts"]);
+    expect(findings(root)).toEqual([]);
+  });
+
+  it("plant: a *-model.ts constant with Sim, <verbo> fails, and passes without it", () => {
+    const dirty = plant({
+      "settings/deep/devices-model.ts":
+        'export const CONFIRM = "Sim, revogar este aparelho";',
+    });
+    expect(findings(dirty)).toEqual([
+      "settings/deep/devices-model.ts: Sim, revogar este aparelho",
+    ]);
+    const clean = plant({
+      "settings/deep/devices-model.ts":
+        'export const CONFIRM = "Revogar aparelho";',
+    });
+    expect(scanModels(clean)).toEqual(["settings/deep/devices-model.ts"]);
+    expect(findings(clean)).toEqual([]);
+  });
+
+  it("control: a *-model.ts is read only for Sim, <verbo>, and its test and the labs are not read", () => {
+    const root = plant({
+      "settings/alone-model.ts":
+        'export const a = "OK"; export const b = "Sim"; export const c = "Diga Sim, por favor"; export const d = "Simples, direto";',
+      "settings/other-model.test.ts":
+        'export const e = "Sim, revogar este aparelho";',
+      "settings/model.ts": 'export const f = "Sim, revogar este aparelho";',
+      "offline-poc/lab-model.ts":
+        'export const g = "Sim, revogar este aparelho";',
+      "ui-gallery/sample-model.ts":
+        'export const h = "Sim, revogar este aparelho";',
+    });
+    expect(scanModels(root)).toEqual(["settings/alone-model.ts"]);
     expect(findings(root)).toEqual([]);
   });
 
