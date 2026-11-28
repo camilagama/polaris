@@ -560,7 +560,9 @@ test("layout shift no celular: o Início aberto sem rede, na cópia, quando a re
   await warm(page, "/sales");
   await page.context().setOffline(true);
   await expect(
-    page.getByRole("status").filter({ hasText: "Sem conexão" })
+    page
+      .locator('[data-slot="badge"][role="status"]')
+      .filter({ hasText: "Sem conexão" })
   ).toBeVisible({ timeout: SETTLE_MS });
   await warm(page, "/");
   const onTheCopy = [
