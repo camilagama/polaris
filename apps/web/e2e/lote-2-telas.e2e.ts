@@ -733,6 +733,29 @@ test("Clientes: editar com conexão fecha o formulário e o aviso diz o nome que
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
+test("Clientes: salvar uma edição em que o servidor não achou mudança diz Nada mudou., sem o nome", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [customer(1, "Ana Lima")] }),
+    "customer/update": reply({
+      changed: false,
+      customer: customer(1, "Ana Lima"),
+    }),
+  });
+  await page
+    .getByRole("button", { exact: true, name: "Editar Ana Lima" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await dialog.getByLabel("Nome", { exact: true }).fill("Ana Lima ");
+  await dialog.getByRole("button", { name: "Salvar alterações" }).click();
+  const notice = page.getByRole("status").filter({ hasText: "Nada mudou." });
+  await expect(notice).toBeVisible();
+  await expect(notice).not.toContainText("atualizado");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
   page,
 }) => {
@@ -1038,7 +1061,7 @@ test("Clientes: a linha abre o cliente pelo clique ou pelo Enter, sem 'Editar' n
   await expect(dialog).toBeVisible();
 });
 
-test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
+test("Clientes: anonimizar pede a confirmação na linha, 'Manter cliente' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
   page,
 }) => {
   const anonymized: unknown[] = [];
@@ -1065,7 +1088,7 @@ test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e c
     name: "Confirmar a anonimização de Ana Lima",
   });
   await expect(confirmation).toContainText("Não dá para desfazer.");
-  await confirmation.getByRole("button", { name: "Cancelar" }).click();
+  await confirmation.getByRole("button", { name: "Manter cliente" }).click();
   await expect(confirmation).toHaveCount(0);
   expect(anonymized).toEqual([]);
 

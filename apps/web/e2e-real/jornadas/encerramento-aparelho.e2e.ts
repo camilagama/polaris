@@ -106,7 +106,8 @@ async function books(sql: Sql, organizationId: string, variantId: string) {
   return row;
 }
 
-const syncChip = (page: Page) => page.getByRole("status");
+const syncChip = (page: Page) =>
+  page.locator('[data-slot="badge"][role="status"]');
 
 const deviceId = (page: Page) =>
   page.evaluate((key) => localStorage.getItem(key), DEVICE_KEY);
@@ -242,7 +243,7 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   await expect(undo).toContainText(
     "não é enviado sozinho: fica em Pendências e precisa ser refeito"
   );
-  await undo.getByRole("button", { name: "Sim, desfazer" }).click();
+  await undo.getByRole("button", { name: "Desfazer encerramento" }).click();
   await page.waitForURL(REOPENED);
 
   // AC-3: the grant the sale carries was revoked by the closure and does not come back: the server refuses it for good

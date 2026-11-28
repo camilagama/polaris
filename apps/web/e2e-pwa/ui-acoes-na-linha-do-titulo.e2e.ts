@@ -413,20 +413,21 @@ for (const context of CONTEXTS.slice(0, 2)) {
  */
 const WITHOUT_ACTION: readonly {
   afterHeader?: number;
-  afterTitle?: number;
+  afterTitle: number;
   heading: string;
   hiddenFrom1280: boolean;
   screen: string;
 }[] = [
   {
     afterHeader: HEADER_GAP,
+    afterTitle: HEADER_GAP,
     heading: "Categorias",
     hiddenFrom1280: false,
     screen: "categorias lista",
   },
   {
     afterHeader: HEADER_GAP,
-    afterTitle: INTRO_GAP,
+    afterTitle: HEADER_GAP,
     heading: "Aparelhos",
     hiddenFrom1280: false,
     screen: "aparelhos lista",
@@ -454,7 +455,7 @@ const WITHOUT_ACTION: readonly {
 
 interface LineShape {
   afterHeader: number | null;
-  afterLine: number | null;
+  afterLine: number;
   headingBox: Box;
   headingVisible: boolean;
   headings: number;
@@ -478,6 +479,8 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
       ) as HTMLElement;
       const line = title.closest("[data-title-line]") as HTMLElement;
       const header = line.parentElement;
+      const next = (line.nextElementSibling ??
+        header?.nextElementSibling) as HTMLElement;
       const afterHeader =
         header?.tagName === "HEADER" && header.nextElementSibling
           ? header.nextElementSibling.getBoundingClientRect().top -
@@ -485,10 +488,9 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
           : null;
       return {
         afterHeader,
-        afterLine: line.nextElementSibling
-          ? line.nextElementSibling.getBoundingClientRect().top -
-            line.getBoundingClientRect().bottom
-          : null,
+        afterLine:
+          next.getBoundingClientRect().top -
+          line.getBoundingClientRect().bottom,
         headingBox: box(title),
         headingVisible:
           title.getBoundingClientRect().width > srOnlySide &&
@@ -538,12 +540,10 @@ for (const entry of WITHOUT_ACTION) {
             context.touch ? shape.headingBox.height : TITLE_LINE_MIN,
             0
           );
-          if (entry.afterTitle !== undefined) {
-            expect(shape.afterLine, "depois do título").toBeCloseTo(
-              entry.afterTitle,
-              0
-            );
-          }
+          expect(shape.afterLine, "depois do título").toBeCloseTo(
+            entry.afterTitle,
+            0
+          );
           if (entry.afterHeader !== undefined) {
             expect(
               shape.afterHeader,

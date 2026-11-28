@@ -197,9 +197,11 @@ export const END_OTHER_SESSIONS_WARNING =
 
 export function confirmLabel(endOtherSessions: boolean): string {
   return endOtherSessions
-    ? "Sim, revogar e encerrar as outras sessões"
-    : "Sim, revogar este aparelho";
+    ? "Revogar e encerrar outras sessões"
+    : "Revogar aparelho";
 }
+
+export const KEEP_DEVICE_LABEL = "Manter aparelho";
 
 export const LOADING_TEXT = "Carregando seus aparelhos…";
 export const EMPTY_TITLE = "Nenhum aparelho registrado nesta conta.";

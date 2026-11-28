@@ -53,9 +53,9 @@ export const UNDO_BUTTON = "Desfazer encerramento";
 export const UNDO_TITLE = "Desfazer o encerramento?";
 export const UNDO_EFFECTS_TEXT =
   "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado não é enviado sozinho: fica em Pendências e precisa ser refeito.";
-export const UNDO_CONFIRM = "Sim, desfazer";
+export const UNDO_CONFIRM = "Desfazer encerramento";
 export const UNDO_SENDING = "Desfazendo…";
-export const UNDO_BACK = "Voltar";
+export const UNDO_BACK = "Manter encerramento";
 export const REOPENED_TEXT = "Loja reaberta. Você já pode usar o Polaris.";
 export const NEW_STORE_LINK = "Abrir outra loja";
 export const RENEWAL_TERM = "Renovação do plano";

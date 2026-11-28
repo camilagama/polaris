@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { CustomerReadModel } from "@polaris/contracts";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { CustomerList } from "./customer-list";
@@ -64,6 +64,15 @@ describe("a confirmação de anonimizar um cliente", () => {
     const block = await openAnonymizeConfirm();
     expect(block.getAttribute("data-slot")).toBe("inset-block");
     expect(block.classList.contains("ring-destructive/60")).toBe(true);
+  });
+
+  it("recusa dizendo o que fica: Manter cliente, nunca Cancelar", async () => {
+    renderList();
+    const block = await openAnonymizeConfirm();
+    const labels = within(block)
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+    expect(labels).toEqual(["Manter cliente", "Anonimizar definitivamente"]);
   });
 
   it("diz Não dá para desfazer. em texto corrido, sem negrito", async () => {
