@@ -626,9 +626,11 @@ export function PanelBody({
       <>
         <PanelTitle>{PAGE_TITLE}</PanelTitle>
         <Alert role="alert" variant="destructive">
-          <AlertDescription>{PANEL_LOAD_FAILED_TEXT}</AlertDescription>
+          <AlertDescription className="grid justify-items-start gap-2">
+            {PANEL_LOAD_FAILED_TEXT}
+            <RetryButton onClick={onRefresh} />
+          </AlertDescription>
         </Alert>
-        <RetryButton className="w-fit" onClick={onRefresh} />
       </>
     );
   }

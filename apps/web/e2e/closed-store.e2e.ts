@@ -311,7 +311,7 @@ test("carregando, sem botão de ação; a leitura que falha dá Tentar novamente
   await expect(undoButton(page)).toHaveCount(0);
   release();
   await expect(page.getByRole("alert")).toHaveText(
-    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo."
+    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo.Tentar novamente"
   );
   await expect(page.getByRole("main")).not.toContainText("está encerrada");
   await page.getByRole("button", { name: "Tentar novamente" }).click();
@@ -482,7 +482,7 @@ test("a primeira leitura que falha continua mostrando só o erro, sem painel (AC
     statuses: [(route) => route.abort("internetdisconnected")],
   });
   await expect(page.getByRole("alert")).toHaveText(
-    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo."
+    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo.Tentar novamente"
   );
   await expect(
     page.getByText(
