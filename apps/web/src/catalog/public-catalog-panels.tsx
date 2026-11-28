@@ -12,7 +12,6 @@ import { Badge } from "@/ui/badge";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
 import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
-import { ListNoticeBody } from "@/ui/list-notice";
 import { TextLink } from "@/ui/text-link";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { formatQuantity } from "../lib/format";
@@ -508,11 +507,9 @@ export function ProductsCard(props: ProductsCardProps) {
           </>
         )}
         {products.length > 0 && found.length === 0 ? (
-          <ListNoticeBody>
-            <p className="text-muted-foreground" role="status">
-              Nenhum produto com “{query.trim()}”.
-            </p>
-          </ListNoticeBody>
+          <p className="px-4 text-center text-muted-foreground" role="status">
+            Nenhum produto com “{query.trim()}”.
+          </p>
         ) : null}
         {found.length > 0 ? (
           <ul

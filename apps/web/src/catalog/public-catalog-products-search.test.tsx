@@ -49,8 +49,7 @@ describe("o bloco Produtos do catálogo público", () => {
     );
     const notice = screen.getByText("Nenhum produto com “tenis”.");
     expect(notice.getAttribute("role")).toBe("status");
-    expect(notice.parentElement?.className).toContain("text-center");
-    expect(notice.parentElement?.className).toContain("justify-items-center");
+    expect(notice.className).toContain("text-center");
     expect(screen.queryByRole("list")).toBeNull();
   });
 
