@@ -459,7 +459,7 @@ export function CustomerForm({
               type="button"
               variant="outline"
             >
-              {editingCustomer ? "Cancelar edição" : "Cancelar"}
+              Cancelar
             </Button>
             <Button disabled={isPending} size="xl" type="submit">
               {submitLabelFor(isPending, editingCustomer)}

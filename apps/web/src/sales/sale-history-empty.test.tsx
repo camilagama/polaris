@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { HistoryEmptyCard, HistoryNothingYet } from "./sale-history-empty";
 
 const noop = () => undefined;
+const FILTER_SENTENCE_STATUS =
+  /<p[^>]*role="status"[^>]*>Nenhuma venda encontrada com estes filtros\.<\/p>/;
 
 describe("o Histórico vazio", () => {
   it("com filtro, oferece Limpar filtros e não manda registrar venda", () => {
@@ -19,6 +21,7 @@ describe("o Histórico vazio", () => {
       />
     );
     expect(html).toContain("Nenhuma venda encontrada com estes filtros.");
+    expect(html).toMatch(FILTER_SENTENCE_STATUS);
     expect(html).toContain("Limpar filtros</button>");
     expect(html).not.toContain("Registrar uma venda");
   });

@@ -522,6 +522,13 @@ describe("the count beside the title of the list", () => {
     );
   });
 
+  it("writes the thousands with a separator, as Produtos does", () => {
+    const sales = Array.from({ length: 1234 }, (_, n) => entry(n + 1));
+    expect(countOf(sales, true)).toBe("1.234 vendas · há mais");
+    expect(countOf(sales)).toBe("1.234 vendas");
+    expect(historyTotal(sales, true).countText).toBe("1.234 vendas · há mais");
+  });
+
   it("is empty while the list loads or failed, and zero for a list with no result", () => {
     expect(historyListCount(historyView(initialHistoryState()), false)).toBe(
       ""

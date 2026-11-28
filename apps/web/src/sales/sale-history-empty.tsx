@@ -18,7 +18,9 @@ export function HistoryEmptyCard({
 }) {
   return (
     <>
-      <p className="text-muted-foreground">{view.message}</p>
+      <p className="text-muted-foreground" role="status">
+        {view.message}
+      </p>
       {view.clearFilters ? (
         <Button onClick={onClearFilters} type="button" variant="outline">
           Limpar filtros
