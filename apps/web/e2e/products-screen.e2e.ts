@@ -526,7 +526,7 @@ const CATEGORIES_HEADER_GAP = 16;
 const SR_ONLY_SIDE = 1;
 
 for (const viewport of CATEGORIES_VIEWPORTS) {
-  test(`Categorias na aba de Produtos: o título fica só para o leitor de tela, a linha é contents e o cabeçalho está a 16 px do primeiro bloco · ${viewport.name}`, async ({
+  test(`Categorias na aba de Produtos: o título fica só para o leitor de tela, a linha é contents e o cabeçalho, só com o (i), está a 16 px do primeiro bloco · ${viewport.name}`, async ({
     page,
   }) => {
     await page.setViewportSize({
@@ -546,7 +546,7 @@ for (const viewport of CATEGORIES_VIEWPORTS) {
     const shape = await title.evaluate((heading) => {
       const line = heading.closest("[data-title-line]") as HTMLElement;
       const header = line.parentElement as HTMLElement;
-      const intro = header.querySelector("p") as HTMLElement;
+      const tip = header.querySelector("button") as HTMLElement;
       const next = header.nextElementSibling as HTMLElement;
       const rect = (element: Element) => element.getBoundingClientRect();
       return {
@@ -554,8 +554,8 @@ for (const viewport of CATEGORIES_VIEWPORTS) {
         headerHeight: rect(header).height,
         headingHeight: rect(heading).height,
         headingWidth: rect(heading).width,
-        introHeight: rect(intro).height,
-        introTop: rect(intro).top,
+        tipHeight: rect(tip).height,
+        tipTop: rect(tip).top,
         headerTop: rect(header).top,
         lineDisplay: getComputedStyle(line).display,
         nextRole: next.getAttribute("role") ?? next.tagName,
@@ -569,9 +569,9 @@ for (const viewport of CATEGORIES_VIEWPORTS) {
     expect(shape.lineDisplay, "a linha não ocupa lugar").toBe("contents");
     expect(
       shape.headerHeight,
-      "o cabeçalho é só a frase de apoio, sem espaço extra da linha"
-    ).toBeCloseTo(shape.introHeight, 0);
-    expect(shape.introTop).toBeCloseTo(shape.headerTop, 0);
+      "o cabeçalho é só o (i), sem espaço extra da linha"
+    ).toBeCloseTo(shape.tipHeight, 0);
+    expect(shape.tipTop).toBeCloseTo(shape.headerTop, 0);
     expect(
       shape.gapToBlock,
       `do cabeçalho ao primeiro bloco (${shape.nextRole})`
