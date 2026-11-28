@@ -59,9 +59,7 @@ describe("o Estoque com a busca sem resultado", () => {
         <InventoryPage />
       </StaticOrganizationProvider>
     );
-    const sentence = screen.getAllByText(
-      "Nenhuma variante encontrada para “zzz”."
-    );
+    const sentence = screen.getAllByText("Nenhuma variante com “zzz”.");
     expect(sentence).toHaveLength(1);
     expect(sentence[0]?.getAttribute("role")).toBe("status");
   });

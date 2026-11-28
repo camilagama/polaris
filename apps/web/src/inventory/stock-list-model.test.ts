@@ -507,7 +507,7 @@ describe("views", () => {
 
   it("explains an empty result by the filter that caused it", () => {
     expect(stockEmptyMessage({ ...defaultStockFilters, query: " azul " })).toBe(
-      "Nenhuma variante encontrada para “azul”."
+      "Nenhuma variante com “azul”."
     );
     expect(
       stockEmptyMessage({ ...defaultStockFilters, stock: "with_stock" })
@@ -531,7 +531,7 @@ describe("views", () => {
     const view = stockListView(state, defaultStockFilters);
     expect(view).toMatchObject({
       kind: "empty",
-      message: "Nenhuma variante encontrada para “zzz”.",
+      message: "Nenhuma variante com “zzz”.",
       showCatalogLink: false,
     });
     expect(framedListState(view)).toBe("filtered-empty");
