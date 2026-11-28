@@ -58,6 +58,8 @@ describe("o período do Início", () => {
 
   it("sem conexão só Este mês e Mês passado abrem, e a frase diz o porquê", () => {
     expect(OFFLINE_ONLY.shortcuts).toEqual(["este-mes", "mes-passado"]);
-    expect(OFFLINE_ONLY.reason).toBe("Sem conexão: só este mês e o anterior.");
+    expect(OFFLINE_ONLY.reason).toBe(
+      "Sem conexão. Só dá para ver este mês e o anterior."
+    );
   });
 });
