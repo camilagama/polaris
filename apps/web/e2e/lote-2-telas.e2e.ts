@@ -1061,7 +1061,7 @@ test("Clientes: a linha abre o cliente pelo clique ou pelo Enter, sem 'Editar' n
   await expect(dialog).toBeVisible();
 });
 
-test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
+test("Clientes: anonimizar pede a confirmação na linha, 'Manter cliente' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
   page,
 }) => {
   const anonymized: unknown[] = [];
@@ -1088,7 +1088,7 @@ test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e c
     name: "Confirmar a anonimização de Ana Lima",
   });
   await expect(confirmation).toContainText("Não dá para desfazer.");
-  await confirmation.getByRole("button", { name: "Cancelar" }).click();
+  await confirmation.getByRole("button", { name: "Manter cliente" }).click();
   await expect(confirmation).toHaveCount(0);
   expect(anonymized).toEqual([]);
 

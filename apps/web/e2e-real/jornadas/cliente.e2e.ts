@@ -247,7 +247,7 @@ test("cliente: duplicado sugerido na mesma loja; sem sugestão local na outra e 
 
 /**
  * Archive and restore keep the same customer (the id) and only move `archived_at`; anonymizing is asked twice,
- * "Cancelar" writes nothing, and the confirmed one scrubs the personal data and archives the customer while the
+ * "Manter cliente" writes nothing, and the confirmed one scrubs the personal data and archives the customer while the
  * sale linked to it keeps its total and its link.
  */
 test("cliente: arquivar, restaurar e anonimizar; a venda ligada não muda", async ({
@@ -371,14 +371,14 @@ test("cliente: arquivar, restaurar e anonimizar; a venda ligada não muda", asyn
   const restored = await customerById(sql, created.id);
   expect(restored).toEqual(active);
 
-  // anonymize: asked twice; "Cancelar" writes nothing
+  // anonymize: asked twice; "Manter cliente" writes nothing
   await menuOf(created.id, name).click();
   await page.getByRole("menuitem", { name: "Anonimizar" }).click();
   const confirmation = page.getByRole("group", {
     name: `Confirmar a anonimização de ${name}`,
   });
   await expect(confirmation.getByText("Não dá para desfazer.")).toBeVisible();
-  await confirmation.getByRole("button", { name: "Cancelar" }).click();
+  await confirmation.getByRole("button", { name: "Manter cliente" }).click();
   await expect(confirmation).toBeHidden();
   await expect(rowOf(created.id)).toBeVisible();
   expect(anonymizeCalls).toEqual([]);

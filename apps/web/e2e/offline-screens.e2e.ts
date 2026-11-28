@@ -530,7 +530,7 @@ test.describe("venda", () => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
     await expect(
-      page.getByRole("status").filter({ hasText: "Sem internet." })
+      page.getByRole("status").filter({ hasText: "Sem conexão." })
     ).toBeVisible();
     // the profile is offered (the ones of the last connection), a typed date is not: the note says so where the
     // field would be
@@ -1357,7 +1357,7 @@ for (const mode of ["offline", "mentindo"] as const) {
         .getByRole("button", { exact: true, name: "Sincronizar" })
         .click();
       await expect(
-        page.getByRole("status").filter({ hasText: "Sem internet." })
+        page.getByRole("status").filter({ hasText: "Sem conexão." })
       ).toBeVisible({ timeout: 15_000 });
       await fillShirtSale(page, 1);
       await expect(keepSale(page)).toBeVisible();
