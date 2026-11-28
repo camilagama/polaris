@@ -201,7 +201,7 @@ function AdjustmentEditor({
               label="Como informar"
               onChange={handleType}
               options={adjustmentTypeOptions}
-              placeholder="Escolha"
+              placeholder="Escolha como informar"
               value={adjustment.valueType}
             />
           ) : null}
@@ -677,7 +677,7 @@ function PartFields({
         label="Perfil de pagamento"
         onChange={onProfileChange}
         options={[noProfileOption, ...profileOptions]}
-        placeholder="Escolha uma opção"
+        placeholder="Escolha um perfil"
         value={profile.choice}
       />
       {showReview && profile.reviewNotice ? (
@@ -1379,7 +1379,7 @@ function SinglePayment({
         label="Perfil de pagamento"
         onChange={onProfileChange}
         options={options}
-        placeholder="Escolha uma opção"
+        placeholder="Escolha um perfil"
         value={form.profile.choice}
       />
     </>
