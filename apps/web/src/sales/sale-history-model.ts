@@ -368,7 +368,7 @@ export function historyTotal(
     noteText:
       left === 0
         ? ""
-        : `${left} ${left === 1 ? "cancelada fica fora" : "canceladas ficam fora"} da soma.`,
+        : `${formatQuantity(left)} ${left === 1 ? "cancelada fica fora" : "canceladas ficam fora"} da soma.`,
     totalText: sum === null ? null : formatBrlAmount(sum),
   };
 }
