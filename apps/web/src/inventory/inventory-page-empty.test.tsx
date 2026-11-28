@@ -5,8 +5,8 @@ import { StaticOrganizationProvider } from "../lib/current-organization";
 import { InventoryPage } from "./inventory-page";
 import {
   initialStockListState,
-  stockLoaded,
   type StockListState,
+  stockLoaded,
 } from "./stock-list-model";
 
 const stock = vi.hoisted(() => ({
