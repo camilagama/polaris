@@ -545,7 +545,7 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
   server.networkDown = true;
   await choosePreset(page, "Mês passado");
   await expect(page.getByRole("alert")).toContainText(
-    "Sem internet e sem números guardados neste aparelho.",
+    "Sem conexão e sem números guardados neste aparelho.",
     { timeout: 15_000 }
   );
   await expect(kpiCards(page)).toHaveCount(0);
@@ -581,7 +581,7 @@ test("sem conexão, Este ano só abre com internet, como os Últimos 30 dias, e 
     { timeout: 15_000 }
   );
   await expect(page.getByRole("alert")).not.toContainText(
-    "Sem internet e sem números guardados"
+    "Sem conexão e sem números guardados"
   );
   await expect(kpiCards(page)).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);

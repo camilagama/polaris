@@ -189,6 +189,7 @@ import { TextLink } from "@/ui/text-link";
 import { Textarea } from "@/ui/textarea";
 import { ThemeSwitch } from "@/ui/theme-switch";
 import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
+import { H1_CLASS } from "@/ui/title-class";
 import { ToastProvider, toastManager } from "@/ui/toast";
 import {
   Tooltip,
@@ -1310,7 +1311,7 @@ export function UiGallery() {
       <TooltipProvider>
         <main className="mx-auto grid min-h-dvh max-w-[76rem] gap-4 bg-background p-(--gutter) font-sans text-foreground text-sm antialiased">
           <header className="flex items-center justify-between gap-3">
-            <h1 className="text-title">Galeria da interface</h1>
+            <h1 className={H1_CLASS}>Galeria da interface</h1>
             <ThemeSwitch />
           </header>
 
