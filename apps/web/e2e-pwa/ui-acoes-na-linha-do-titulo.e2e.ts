@@ -413,13 +413,13 @@ for (const context of CONTEXTS.slice(0, 2)) {
  */
 const WITHOUT_ACTION: readonly {
   afterHeader?: number;
-  afterTitle: number;
+  afterTitle?: number;
   heading: string;
   hiddenFrom1280: boolean;
   screen: string;
 }[] = [
   {
-    afterTitle: INTRO_GAP,
+    afterHeader: HEADER_GAP,
     heading: "Categorias",
     hiddenFrom1280: false,
     screen: "categorias lista",
@@ -454,7 +454,7 @@ const WITHOUT_ACTION: readonly {
 
 interface LineShape {
   afterHeader: number | null;
-  afterLine: number;
+  afterLine: number | null;
   headingBox: Box;
   headingVisible: boolean;
   headings: number;
@@ -485,9 +485,10 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
           : null;
       return {
         afterHeader,
-        afterLine:
-          (line.nextElementSibling as HTMLElement).getBoundingClientRect().top -
-          line.getBoundingClientRect().bottom,
+        afterLine: line.nextElementSibling
+          ? line.nextElementSibling.getBoundingClientRect().top -
+            line.getBoundingClientRect().bottom
+          : null,
         headingBox: box(title),
         headingVisible:
           title.getBoundingClientRect().width > srOnlySide &&
@@ -537,10 +538,12 @@ for (const entry of WITHOUT_ACTION) {
             context.touch ? shape.headingBox.height : TITLE_LINE_MIN,
             0
           );
-          expect(shape.afterLine, "depois do título").toBeCloseTo(
-            entry.afterTitle,
-            0
-          );
+          if (entry.afterTitle !== undefined) {
+            expect(shape.afterLine, "depois do título").toBeCloseTo(
+              entry.afterTitle,
+              0
+            );
+          }
           if (entry.afterHeader !== undefined) {
             expect(
               shape.afterHeader,
