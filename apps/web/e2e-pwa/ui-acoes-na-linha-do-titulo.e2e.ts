@@ -478,6 +478,8 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
       ) as HTMLElement;
       const line = title.closest("[data-title-line]") as HTMLElement;
       const header = line.parentElement;
+      const next = (line.nextElementSibling ??
+        header?.nextElementSibling) as HTMLElement;
       const afterHeader =
         header?.tagName === "HEADER" && header.nextElementSibling
           ? header.nextElementSibling.getBoundingClientRect().top -
@@ -486,10 +488,8 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
       return {
         afterHeader,
         afterLine:
-          (
-            (line.nextElementSibling ??
-              header?.nextElementSibling) as HTMLElement
-          ).getBoundingClientRect().top - line.getBoundingClientRect().bottom,
+          next.getBoundingClientRect().top -
+          line.getBoundingClientRect().bottom,
         headingBox: box(title),
         headingVisible:
           title.getBoundingClientRect().width > srOnlySide &&
