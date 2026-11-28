@@ -409,7 +409,7 @@ export const SCREEN_TOTAL_LABEL = "Total na tela";
 export const PERIOD_TOTAL_HELP =
   "Vendas confirmadas do período, menos descontos e devoluções, até as feitas depois; igual ao Resultado. Não é a soma da lista: sem acréscimo, frete e canceladas.";
 export const PERIOD_TOTAL_OFFLINE_NOTICE =
-  "Sem conexão: total das vendas guardadas neste aparelho.";
+  "Sem conexão. O total soma só as vendas guardadas neste aparelho.";
 export const PERIOD_TOTAL_TOO_LONG_NOTICE =
   "O total líquido do período vale para até 1 ano.";
 export const PERIOD_TOTAL_FAILED_NOTICE =

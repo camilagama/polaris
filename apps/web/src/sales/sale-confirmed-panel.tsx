@@ -86,9 +86,7 @@ function CustomerDisclosure({
         type="button"
         variant="outline"
       >
-        {open
-          ? "Ocultar cliente da venda"
-          : "Associar cliente a esta venda (opcional)"}
+        {open ? "Ocultar cliente da venda" : "Associar cliente a esta venda"}
       </Button>
       <div className="w-full" hidden={!open} id="sale-customer-region">
         {open ? (

@@ -48,6 +48,7 @@ import {
   type CustomerAction,
   type CustomerListStatus,
   customerErrorMessage,
+  editedCustomerNotice,
   filterCustomers,
   hasCustomerContact,
   lockedReasonFor,
@@ -422,7 +423,7 @@ export function CustomersPage() {
         id: editingCustomer.id,
       });
       await keepLocalRow(workspace, updated.customer);
-      return `Cliente “${updated.customer.name}” atualizado.`;
+      return editedCustomerNotice(updated.changed, updated.customer.name);
     }
     if (workspace) {
       // Queued on this device and shown at once; sent now when there is a connection.

@@ -5,7 +5,7 @@ Configurações da loja (`/configuracoes`, `h1` "Configurações da loja"; o ite
 ## Sub-features
 
 - `formas-de-receber` perfis de pagamento: "Novo perfil", `region "Perfis cadastrados"`, "Incluir arquivados" (fora da moldura, acima dela); em cada perfil ativo o botão "Mais ações para <perfil>" abre o menu com "Editar perfil <perfil>" e "Arquivar perfil <perfil>"; o perfil arquivado tem o botão "Restaurar perfil <perfil>"; vazio: "Nenhum perfil cadastrado." (só o `EmptyState`, sem a região).
-- `catalogo-publico` perfil público e produtos do catálogo (busca "Buscar produto" e 50 de cada vez com "Carregar mais"); no Free: "Seu plano não inclui o catálogo público…" e "Salvar perfil" desligado.
+- `catalogo-publico` perfil público e produtos do catálogo (o (i) "Sobre Catálogo público" no título; busca "Buscar produto" e 50 de cada vez com "Carregar mais"; "Custo, estoque e SKU nunca aparecem no catálogo." à vista sob a contagem); no Free: "Seu plano não inclui o catálogo público…" e "Salvar perfil" desligado.
 - `assinatura` o plano e o uso ("Plano Free", barras "Variantes: N de 50", "Imagens: N de 50", "Metas em andamento: N de 1").
 - `seus-dados` a cópia dos dados da loja, só para o dono (`organization:export`): cartão "Pedir cópia" (caixas "Dados em JSON", "Dados em planilha (CSV)", "Imagens dos produtos" e o botão "Pedir cópia dos dados") e `region "Suas cópias"` com "Atualizar"; vazio: "Nenhuma cópia pedida ainda."; no fim, `region "Encerrar a loja"` (só `organization:close`) com o botão "Encerrar a loja", que abre o diálogo "Encerrar a loja {nome}" (avisos, fila deste aparelho, campo do nome, "Voltar" e "Encerrar a loja"); encerrar leva a `/loja-encerrada?loja=<id>` (ver `outros-enderecos.md`).
 

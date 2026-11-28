@@ -257,7 +257,7 @@ for (const viewport of FORM_VIEWPORTS) {
       const footer = footerOf(page);
       await expect(footer).toContainText(SCREEN_LABEL);
       await expect(footer).toContainText(
-        "Sem conexão: total das vendas guardadas neste aparelho."
+        "Sem conexão. O total soma só as vendas guardadas neste aparelho."
       );
       await expect(footer).not.toContainText(PERIOD_LABEL);
       expect(summary.asked).toEqual([]);
@@ -280,7 +280,7 @@ for (const viewport of FORM_VIEWPORTS) {
       });
       await expect(footer).toContainText(SCREEN_LABEL);
       await expect(footer).toContainText(
-        "Sem conexão: total das vendas guardadas neste aparelho."
+        "Sem conexão. O total soma só as vendas guardadas neste aparelho."
       );
       await expect(footer).not.toContainText(PERIOD_LABEL);
       await expect(footer).not.toContainText(NET);

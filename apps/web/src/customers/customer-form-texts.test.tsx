@@ -87,7 +87,7 @@ describe("os textos do formulário de cliente", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "Revise os cadastros por email ou telefone. Nenhum dado será mesclado automaticamente."
+        "Revise os cadastros por e-mail ou telefone. Nenhum dado será mesclado automaticamente."
       )
     ).toBeTruthy();
   });
