@@ -21,7 +21,7 @@ const STORE: ClosedStore = {
   requestedAt: "2026-10-20T12:00:00.000Z",
   timezone: "America/Sao_Paulo",
 };
-const ALERT_INSIDE = /<div[^>]*role="alert"[^>]*>(?<inside>.*)<\/div>/;
+const ALERT_INSIDE = /<div[^>]*role="alert"[^>]*>(?<inside>.*?)<\/div><\/div>/;
 const noop = () => undefined;
 
 const card = (reading: boolean, online = true) =>
@@ -133,6 +133,8 @@ describe("the read error of the panel", () => {
 
   it("stacks the button to the left with the spacing given by the notice", () => {
     expect(notice).toContain("grid justify-items-start gap-2");
-    expect(refreshButton(html, "Tentar novamente")).not.toContain("w-fit");
+    const button = refreshButton(html, "Tentar novamente");
+    expect(button).not.toBe("");
+    expect(button).not.toContain("w-fit");
   });
 });
