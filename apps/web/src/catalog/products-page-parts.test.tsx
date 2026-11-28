@@ -1,11 +1,11 @@
 import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { OfflineNotice } from "../app-shell/offline-notice";
 import {
   ActionFeedback,
   importedNotice,
   OFFLINE_NOTICE_ID,
-  OfflineNotice,
   ProductsHeader,
 } from "./products-page-parts";
 
@@ -58,9 +58,11 @@ describe("ActionFeedback", () => {
     // not `disabled`: the button stays reachable by keyboard and reads the reason (the offline notice)
     expect(off).not.toMatch(NATIVE_DISABLED);
     expect(off).toMatch(POINTS_AT_REASON);
-    expect(renderToStaticMarkup(<OfflineNotice />)).toContain(
-      `id="${OFFLINE_NOTICE_ID}"`
-    );
+    expect(
+      renderToStaticMarkup(
+        <OfflineNotice id={OFFLINE_NOTICE_ID}>Corpo.</OfflineNotice>
+      )
+    ).toContain(`id="${OFFLINE_NOTICE_ID}"`);
   });
 
   it("does not point at the offline notice while only an action is running", () => {
