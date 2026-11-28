@@ -31,8 +31,8 @@ describe("a confirmação de descartar uma operação recusada", () => {
     );
     expect(document.querySelector('[data-slot="inset-block"]')).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Descartar…" }));
-    const block = screen.getByRole("alertdialog", {
-      name: "Descartar Venda de 2 itens",
+    const block = screen.getByRole("group", {
+      name: "Confirmar descarte de Venda de 2 itens",
     });
     expect(block.getAttribute("data-slot")).toBe("inset-block");
     expect(block.classList.contains("ring-destructive/60")).toBe(true);

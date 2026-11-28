@@ -323,7 +323,9 @@ const MEDIA_SCREENS = [
     open: (page: Page) =>
       openMediaPanel(page, async () => {
         await page.getByRole("button", { name: "Remover imagem 2" }).click();
-        await expect(page.getByRole("alertdialog")).toBeVisible();
+        await expect(
+          page.getByRole("group", { name: "Confirmar remoção de imagem 2" })
+        ).toBeVisible();
       }),
   },
   {

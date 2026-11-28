@@ -5,6 +5,8 @@ import { attentionStates } from "./ui-device-states";
 import { axeFaults } from "./ui-guardrails/measures";
 import { NEAR_MIDNIGHT_STORE_DAY, stockStates } from "./ui-stock-states";
 
+const DISCARD_CONFIRMATION = /^Confirmar descarte de /;
+
 /**
  * "Precisa de ação" on Estoque and Pendências, and the texts of Estoque: each link of the strip applies its filter
  * without leaving the screen; the strip is not there with nothing to do or without a connection; the help in the title
@@ -307,10 +309,12 @@ test.describe("Pendências, Precisa de ação", () => {
     await expect(failure).toContainText("Não foi possível reenviar");
     const top = async (locator: typeof failure) =>
       (await locator.boundingBox())?.y ?? Number.NaN;
-    const confirmation = card.getByRole("alertdialog");
+    const confirmation = card.getByRole("group", {
+      name: DISCARD_CONFIRMATION,
+    });
     expect(await top(failure)).toBeGreaterThan(await top(confirmation));
 
-    await card.getByRole("button", { name: "Manter" }).click();
+    await card.getByRole("button", { name: "Manter registro" }).click();
     const resubmit = card.getByRole("button", { name: "Reenviar venda" });
     await expect(resubmit).toBeVisible();
     expect(await top(failure)).toBeGreaterThan(await top(resubmit));
