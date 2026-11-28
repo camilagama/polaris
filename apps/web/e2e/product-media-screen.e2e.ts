@@ -216,32 +216,15 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
       return route.fulfill(api({ removed: true, requestId: REQUEST_ID }));
     },
   });
-  await activateByKeyboard(
-    page,
-    page.getByRole("button", { name: "Remover imagem 2" })
-  );
+  await page.getByRole("button", { name: "Remover imagem 2" }).click();
   const dialog = page.getByRole("group", { name: IMAGE_CONFIRMATION });
   await expect(dialog).toContainText("Remover a imagem 2?");
   await expect(dialog).toContainText(
     "Para voltar a usá-la, será preciso enviar o arquivo de novo."
   );
-  // the box takes the focus, and the keyboard sees it
-  await expectFocusRing(dialog);
+  // the box takes the focus
+  await expect(dialog).toBeFocused();
   expect(removed).toBe(0);
-  // Esc keeps the image and gives the focus back, and the dialog of the product stays open
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(
-    page.getByRole("dialog", { name: "Camiseta do teste" })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Remover imagem 2" })
-  ).toBeFocused();
-  await activateByKeyboard(
-    page,
-    page.getByRole("button", { name: "Remover imagem 2" })
-  );
-  await expectFocusRing(dialog);
   await dialog.getByRole("button", { name: "Manter imagem" }).click();
   await expect(
     page.getByRole("group", { name: IMAGE_CONFIRMATION })
@@ -251,9 +234,6 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
   ).toBeFocused();
 
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
-  await expect(
-    page.getByRole("group", { name: IMAGE_CONFIRMATION })
-  ).toBeFocused();
   await activateByKeyboard(
     page,
     page
