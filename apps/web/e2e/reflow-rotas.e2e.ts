@@ -800,7 +800,7 @@ test.describe("a guarda pega o que corta só a 24 px", () => {
   });
 });
 
-const REVOKE_ALL = "Sim, revogar e encerrar as outras sessões";
+const REVOKE_ALL = "Revogar e encerrar outras sessões";
 const OTHER_SESSIONS = "Encerrar também as outras sessões";
 
 interface DialogWindow {
@@ -955,7 +955,7 @@ async function expectSmallDialogScrolls(
   expect([...reached]).toEqual(
     expect.arrayContaining([
       `button|${REVOKE_ALL}`,
-      "button|Cancelar",
+      "button|Manter aparelho",
       "checkbox|",
     ])
   );

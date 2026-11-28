@@ -302,10 +302,10 @@ export function LockedNotice({
                 type="button"
                 variant="destructive"
               >
-                Sim, descartar e recomeçar
+                Descartar movimento
               </Button>
               <Button onClick={onDiscardCancel} type="button" variant="outline">
-                Voltar
+                Manter movimento
               </Button>
             </div>
           </>

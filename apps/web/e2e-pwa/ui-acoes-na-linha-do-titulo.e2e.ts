@@ -426,7 +426,7 @@ const WITHOUT_ACTION: readonly {
   },
   {
     afterHeader: HEADER_GAP,
-    afterTitle: INTRO_GAP,
+    afterTitle: HEADER_GAP,
     heading: "Aparelhos",
     hiddenFrom1280: false,
     screen: "aparelhos lista",
@@ -478,6 +478,8 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
       ) as HTMLElement;
       const line = title.closest("[data-title-line]") as HTMLElement;
       const header = line.parentElement;
+      const next = (line.nextElementSibling ??
+        header?.nextElementSibling) as HTMLElement;
       const afterHeader =
         header?.tagName === "HEADER" && header.nextElementSibling
           ? header.nextElementSibling.getBoundingClientRect().top -
@@ -486,7 +488,7 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
       return {
         afterHeader,
         afterLine:
-          (line.nextElementSibling as HTMLElement).getBoundingClientRect().top -
+          next.getBoundingClientRect().top -
           line.getBoundingClientRect().bottom,
         headingBox: box(title),
         headingVisible:

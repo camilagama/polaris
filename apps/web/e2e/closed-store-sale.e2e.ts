@@ -204,7 +204,10 @@ test.describe("venda recusada com a loja encerrada", () => {
       "3 de novembro de 2026, às 12:00 · faltam 20 dias"
     );
     await page.getByRole("button", { name: "Desfazer encerramento" }).click();
-    await page.getByRole("button", { name: "Sim, desfazer" }).click();
+    await page
+      .getByRole("dialog", { name: "Desfazer o encerramento?" })
+      .getByRole("button", { name: "Desfazer encerramento" })
+      .click();
     await expect(page).toHaveURL(REOPENED_URL);
     expect(await draft(page)).toBe(before);
 
