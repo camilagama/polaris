@@ -262,6 +262,26 @@ describe("OperationActions", () => {
     expect(inkButtonsOf(renderActions(retrying, true))).toHaveLength(1);
   });
 
+  it("puts the main button last on every step, as the footer of a form does", () => {
+    const labelsOf = (html: string) =>
+      [...html.matchAll(/<button[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(
+      labelsOf(renderActions({ confirming: false, locked: false }))
+    ).toEqual(["Não cancelar", "Revisar cancelamento"]);
+    expect(
+      labelsOf(renderActions({ confirming: true, locked: false }))
+    ).toEqual(["Voltar", "Confirmar cancelamento"]);
+    expect(labelsOf(renderActions({ confirming: true, locked: true }))).toEqual(
+      ["Confirmar cancelamento"]
+    );
+  });
+
+  it("returns the buttons as direct children, with no wrapper of their own", () => {
+    expect(
+      renderActions({ confirming: false, locked: false }).startsWith("<button")
+    ).toBe(true);
+  });
+
   it("makes Voltar the ghost button, with no outline", () => {
     const last = renderActions({ confirming: true, locked: false });
     expect(last).toMatch(GHOST_BACK);
