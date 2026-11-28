@@ -297,9 +297,7 @@ test("Categorias: renomear na própria linha leva o cursor ao campo, 'Cancelar' 
 
   await field.fill("Camisetas de algodão");
   await field.press("Enter");
-  const notice = page.getByText(
-    "Categoria renomeada para “Camisetas de algodão”."
-  );
+  const notice = page.getByText("Categoria “Camisetas de algodão” renomeada.");
   await expect(notice).toBeVisible();
   // the row that had the field is gone: the focus goes to what was done
   await expect(page.locator(":focus").filter({ has: notice })).toHaveCount(1);
@@ -374,9 +372,7 @@ test("Categorias a 360 px: renomear com o nome em branco diz que falta o nome no
   await expect(message).toHaveCount(0);
   await expect(field).not.toHaveAttribute("aria-invalid", "true");
   await save.click();
-  await expect(
-    page.getByText("Categoria renomeada para “Blusas”.")
-  ).toBeVisible();
+  await expect(page.getByText("Categoria “Blusas” renomeada.")).toBeVisible();
   expect(renamed).toEqual([
     { id: id(41), name: "Blusas", organizationId: ORGANIZATION.id },
   ]);
@@ -431,7 +427,7 @@ test("Categorias a 360 px: nome de 100 caracteres sem espaço quebra na linha, o
 
   await field.fill(newName);
   await save.click();
-  const notice = page.getByText(`Categoria renomeada para “${newName}”.`);
+  const notice = page.getByText(`Categoria “${newName}” renomeada.`);
   await expect(notice).toBeVisible();
   const noticeBox = await notice.boundingBox();
   expect((noticeBox?.x ?? 0) + (noticeBox?.width ?? 0)).toBeLessThanOrEqual(
