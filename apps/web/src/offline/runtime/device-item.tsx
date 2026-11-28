@@ -22,6 +22,7 @@ import { ListBlock } from "@/ui/list-block";
 import { ROW_BODY_CLASS, ROW_TEXT_CLASS } from "../../catalog/screen-parts";
 import {
   confirmLabel,
+  KEEP_DEVICE_LABEL,
   type DeviceKind,
   type DeviceRow,
   END_OTHER_SESSIONS_HELP,
@@ -130,12 +131,12 @@ export function RevokeForm({
           type="button"
           variant="outline"
         >
-          Cancelar
+          {KEEP_DEVICE_LABEL}
         </Button>
         <Button
           aria-describedby={offline ? reasonId : undefined}
           aria-disabled={blocked || undefined}
-          // the label is long ("…e encerrar as outras sessões"): it wraps, so it fits a 320 px dialog
+          // the label is long ("…e encerrar outras sessões"): it wraps, so it fits a 320 px dialog
           className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
           onClick={blocked ? undefined : onRevoke}
           type="button"

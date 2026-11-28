@@ -177,7 +177,7 @@ export const deviceStates = {
     await page
       .getByRole("button", {
         exact: true,
-        name: "Sim, revogar e encerrar as outras sessões",
+        name: "Revogar e encerrar outras sessões",
       })
       .click();
     await page.getByText("Não conseguimos confirmar se o aparelho").waitFor();
@@ -193,7 +193,7 @@ export const deviceStates = {
     await page.getByText("Celular da Ana").waitFor();
     await page.getByRole("button", { name: REVOKE_OTHER }).click();
     await page
-      .getByRole("button", { exact: true, name: "Sim, revogar este aparelho" })
+      .getByRole("button", { exact: true, name: "Revogar aparelho" })
       .click();
     await page
       .getByRole("heading", { name: "Entre de novo para continuar" })

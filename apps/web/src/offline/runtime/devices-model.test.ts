@@ -123,10 +123,8 @@ describe("the result of a revocation", () => {
   });
 
   it("changes the confirm button with the choice", () => {
-    expect(confirmLabel(false)).toBe("Sim, revogar este aparelho");
-    expect(confirmLabel(true)).toBe(
-      "Sim, revogar e encerrar as outras sessões"
-    );
+    expect(confirmLabel(false)).toBe("Revogar aparelho");
+    expect(confirmLabel(true)).toBe("Revogar e encerrar outras sessões");
   });
 
   it("does not say before the answer whether this browser leaves, because only the answer tells", () => {
