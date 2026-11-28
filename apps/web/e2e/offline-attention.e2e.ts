@@ -27,7 +27,7 @@ async function click(page: Page, name: string, expected: string) {
 
 const forcePattern = /forç/i;
 const items = (page: Page) => page.locator("li[data-cause]");
-const saleTitle = /Venda de R\$ \d+,\d{2} · \d{2}\/\d{2} \d{2}:\d{2}/;
+const saleTitle = /Venda de R\$ \d+,\d{2} · \d{2}\/\d{2}, \d{2}:\d{2}/;
 
 test("uma venda recusada por estoque aparece, bloqueia a fila e sobrevive a recarregar", async ({
   page,

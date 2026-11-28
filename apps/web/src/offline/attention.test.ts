@@ -21,7 +21,7 @@ import { createOfflineSale, resubmitRejectedSale } from "./sale-confirm";
 import { countStockOffline, receiveStockOffline } from "./stock-commands";
 import { FakeWriter } from "./test-support";
 
-const SALE_TITLE = /^Venda de R\$ 20,00 · \d{2}\/\d{2} \d{2}:\d{2}$/;
+const SALE_TITLE = /^Venda de R\$ 20,00 · \d{2}\/\d{2}, \d{2}:\d{2}$/;
 const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
 const organizationId = "org-1";

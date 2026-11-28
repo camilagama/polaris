@@ -26,7 +26,7 @@ const ITEMS: AttentionItem[] = [
       "O estoque do servidor não cobre esta venda: o saldo mudou enquanto este aparelho estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu.",
     kind: "sale",
     redone: false,
-    title: "Venda de R$ 20,00 · 14/10 09:30",
+    title: "Venda de R$ 20,00 · 14/10, 09:30",
   },
   {
     actions: ["discard"],
@@ -62,7 +62,7 @@ const ITEMS: AttentionItem[] = [
       "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta. Se o seu acesso mudou, use Sair e entrar de novo.",
     kind: "sale",
     redone: false,
-    title: "Venda de R$ 89,90 · 01/11 14:20",
+    title: "Venda de R$ 89,90 · 01/11, 14:20",
   },
 ];
 

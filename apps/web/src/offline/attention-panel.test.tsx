@@ -304,7 +304,7 @@ describe("the attention panel", () => {
       {
         items: [
           item({ commandId: first }),
-          item({ commandId: second, title: "Venda de R$ 5,00 · 01/11 10:00" }),
+          item({ commandId: second, title: "Venda de R$ 5,00 · 01/11, 10:00" }),
         ],
         waitingBehind: 0,
       },
@@ -428,7 +428,7 @@ describe("Pendências without the offline mode", () => {
 describe("the attention panel, with Esconder valores", () => {
   const sale = item({
     actions: ["redo_sale", "discard"],
-    title: "Venda de R$ 89,90 · 01/11 14:20",
+    title: "Venda de R$ 89,90 · 01/11, 14:20",
   });
   const redo = {
     redoProblem: {
@@ -457,7 +457,7 @@ describe("the attention panel, with Esconder valores", () => {
     hiding.hidden = true;
     const html = render({ items: [sale], waitingBehind: 0 }, redo);
     expect(html).not.toMatch(AMOUNT);
-    expect(html).toContain("· 01/11 14:20");
+    expect(html).toContain("· 01/11, 14:20");
     expect(html).toContain("un. a ");
     expect(html).toContain("valor escondido");
   });

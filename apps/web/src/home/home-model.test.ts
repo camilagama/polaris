@@ -761,13 +761,13 @@ describe("copyLine (AC-28, AC-31)", () => {
 
   it("says when the copy was confirmed, in the store's clock", () => {
     expect(copyLine(confirmed, "America/Sao_Paulo", false)).toBe(
-      "Confirmado em 14/10 12:30"
+      "Confirmado em 14/10, 12:30"
     );
   });
 
   it("adds that it may be out of date, and only then", () => {
     expect(copyLine(confirmed, "America/Sao_Paulo", true)).toBe(
-      "Confirmado em 14/10 12:30 · pode estar desatualizado"
+      "Confirmado em 14/10, 12:30 · pode estar desatualizado"
     );
   });
 });

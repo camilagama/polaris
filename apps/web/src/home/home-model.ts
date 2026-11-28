@@ -668,7 +668,7 @@ export function copyStanding(
   };
 }
 
-/** "Confirmado em 14/10 12:30", and "· pode estar desatualizado" after 24 h: the line under the title for a copy (AC-28, AC-31). */
+/** "Confirmado em 14/10, 12:30", and "· pode estar desatualizado" after 24 h: the line under the title for a copy (AC-28, AC-31). */
 export function copyLine(
   confirmedAt: string,
   timezone: string | null,
@@ -679,7 +679,7 @@ export function copyLine(
     return "";
   }
   const { time } = clockPartsInTimezone(instant, timezone);
-  const line = `Confirmado em ${shortDate(calendarDayInTimezone(instant, timezone))} ${time}`;
+  const line = `Confirmado em ${shortDate(calendarDayInTimezone(instant, timezone))}, ${time}`;
   return stale ? `${line} · pode estar desatualizado` : line;
 }
 
