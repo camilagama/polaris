@@ -21,7 +21,7 @@ import {
 import { EmptyState } from "@/ui/empty-state";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
-import { InsetBlock } from "@/ui/inset-block";
+import { InlineConfirm } from "@/ui/inline-confirm";
 import { ListBlock } from "@/ui/list-block";
 import { Skeleton } from "@/ui/skeleton";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
@@ -103,6 +103,7 @@ function CategoryMenu({
         render={
           <Button
             aria-label={`Mais ações para ${category.name}`}
+            data-category-menu=""
             disabled={pending}
             size="icon"
             variant="ghost"
@@ -256,54 +257,38 @@ function DeleteConfirm({
   onConfirm,
   online,
 }: DeleteConfirmProps) {
-  const groupRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    focusLater(() => groupRef.current?.focus());
-  }, []);
   const handleConfirm = useCallback(() => {
     if (online) {
       onConfirm(category);
     }
   }, [category, online, onConfirm]);
+  const opener = useCallback(
+    () =>
+      document.querySelector<HTMLElement>(
+        `[data-category-id="${category.id}"] [data-category-menu]`
+      ),
+    [category.id]
+  );
   return (
-    <InsetBlock
-      aria-label={`Confirmar remoção de ${category.name}`}
-      className="grid w-full gap-3 p-3 outline-none focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-solid focus-visible:outline-offset-2"
-      ref={groupRef}
-      role="group"
-      tabIndex={-1}
-      tone="destructive"
+    <InlineConfirm
+      action="remoção"
+      busy={isPending}
+      className="w-full"
+      confirmLabel="Remover categoria"
+      confirmProps={connectionControlProps(online)}
+      keepLabel="Manter categoria"
+      object={category.name}
+      onConfirm={handleConfirm}
+      onKeep={onCancel}
+      opener={opener}
     >
-      <p className="text-support">
-        Remover{" "}
-        <strong className="font-medium [overflow-wrap:anywhere]">
-          “{category.name}”
-        </strong>
-        ? Ela some da lista e não pode ser restaurada. O histórico de vendas
-        continua igual.
-      </p>
-      <div className="flex flex-wrap gap-3">
-        <Button
-          className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
-          disabled={isPending}
-          onClick={onCancel}
-          type="button"
-          variant="outline"
-        >
-          Manter categoria
-        </Button>
-        <Button
-          {...connectionControlProps(online)}
-          className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
-          disabled={isPending}
-          onClick={handleConfirm}
-          type="button"
-          variant="destructive"
-        >
-          Remover categoria
-        </Button>
-      </div>
-    </InsetBlock>
+      Remover{" "}
+      <strong className="font-medium [overflow-wrap:anywhere]">
+        “{category.name}”
+      </strong>
+      ? Ela some da lista e não pode ser restaurada. O histórico de vendas
+      continua igual.
+    </InlineConfirm>
   );
 }
 

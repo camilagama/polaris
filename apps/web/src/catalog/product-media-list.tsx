@@ -2,6 +2,7 @@ import type { ProductMediaAssetReadModel } from "@polaris/contracts";
 import { useCallback } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { InlineConfirm } from "@/ui/inline-confirm";
 import { InsetBlock } from "@/ui/inset-block";
 import { formatFileSize } from "../lib/format";
 import { productMediaAssetUrl } from "../lib/media-upload";
@@ -105,6 +106,13 @@ function ProductMediaItem({
       onKeep(assetId, confirming);
     }
   }, [assetId, confirming, onKeep]);
+  const opener = useCallback(
+    () =>
+      document.querySelector<HTMLElement>(
+        `[data-asset-id="${assetId}"] [data-media-action="${confirming}"]`
+      ),
+    [assetId, confirming]
+  );
   const variantCount = asset.variantIds.length;
   const showCover = useMediaThumbsEnabled() && position === 1;
   const confirmRunning = confirming !== null && running === confirming;
@@ -138,37 +146,21 @@ function ProductMediaItem({
           ) : null}
         </div>
         {confirming ? (
-          <InsetBlock
-            aria-label={`Confirmar ${confirming === "remove" ? "remoção" : "substituição"} da imagem ${position}`}
-            className="col-span-full grid gap-3 p-3"
-            role="alertdialog"
-            tone="destructive"
+          <InlineConfirm
+            action={confirming === "remove" ? "remoção" : "substituição"}
+            busy={running !== null}
+            className="col-span-full"
+            confirmLabel={confirmButtonLabel(confirming, confirmRunning)}
+            keepLabel="Manter imagem"
+            object={`imagem ${position}`}
+            onConfirm={handleConfirm}
+            onKeep={handleKeep}
+            opener={opener}
           >
-            <p className="text-support">
-              {confirming === "remove"
-                ? removeConfirmationText({ position, variantCount })
-                : replaceConfirmationText({ position, variantCount })}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                data-media-action="keep"
-                disabled={running !== null}
-                onClick={handleKeep}
-                type="button"
-                variant="outline"
-              >
-                Manter imagem
-              </Button>
-              <Button
-                disabled={running !== null}
-                onClick={handleConfirm}
-                type="button"
-                variant="destructive"
-              >
-                {confirmButtonLabel(confirming, confirmRunning)}
-              </Button>
-            </div>
-          </InsetBlock>
+            {confirming === "remove"
+              ? removeConfirmationText({ position, variantCount })
+              : replaceConfirmationText({ position, variantCount })}
+          </InlineConfirm>
         ) : (
           <fieldset className="col-span-full flex min-w-0 flex-wrap gap-3">
             <legend className="sr-only">Ações da imagem {position}</legend>

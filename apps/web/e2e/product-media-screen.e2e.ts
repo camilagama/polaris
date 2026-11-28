@@ -216,28 +216,48 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
       return route.fulfill(api({ removed: true, requestId: REQUEST_ID }));
     },
   });
-  await page.getByRole("button", { name: "Remover imagem 2" }).click();
-  const dialog = page.getByRole("alertdialog");
+  await activateByKeyboard(
+    page,
+    page.getByRole("button", { name: "Remover imagem 2" })
+  );
+  const dialog = page.getByRole("group", { name: IMAGE_CONFIRMATION });
   await expect(dialog).toContainText("Remover a imagem 2?");
   await expect(dialog).toContainText(
     "Para voltar a usá-la, será preciso enviar o arquivo de novo."
   );
-  // the safe answer takes the focus
-  await expect(
-    dialog.getByRole("button", { name: "Manter imagem" })
-  ).toBeFocused();
+  // the box takes the focus, and the keyboard sees it
+  await expectFocusRing(dialog);
   expect(removed).toBe(0);
+  // Esc keeps the image and gives the focus back, and the dialog of the product stays open
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Remover imagem 2" })
+  ).toBeFocused();
+  await activateByKeyboard(
+    page,
+    page.getByRole("button", { name: "Remover imagem 2" })
+  );
+  await expectFocusRing(dialog);
   await dialog.getByRole("button", { name: "Manter imagem" }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: IMAGE_CONFIRMATION })
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Remover imagem 2" })
   ).toBeFocused();
 
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
+  await expect(
+    page.getByRole("group", { name: IMAGE_CONFIRMATION })
+  ).toBeFocused();
   await activateByKeyboard(
     page,
     page
-      .getByRole("alertdialog")
+      .getByRole("group", { name: IMAGE_CONFIRMATION })
       .getByRole("button", { name: "Remover imagem" })
   );
   await expect(
@@ -253,6 +273,8 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
   );
 });
 
+const IMAGE_CONFIRMATION = /^Confirmar (remoção|substituição) de imagem/;
+
 const REFUSED = (route: Route) =>
   route.fulfill(api({ error: { code: "not_found" } }, 404));
 const REFUSAL_TEXT =
@@ -264,7 +286,7 @@ test("remover com recusa definitiva diz que a lista foi recarregada e leva o foc
   await openMediaPanel(page, { lists: [list(2), list(1)], remove: REFUSED });
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
   await page
-    .getByRole("alertdialog")
+    .getByRole("group", { name: IMAGE_CONFIRMATION })
     .getByRole("button", { name: "Remover imagem" })
     .click();
   await expect(page.getByRole("alert")).toHaveText(REFUSAL_TEXT);
@@ -277,7 +299,7 @@ test("remover com recusa definitiva diz que a lista foi recarregada e leva o foc
 async function confirmReplace(page: Page) {
   await page.getByRole("button", { name: "Substituir imagem 2" }).click();
   await page
-    .getByRole("alertdialog")
+    .getByRole("group", { name: IMAGE_CONFIRMATION })
     .getByRole("button", { name: "Remover e escolher outra" })
     .click();
 }
@@ -339,7 +361,7 @@ test("remover sem internet anuncia o resultado incerto como alerta, mantém a li
   });
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
   await page
-    .getByRole("alertdialog")
+    .getByRole("group", { name: IMAGE_CONFIRMATION })
     .getByRole("button", { name: "Remover imagem" })
     .click();
   await expect(page.getByRole("alert")).toHaveText(
@@ -750,12 +772,14 @@ test("a 320 px nada transborda no painel aberto: a lista, a confirmação de rem
   await expectNoSidewaysScroll(page);
 
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: IMAGE_CONFIRMATION })
+  ).toBeVisible();
   await expectNoSidewaysScroll(page);
   // the answers of the confirmation are controls of the shop's size, side by side or stacked, never cut
   const answers = ["Manter imagem", "Remover imagem"].map((name) =>
     page
-      .getByRole("alertdialog")
+      .getByRole("group", { name: IMAGE_CONFIRMATION })
       .getByRole("button", { exact: true, name })
       .boundingBox()
   );

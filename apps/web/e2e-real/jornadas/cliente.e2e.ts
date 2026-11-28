@@ -378,7 +378,7 @@ test("cliente: arquivar, restaurar e anonimizar; a venda ligada não muda", asyn
     name: `Confirmar a anonimização de ${name}`,
   });
   await expect(confirmation.getByText("Não dá para desfazer.")).toBeVisible();
-  await confirmation.getByRole("button", { name: "Cancelar" }).click();
+  await confirmation.getByRole("button", { name: "Manter cliente" }).click();
   await expect(confirmation).toBeHidden();
   await expect(rowOf(created.id)).toBeVisible();
   expect(anonymizeCalls).toEqual([]);
