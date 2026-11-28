@@ -756,7 +756,10 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     await discardOpener(page).click();
     await expect(discardDialog(page)).toBeVisible();
     await expect(
-      discardDialog(page).getByRole("button", { exact: true, name: "Voltar" })
+      discardDialog(page).getByRole("button", {
+        exact: true,
+        name: "Manter operações",
+      })
     ).toBeFocused();
     const text = await discardDialog(page).innerText();
     expect(text).toContain(
@@ -768,7 +771,7 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     expect(text).toContain("Isso não tem volta.");
 
     await discardDialog(page)
-      .getByRole("button", { exact: true, name: "Voltar" })
+      .getByRole("button", { exact: true, name: "Manter operações" })
       .click();
     await expect(discardDialog(page)).toHaveCount(0);
     expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
@@ -790,7 +793,7 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     });
     await discardOpener(page).click();
     await discardDialog(page)
-      .getByRole("button", { exact: true, name: "Sim, descartar" })
+      .getByRole("button", { exact: true, name: "Descartar operações" })
       .dblclick();
 
     await expect(
@@ -850,7 +853,7 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
 
     await discardOpener(page).click();
     await discardDialog(page)
-      .getByRole("button", { exact: true, name: "Sim, descartar" })
+      .getByRole("button", { exact: true, name: "Descartar operações" })
       .click();
 
     await expect(
@@ -878,7 +881,7 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
 
     await discardOpener(page).click();
     await discardDialog(page)
-      .getByRole("button", { exact: true, name: "Sim, descartar" })
+      .getByRole("button", { exact: true, name: "Descartar operações" })
       .click();
 
     await expect(

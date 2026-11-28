@@ -7,8 +7,8 @@ import {
 
 export const QUEUE_SECTION_TITLE = "Neste aparelho";
 export const DISCARD_BUTTON = "Descartar o que não foi enviado…";
-export const DISCARD_BACK = "Voltar";
-export const DISCARD_CONFIRM = "Sim, descartar";
+export const DISCARD_BACK = "Manter operações";
+export const DISCARD_CONFIRM = "Descartar operações";
 export const DISCARD_SENDING = "Descartando…";
 export const DISCARD_DONE_TEXT = "Operações descartadas neste aparelho.";
 export const DISCARD_UNREAD_TEXT =
