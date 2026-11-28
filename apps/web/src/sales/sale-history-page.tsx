@@ -166,7 +166,7 @@ function shownCount(
   return refreshing ? LIST_REFRESHING_TEXT : historyListCount(view, hasMore);
 }
 
-/** Only for the screen reader: the button already says "Carregando…", and the refresh reads in the count, which a list with no frame does not have. */
+/** "Carregando mais vendas…" is only for the screen reader, the button already says "Carregando…". The refresh reads in the count; a list with no frame has none, so there the sentence stays in view, the only sign that the empty state is not the server's answer yet. */
 function HistoryWaitStatus({
   busy,
   refreshing,
@@ -181,7 +181,7 @@ function HistoryWaitStatus({
     <div aria-live="polite" role="status">
       {busy ? <p className="sr-only">Carregando mais vendas…</p> : null}
       {refreshing && frameless ? (
-        <p className="sr-only">{LIST_REFRESHING_TEXT}</p>
+        <p className="text-muted-foreground">{LIST_REFRESHING_TEXT}</p>
       ) : null}
     </div>
   );

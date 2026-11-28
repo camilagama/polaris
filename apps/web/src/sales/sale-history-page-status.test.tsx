@@ -110,14 +110,14 @@ describe("o aviso de espera do Histórico", () => {
     expect(screen.getAllByText("Atualizando a lista…")).toEqual([count]);
   });
 
-  it("sem nenhuma venda e sem filtro não há contagem: a frase da releitura fica só para o leitor de tela, no role=status", () => {
+  it("sem nenhuma venda e sem filtro não há contagem: a frase da releitura fica à vista, no role=status", () => {
     history.state = historyLoading(
       historyLoaded(initialHistoryState(), { hasMore: false, sales: [] }, "k")
     );
     renderPage();
     expect(document.querySelector("[data-list-count]")).toBeNull();
     const phrase = screen.getByText("Atualizando a lista…");
-    expect(phrase.classList.contains("sr-only")).toBe(true);
+    expect(phrase.classList.contains("sr-only")).toBe(false);
     expect(phrase.closest('[role="status"]')).not.toBeNull();
   });
 
