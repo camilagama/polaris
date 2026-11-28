@@ -12,8 +12,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
 /**
- * The button says the choice ("Excluir venda" / "Manter"), never "OK" or "Sim" alone (DESIGN.md, "Diálogo de
- * formulário"). The scan reads every `.tsx` of `src` as text, so a label added to any screen is caught, and
+ * The button says the choice ("Excluir venda" / "Manter"), never "OK", "Sim" or "Sim, <verbo>" (DESIGN.md,
+ * "Diálogo de formulário"). The scan reads every `.tsx` of `src` as text, so a label added to any screen is caught, and
  * also the `*-texts.ts` constants that hold button text; a plain `.ts` is not read, because it would flag
  * strings that are not labels. Only the gallery and the labs, which are not product screens, stay out, and
  * the exclusions are listed exactly. A second rule bounds a literal `<Button>` label at 5 words and no final
@@ -25,8 +25,8 @@ const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const EXCLUDED_FOLDERS = ["offline-poc/", "ui-gallery/"];
 const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
 const TEXTS_CONSTANTS = /-texts\.ts$/;
-const JSX_TEXT = />\s*(OK|Ok|Sim)[.!]?\s*<\//g;
-const STRING_LITERAL = /["'`](OK|Ok|Sim)[.!]?["'`]/g;
+const JSX_TEXT = />\s*(OK|Ok|Sim(?:,[^<>{}]*?)?)[.!]?\s*<\//g;
+const STRING_LITERAL = /["'`](OK|Ok|Sim(?:, [^"'`\n]*?)?)[.!]?["'`]/g;
 const JSX_SPACE = String.raw`\{\s*(?:"\s+"|'\s+')\s*\}`;
 const BUTTON_LITERAL_TEXT = new RegExp(
   `>((?:[^<>{}]|${JSX_SPACE})+)</Button>`,
@@ -150,7 +150,7 @@ function plant(files: Record<string, string>): string {
   return root;
 }
 
-describe("button labels say the choice, not OK or Sim", () => {
+describe("button labels say the choice, not OK, Sim or Sim, <verbo>", () => {
   it("scans the screens and leaves out only the gallery and the labs", () => {
     expect(EXCLUDED_FOLDERS).toEqual(["offline-poc/", "ui-gallery/"]);
     const scanned = scan(SRC);
@@ -167,7 +167,7 @@ describe("button labels say the choice, not OK or Sim", () => {
     ).toEqual(["offline-poc", "ui-gallery"]);
   });
 
-  it("finds no OK or Sim label in any screen", () => {
+  it("finds no OK, Sim or Sim, <verbo> label in any screen", () => {
     expect(findings(SRC)).toEqual([]);
   });
 
@@ -233,6 +233,26 @@ describe("button labels say the choice, not OK or Sim", () => {
     ["JSX text with a period", "<Button>Ok.</Button>", ["Ok"]],
     ["string constant", 'const CONFIRM = "OK";', ["OK"]],
     ["template literal", "const CONFIRM = `Sim`;", ["Sim"]],
+    [
+      "JSX text with Sim, <verbo>",
+      '<Button variant="destructive">Sim, descartar e recomeçar</Button>',
+      ["Sim, descartar e recomeçar"],
+    ],
+    [
+      "string constant with Sim, <verbo>",
+      'const CONFIRM = "Sim, revogar este aparelho";',
+      ["Sim, revogar este aparelho"],
+    ],
+    [
+      "string constant with Sim, <verbo> and a final period",
+      'const CONFIRM = "Sim, descartar.";',
+      ["Sim, descartar"],
+    ],
+    [
+      "template literal with Sim, <verbo>",
+      "const CONFIRM = `Sim, desfazer`;",
+      ["Sim, desfazer"],
+    ],
   ])("plant: %s is caught", (_name, source, expected) => {
     expect(genericButtonLabels(source)).toEqual(expected);
   });
@@ -240,7 +260,11 @@ describe("button labels say the choice, not OK or Sim", () => {
   it.each([
     ["a label that says the choice", "<Button>Excluir venda</Button>"],
     ["a word that only contains it", 'const x = "Simples"; const y = "Book";'],
-    ["a sentence", 'const x = "Sim, excluir esta venda";'],
+    ["a sentence that only has Sim inside", 'const x = "Diga Sim, por favor";'],
+    [
+      "a word that starts with Sim, with a comma",
+      'const x = "Simples, direto";',
+    ],
     ["a tone key in lowercase", "const tone = 'ok';"],
   ])("control: %s is not caught", (_name, source) => {
     expect(genericButtonLabels(source)).toEqual([]);

@@ -1,6 +1,5 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
-import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
@@ -11,7 +10,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
-import { EmptyState } from "@/ui/empty-state";
 import { ListBlock } from "@/ui/list-block";
 import { Money } from "@/ui/money";
 import { Skeleton } from "@/ui/skeleton";
@@ -283,29 +281,22 @@ function EmptyExpenses({
 }) {
   if (filters.categoryId === "") {
     return (
-      <EmptyState
-        afterRead
-        bare
-        icon={WalletIcon}
-        title={
-          filters.status === "voided"
-            ? "Nenhuma despesa anulada neste período."
-            : "Nenhuma despesa neste período."
-        }
-      />
+      <p className="text-muted-foreground" role="status">
+        {filters.status === "voided"
+          ? "Nenhuma despesa anulada neste período."
+          : "Nenhuma despesa neste período."}
+      </p>
     );
   }
   return (
-    <EmptyState
-      afterRead
-      bare
-      icon={WalletIcon}
-      title="Nenhuma despesa encontrada com estes filtros."
-    >
+    <>
+      <p className="text-muted-foreground" role="status">
+        Nenhuma despesa encontrada com estes filtros.
+      </p>
       <Button onClick={onClearFilters} type="button" variant="outline">
         Limpar filtros
       </Button>
-    </EmptyState>
+    </>
   );
 }
 
