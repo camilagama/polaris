@@ -8,6 +8,7 @@ import {
   formatBrlAmount,
   formatCalendarDate,
   formatInstant,
+  formatQuantity,
 } from "../lib/format";
 import { rpcErrorReason } from "../lib/rpc-error";
 import { sumBrlAmounts } from "../lib/sum-brl";
@@ -363,7 +364,7 @@ export function historyTotal(
   const left = sales.length - counted.length;
   const sum = sumBrlAmounts(counted.map((sale) => sale.totalDue));
   return {
-    countText: `${counted.length} ${counted.length === 1 ? "venda" : "vendas"}${hasMore ? " · há mais" : ""}`,
+    countText: `${formatQuantity(counted.length)} ${counted.length === 1 ? "venda" : "vendas"}${hasMore ? " · há mais" : ""}`,
     noteText:
       left === 0
         ? ""
@@ -453,7 +454,7 @@ export function historyFooterView(input: {
     return {
       count:
         read.status === "ready"
-          ? `${read.salesCount} ${read.salesCount === 1 ? "venda" : "vendas"}`
+          ? `${formatQuantity(read.salesCount)} ${read.salesCount === 1 ? "venda" : "vendas"}`
           : "",
       hasHelp: true,
       label: PERIOD_TOTAL_LABEL,
@@ -531,7 +532,7 @@ export function historyListCount(view: HistoryView, hasMore: boolean): string {
     return "";
   }
   const rows = view.kind === "ready" ? view.rows.length : 0;
-  return `${rows} ${rows === 1 ? "venda" : "vendas"}${hasMore && rows > 0 ? " · há mais" : ""}`;
+  return `${formatQuantity(rows)} ${rows === 1 ? "venda" : "vendas"}${hasMore && rows > 0 ? " · há mais" : ""}`;
 }
 
 export interface LoadMoreView {

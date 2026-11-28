@@ -15,14 +15,18 @@ import { Money } from "@/ui/money";
 import { Skeleton } from "@/ui/skeleton";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
-import { formatBrlAmount, formatCalendarDate } from "../lib/format";
+import {
+  formatBrlAmount,
+  formatCalendarDate,
+  formatQuantity,
+} from "../lib/format";
 import { sumBrlAmounts } from "../lib/sum-brl";
 import { LoadError } from "./expense-fields";
 import { formatMonthLabel } from "./expense-model";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
 function countLabel(count: number): string {
-  return count === 1 ? "1 despesa" : `${count} despesas`;
+  return count === 1 ? "1 despesa" : `${formatQuantity(count)} despesas`;
 }
 
 function loadedCountLabel(count: number, hasMore: boolean): string {
