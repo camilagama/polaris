@@ -147,7 +147,9 @@ const title = (page: Page, name = "Loja do teste está encerrada") =>
   page.getByRole("heading", { exact: true, level: 1, name });
 const dates = (page: Page) => page.locator("dl");
 const undoButton = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Desfazer encerramento" });
+  page
+    .getByRole("main")
+    .getByRole("button", { exact: true, name: "Desfazer encerramento" });
 const askButton = (page: Page) =>
   page.getByRole("button", { name: "Pedir cópia dos dados" });
 const copies = (page: Page) =>
