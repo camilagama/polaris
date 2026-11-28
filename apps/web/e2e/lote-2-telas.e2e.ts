@@ -175,7 +175,7 @@ test("Categorias sem internet: a faixa diz que a tela precisa de conexão, o que
   });
   await page.getByLabel("Nova categoria").fill("Acessórios");
   await page.context().setOffline(true);
-  const strip = page.getByRole("status").filter({ hasText: "Sem internet." });
+  const strip = page.getByRole("status").filter({ hasText: "Sem conexão." });
   await expect(strip).toContainText(STRIP);
   await expect(strip).toContainText("O que você digitou fica aqui");
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
@@ -706,6 +706,31 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await done.getByRole("button", { name: "Cadastrar outro" }).click();
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
+});
+
+test("Clientes: editar com conexão fecha o formulário e o aviso diz o nome que o servidor devolveu, como cadastrar, arquivar e restaurar", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [customer(1, "Ana Lima")] }),
+    "customer/update": reply({
+      changed: true,
+      customer: customer(1, "Ana Lima Souza", { version: 2 }),
+    }),
+  });
+  await page
+    .getByRole("button", { exact: true, name: "Editar Ana Lima" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await dialog.getByLabel("Nome", { exact: true }).fill("ana lima souza");
+  await dialog.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Cliente “Ana Lima Souza” atualizado." })
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({

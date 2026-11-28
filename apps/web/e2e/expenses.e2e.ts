@@ -1378,7 +1378,7 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   await expect(panel.getByText("Despesa recorrente pausada.")).toBeVisible();
   await expect(rule).toHaveCount(0);
 
-  await panel.getByRole("checkbox", { name: "Mostrar pausadas" }).check();
+  await panel.getByRole("checkbox", { name: "Incluir pausadas" }).check();
   await expect(rule.getByText("Pausada", { exact: true })).toBeVisible();
   await expect(rule).toContainText("Geração suspensa até retomar");
 
@@ -2132,12 +2132,12 @@ test("o segmentado Lançamentos · Recorrentes · Categorias: nome acessível, e
 
   // the address opens a part: what was ticked in another survives (the three stay mounted)
   await rulesPanel(page)
-    .getByRole("checkbox", { name: "Mostrar pausadas" })
+    .getByRole("checkbox", { name: "Incluir pausadas" })
     .check();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
   await page.getByRole("tab", { name: "Recorrentes" }).click();
   await expect(
-    rulesPanel(page).getByRole("checkbox", { name: "Mostrar pausadas" })
+    rulesPanel(page).getByRole("checkbox", { name: "Incluir pausadas" })
   ).toBeChecked();
 });
 

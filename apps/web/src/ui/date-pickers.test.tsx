@@ -634,7 +634,7 @@ describe("OnDemandCalendar, a falha onde o navegador não diz o chunk (Safari: s
     for (const unsent of [false, true]) {
       const markup = failure({ offline: true, unsent });
       expect(markup).toContain(
-        "Sem internet. Conecte-se e recarregue a página para abrir o calendário."
+        "Sem conexão. Conecte-se e recarregue a página para abrir o calendário."
       );
       expect(markup).not.toContain("conexão voltar");
       expect(markup).not.toContain("<button");
@@ -650,7 +650,7 @@ describe("OnDemandCalendar, a falha onde o navegador não diz o chunk (Safari: s
     );
     const offline = failure({ inPlace: true, offline: true });
     expect(offline).toContain(
-      "Sem internet. O calendário abre quando a conexão voltar."
+      "Sem conexão. O calendário abre quando a conexão voltar."
     );
     expect(offline).not.toContain("<button");
   });

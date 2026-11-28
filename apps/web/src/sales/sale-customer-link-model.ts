@@ -469,9 +469,7 @@ export function linkSubmitted(
     selectedCustomerId: "",
     submission: {
       changed: change.changed,
-      message: change.changed
-        ? successMessages[action]
-        : "Nada mudou: a venda já estava neste estado, e nenhuma versão nova foi criada.",
+      message: change.changed ? successMessages[action] : "Nada mudou.",
       phase: "success",
     },
   };

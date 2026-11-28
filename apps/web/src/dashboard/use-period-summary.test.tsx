@@ -188,7 +188,7 @@ const inputOf = (period: Period, organizationId = ORG) => ({
   topProducts: TOP_PRODUCTS,
 });
 
-const NO_COPY_ERROR = "Sem internet e sem números guardados neste aparelho.";
+const NO_COPY_ERROR = "Sem conexão e sem números guardados neste aparelho.";
 const ONLY_ONLINE_ERROR = "Este período só abre com internet.";
 const GENERIC_ERROR = "Não foi possível carregar o resultado. Tente novamente.";
 

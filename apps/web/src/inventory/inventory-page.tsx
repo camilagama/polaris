@@ -25,7 +25,7 @@ import { RetryButton } from "@/ui/retry-button";
 import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
-import { TitleLine } from "../app-shell/screen-title";
+import { SCREEN_TITLE_CLASS, TitleLine } from "../app-shell/screen-title";
 import {
   ProductThumbnail,
   useThumbnailSequence,
@@ -416,7 +416,7 @@ export function InventoryPage() {
       <header className="grid gap-1">
         <TitleLine action={<RefreshButton fill onClick={handleReload} />}>
           <div className="flex items-center gap-1">
-            <h1 className="text-title" ref={focus.title} tabIndex={-1}>
+            <h1 className={SCREEN_TITLE_CLASS} ref={focus.title} tabIndex={-1}>
               Estoque
             </h1>
             <HelpTip about="Estoque">

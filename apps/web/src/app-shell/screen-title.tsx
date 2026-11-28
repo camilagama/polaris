@@ -9,6 +9,7 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
+import { H1_CLASS, H2_CLASS } from "@/ui/title-class";
 
 /** Whether a screen is drawn inside a tab of another one (Configurações, Produtos, Resultado: map of navigation, § 1). */
 const InTabContext = createContext(false);
@@ -49,6 +50,12 @@ export function useInTab(): boolean {
 /** Set by `TitleLine`: the tab it is drawn in already carries the name of the screen, so the title is not drawn twice. */
 const TabNamesTitleContext = createContext(false);
 
+/** The h1 of a screen: one wrap rule for every title (the class lives in `ui/` so the gallery writes the same one). */
+export const SCREEN_TITLE_CLASS = H1_CLASS;
+
+/** The h2 of a screen drawn as a tab: same wrap rule as the title. */
+export const SECTION_TITLE_CLASS = H2_CLASS;
+
 /**
  * The title of a screen: the `h1` of the page when it stands alone, and a section title under the screen's `h1` when it
  * is a tab, as the Metas of the Resultado (one `h1` a page).
@@ -61,9 +68,7 @@ export function ScreenTitle({
 }) {
   const inTab = useContext(InTabContext);
   const tabNamesIt = useContext(TabNamesTitleContext);
-  let base = inTab
-    ? "min-w-0 text-section [overflow-wrap:anywhere]"
-    : "min-w-0 text-title [overflow-wrap:anywhere]";
+  let base = inTab ? H2_CLASS : H1_CLASS;
   if (inTab && tabNamesIt) {
     base = `${base} sr-only`;
   }

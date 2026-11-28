@@ -7,7 +7,7 @@ import {
 
 /** What the screen says for a period that has no copy on the device and cannot be read without a connection (AC-16). */
 const NO_INTERNET_NO_COPY =
-  "Sem internet e sem números guardados neste aparelho.";
+  "Sem conexão e sem números guardados neste aparelho.";
 const NO_INTERNET_FOR_PERIOD = "Este período só abre com internet.";
 
 /**

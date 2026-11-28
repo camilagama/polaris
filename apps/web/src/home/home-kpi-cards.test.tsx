@@ -375,7 +375,7 @@ describe("the cards without a connection and without a copy", () => {
     expect(markup.match(/Sem conexão/g)).toHaveLength(4);
     expect(markup.match(/sem valor/g)).toHaveLength(4);
     expect(markup).not.toContain("R$");
-    expect(markup).not.toContain("Sem internet");
+    expect(markup).not.toContain("Sem conexão.");
     expect(markup).toContain("Vendas em outubro");
     expect(markup).not.toContain("data-kpi-group");
   });

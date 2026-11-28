@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
+import { SCREEN_TITLE_CLASS } from "../app-shell/screen-title";
 import type { Period, PeriodPreset } from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
@@ -91,7 +92,7 @@ function HomeRefresh({
   busy: boolean;
   className?: string;
   offline: boolean;
-  /** The line that already says "Sem internet.": read as the reason while the button is off for lack of a connection. */
+  /** The line that already says "Sem conexão.": read as the reason while the button is off for lack of a connection. */
   offlineReasonId: string | undefined;
   onClick: () => void;
 }) {
@@ -677,7 +678,12 @@ function HomeHeader({
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 min-[47.5rem]:grid min-[47.5rem]:grid-cols-[minmax(0,1fr)_auto] min-[47.5rem]:items-center min-[47.5rem]:gap-x-3 min-[47.5rem]:gap-y-1">
       <div className="flex min-w-0 flex-1 items-start justify-between gap-3 min-[47.5rem]:contents">
         <div className="grid min-w-0 gap-1 min-[47.5rem]:contents">
-          <h1 className="text-title min-[47.5rem]:col-start-1 min-[47.5rem]:row-start-1">
+          <h1
+            className={cn(
+              SCREEN_TITLE_CLASS,
+              "min-[47.5rem]:col-start-1 min-[47.5rem]:row-start-1"
+            )}
+          >
             Início
           </h1>
           {/* two lines kept on a phone: the long day and hour, or "Carregando…", take the same box; the line a short phrase leaves empty is 16 px, and the actions row below (`-mt-2`, half of the header `gap-y-4`) sits 24 px under a one-line phrase and 8 px under a two-line one */}

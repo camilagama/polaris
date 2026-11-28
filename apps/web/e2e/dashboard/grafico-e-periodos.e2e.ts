@@ -39,6 +39,9 @@ const periodChoice = periodButton;
 
 const ONE_UNKNOWN_DAY = /1 de 30 dias sem custo informado/;
 
+const RESULT_READ_FAILED =
+  /^Não foi possível carregar o resultado\.\s*Tentar novamente$/;
+
 const CHART_IMAGE = /Vendas líquidas e custos por dia, 1 a 31 de outubro/;
 
 const YEAR_CHART_IMAGE =
@@ -884,10 +887,9 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
     server.failure = { code: "INTERNAL_SERVER_ERROR", status: 500 };
     await choosePreset(page, "Últimos 30 dias");
-    await expect(page.getByRole("alert")).toContainText(
-      "Não foi possível carregar o resultado.",
-      { timeout: 15_000 }
-    );
+    await expect(page.getByRole("alert")).toHaveText(RESULT_READ_FAILED, {
+      timeout: 15_000,
+    });
     await expect(kpiCards(page)).toHaveCount(0);
     await expect(chartRegion(page)).toHaveCount(0);
   });

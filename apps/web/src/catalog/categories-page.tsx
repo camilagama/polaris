@@ -198,7 +198,7 @@ export function CategoriesPage() {
         setNotice(
           result.changed
             ? `Categoria “${result.category.name}” renomeada.`
-            : `O nome da categoria continua “${result.category.name}”.`
+            : "Nada mudou."
         );
         setRenamingCategoryId(null);
         setRenameValue("");

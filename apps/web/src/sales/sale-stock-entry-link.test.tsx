@@ -178,7 +178,7 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
     expect(html).not.toContain("/inventory");
   });
 
-  it("na recusa: o texto, o link com a variante no nome, antes de Atualizar dados", () => {
+  it("na recusa: o texto, o link com a variante no nome, antes de Atualizar e revisar", () => {
     const html = renderRefusal(true);
     expect(html).toContain(
       "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 2, saldo 0)."
@@ -188,7 +188,7 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
     );
     expect(html).toContain('<span class="sr-only"> de Caneca esmaltada</span>');
     expect(html.indexOf("Dar entrada no estoque")).toBeLessThan(
-      html.indexOf("Atualizar dados e revisar a venda")
+      html.indexOf("Atualizar e revisar a venda")
     );
   });
 
@@ -196,6 +196,6 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
     const html = renderRefusal(false);
     expect(html).toContain("Peça a quem cuida do estoque para dar entrada.");
     expect(html).not.toContain("/inventory");
-    expect(html).toContain("Atualizar dados e revisar a venda");
+    expect(html).toContain("Atualizar e revisar a venda");
   });
 });

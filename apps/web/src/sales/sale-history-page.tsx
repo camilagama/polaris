@@ -13,7 +13,7 @@ import {
   navigateInApp,
   readNavigationState,
 } from "../app-shell/address";
-import { TitleLine } from "../app-shell/screen-title";
+import { SCREEN_TITLE_CLASS, TitleLine } from "../app-shell/screen-title";
 import {
   HISTORY_PERIOD_STATE,
   HISTORY_STATUS_STATE,
@@ -283,7 +283,7 @@ export function SaleHistoryPage() {
             <HistoryPeriodPicker filters={filters} onChange={setFilters} />
           }
         >
-          <h1 className="text-title" ref={focus.title} tabIndex={-1}>
+          <h1 className={SCREEN_TITLE_CLASS} ref={focus.title} tabIndex={-1}>
             Histórico de vendas
           </h1>
         </TitleLine>

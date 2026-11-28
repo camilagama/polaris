@@ -105,7 +105,7 @@ export function setupErrorMessage(error: unknown): string {
   }
   // a call that got no answer is a lack of connection, never a refusal of the server
   if (isConnectionFailure(error)) {
-    return "Sem internet. Conecte-se e tente de novo.";
+    return "Sem conexão. Conecte-se e tente de novo.";
   }
   const code = rpcErrorCode(error);
   const reason = rpcErrorReason(error);

@@ -31,6 +31,9 @@ import {
 
 const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 
+const RESULT_READ_FAILED =
+  /^Não foi possível carregar o resultado\.\s*Tentar novamente$/;
+
 /** An amount written on the screen: "R$ 130,00". */
 const AN_AMOUNT = /R\$ \d/;
 
@@ -416,9 +419,7 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
 
   const alert = page.getByRole("alert");
   // three tries (~1.5 s and ~4 s between them) before the screen says it failed
-  await expect(alert).toContainText("Não foi possível carregar o resultado.", {
-    timeout: 15_000,
-  });
+  await expect(alert).toHaveText(RESULT_READ_FAILED, { timeout: 15_000 });
   await expect(kpiCards(page)).toHaveCount(0);
 
   server.failure = null;
@@ -542,7 +543,7 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
   server.networkDown = true;
   await choosePreset(page, "Mês passado");
   await expect(page.getByRole("alert")).toContainText(
-    "Sem internet e sem números guardados neste aparelho.",
+    "Sem conexão e sem números guardados neste aparelho.",
     { timeout: 15_000 }
   );
   await expect(kpiCards(page)).toHaveCount(0);
@@ -578,7 +579,7 @@ test("sem conexão, Este ano só abre com internet, como os Últimos 30 dias, e 
     { timeout: 15_000 }
   );
   await expect(page.getByRole("alert")).not.toContainText(
-    "Sem internet e sem números guardados"
+    "Sem conexão e sem números guardados"
   );
   await expect(kpiCards(page)).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);

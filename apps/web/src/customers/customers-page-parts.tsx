@@ -1,7 +1,11 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import type { MouseEvent, Ref } from "react";
-import { TITLE_ACTION_CLASS, TitleLine } from "../app-shell/screen-title";
+import {
+  SCREEN_TITLE_CLASS,
+  TITLE_ACTION_CLASS,
+  TitleLine,
+} from "../app-shell/screen-title";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { SearchField } from "@/ui/search-field";
@@ -35,7 +39,7 @@ export function CustomersHeader({ newButton }: CustomersHeaderProps) {
         ) : null
       }
     >
-      <h1 className="text-title">Clientes</h1>
+      <h1 className={SCREEN_TITLE_CLASS}>Clientes</h1>
     </TitleLine>
   );
 }

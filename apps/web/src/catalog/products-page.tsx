@@ -109,7 +109,7 @@ function editNotice(
 ): string {
   const saved = changed
     ? `Produto “${product.name}” atualizado.`
-    : `O produto “${product.name}” continua sem alterações.`;
+    : "Nada mudou.";
   if (unsent.length === 0) {
     return saved;
   }
