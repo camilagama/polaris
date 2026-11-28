@@ -751,7 +751,7 @@ test("sem internet com o filtro de custo ativo: sem contagem e a lista diz que n
   });
   // the lab's own checkbox takes the network away; the screen then works from the device
   await page.getByLabel("Rede disponível").uncheck();
-  await expect(page.getByText("Sem conexão.")).toBeVisible();
+  await expect(page.getByText("Sem conexão.", { exact: true })).toBeVisible();
   await expectPills(page, ["Custo desconhecido"]);
   await expect(pill(page, "Custo desconhecido")).toHaveCount(0);
   await expect(bar(page)).toContainText("Só com conexão");
