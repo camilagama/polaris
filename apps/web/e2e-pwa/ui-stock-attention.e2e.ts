@@ -188,7 +188,9 @@ test.describe("Estoque, Precisa de ação", () => {
     ).toBeVisible();
     await expect(page.getByText(JEANS_PANEL)).toHaveCount(0);
     await expect(page.getByText(LAST_MOVEMENT)).toHaveCount(0);
-    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page
+      .getByLabel("Custo de cada unidade", { exact: true })
+      .fill("12,50");
     await page.getByRole("button", { exact: true, name: "Revisar" }).click();
     await expect(
       page.getByText("Último movimento", { exact: true })

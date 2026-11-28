@@ -8,8 +8,8 @@ import {
   costUnitsText,
   discardLockedStock,
   editStockField,
-  isStockDraftChanged,
   firstInvalidStockField,
+  isStockDraftChanged,
   isStockLocked,
   mapStockError,
   parseUnitCost,
@@ -170,7 +170,7 @@ describe("receive validation", () => {
     for (const quantity of ["0", "1,5", "-2", "abc"]) {
       expect(
         issuesOf(filled("receive", { ...receiveFields, quantity }))[0]
-      ).toMatchObject({ field: "quantity", empty: false });
+      ).toMatchObject({ empty: false, field: "quantity" });
     }
     expect(
       issuesOf(
@@ -280,7 +280,19 @@ describe("count validation", () => {
       { physicalQuantity: "0", valuationUnitCost: "5" },
       unknownCostTarget
     );
-    expect(issuesOf(zero)[0]).toMatchObject({ field: "valuationUnitCost" });
+    expect(issuesOf(zero)[0]).toMatchObject({
+      field: "valuationUnitCost",
+      message: expect.stringContaining("custo de cada unidade"),
+    });
+    const huge = filled(
+      "count",
+      { ...countFields, valuationUnitCost: "1".repeat(19) },
+      unknownCostTarget
+    );
+    expect(issuesOf(huge)[0]).toMatchObject({
+      field: "valuationUnitCost",
+      message: expect.stringContaining("custo de cada unidade"),
+    });
     const bad = filled(
       "count",
       { ...countFields, valuationUnitCost: "abc" },
@@ -307,7 +319,7 @@ describe("write-off validation", () => {
     });
     expect(
       issuesOf(filled("write_off", { quantity: "6", reasonCode: "lost" }))[0]
-    ).toMatchObject({ field: "quantity", empty: false });
+    ).toMatchObject({ empty: false, field: "quantity" });
     expect(issuesOf(filled("write_off", { quantity: "1" }))[0]).toMatchObject({
       empty: true,
       field: "reasonCode",
@@ -379,6 +391,16 @@ describe("form flow", () => {
       "quantity",
       "unitCost",
     ]);
+  });
+
+  it("names the field in the receipt cost error", () => {
+    const state = reviewStock(filled("receive", { quantity: "1" }));
+    expect(
+      visibleStockIssues(state).find((issue) => issue.field === "unitCost")
+        ?.message
+    ).toBe(
+      "Informe o custo de cada unidade: ele é obrigatório em todo recebimento."
+    );
   });
 
   it("focuses the first invalid field in the order shown", () => {
@@ -825,8 +847,8 @@ describe("mapStockError", () => {
       { reloadList: true },
     ],
     ["NOT_FOUND", "product_not_found", "não existe mais", { reloadList: true }],
-    ["BAD_REQUEST", "invalid_unit_cost", "6 casas decimais", {}],
-    ["BAD_REQUEST", "inventory_cost_limit", "18 dígitos", {}],
+    ["BAD_REQUEST", "invalid_unit_cost", "custo de cada unidade em reais", {}],
+    ["BAD_REQUEST", "inventory_cost_limit", "custo de cada unidade excede", {}],
     ["BAD_REQUEST", "invalid_inventory_count_input", "O custo só vale", {}],
     ["BAD_REQUEST", "invalid_receive_stock_input", "validação", {}],
     ["BAD_REQUEST", "invalid_write_off_stock_input", "validação", {}],
