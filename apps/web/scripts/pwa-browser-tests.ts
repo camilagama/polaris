@@ -200,7 +200,7 @@ async function main() {
   const browser = await startImageBrowser();
   try {
     const code = await playwright(
-      ["--update-snapshots=all"],
+      ["--update-snapshots=changed"],
       { ...process.env, [VISUAL_WS_ENV]: browser.wsEndpoint },
       browser.container
     );
