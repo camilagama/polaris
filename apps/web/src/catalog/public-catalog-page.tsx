@@ -82,7 +82,7 @@ function FieldShape({ tall = false }: { tall?: boolean }) {
 
 function ProductRowShape() {
   return (
-    <div className="flex items-center justify-between gap-3 border-border border-t py-2.5 first:border-t-0">
+    <div className="flex items-center justify-between gap-3 border-border border-t py-3 first:border-t-0">
       <Skeleton className="h-4 w-40 max-w-full" />
       <Skeleton className="h-8 w-36 shrink-0" />
     </div>
