@@ -1,4 +1,3 @@
-import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import type { MouseEvent, Ref } from "react";
 import {
@@ -6,7 +5,6 @@ import {
   TITLE_ACTION_CLASS,
   TitleLine,
 } from "../app-shell/screen-title";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { SearchField } from "@/ui/search-field";
 
@@ -41,20 +39,6 @@ export function CustomersHeader({ newButton }: CustomersHeaderProps) {
     >
       <h1 className={SCREEN_TITLE_CLASS}>Clientes</h1>
     </TitleLine>
-  );
-}
-
-/** Said while there is no connection: what still works from this device and what waits for the server. */
-export function OfflineNotice() {
-  return (
-    <Alert variant="warning">
-      <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem conexão.</AlertTitle>
-      <AlertDescription>
-        Cadastrar e editar funciona e é enviado quando a conexão voltar;
-        arquivar, restaurar e anonimizar precisam de conexão.
-      </AlertDescription>
-    </Alert>
   );
 }
 

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { SegmentedFilter } from "@/ui/segmented-filter";
+import { OfflineNotice } from "../app-shell/offline-notice";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserConnection } from "../lib/browser-connection";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -60,7 +61,6 @@ import {
   ActionFeedback,
   LoadErrorNotice,
   OFFLINE_NOTICE_ID,
-  OfflineNotice,
   importedNotice,
   PRODUCT_STATUS_OPTIONS,
   ProductSearch,
@@ -906,7 +906,12 @@ export function ProductsPage() {
               onNew={handleNew}
               showNew={status === "active"}
             />
-            {isOffline ? <OfflineNotice /> : null}
+            {isOffline ? (
+              <OfflineNotice id={OFFLINE_NOTICE_ID}>
+                Cadastrar funciona e é enviado depois; editar, arquivar,
+                variantes e imagens precisam de conexão.
+              </OfflineNotice>
+            ) : null}
             {/* while the dialog is open it covers this part of the screen: what the actions say is said inside it */}
             <ActionFeedback
               error={dialogShown ? null : feedbackError.message}
