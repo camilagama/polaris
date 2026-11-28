@@ -1,11 +1,11 @@
-import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type RefObject, useCallback, useEffect, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { InsetBlock } from "@/ui/inset-block";
 import { TextLink } from "@/ui/text-link";
+import { OfflineNotice } from "../app-shell/offline-notice";
 import { formatBrlAmount } from "../lib/format";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import type { PendingSale } from "../offline/sale-confirm";
@@ -22,19 +22,14 @@ import { Money } from "./sale-summary-panel";
 /** Said at the top of the sale form while there is no connection. */
 export function OfflineSaleNotice() {
   return (
-    <Alert variant="warning">
-      <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem conexão.</AlertTitle>
-      <AlertDescription>
-        Pode vender: a venda fica guardada neste aparelho e vai quando a conexão
-        voltar. O estoque é o do aparelho; se não bastar, o servidor recusa e a
-        venda fica em{" "}
-        <TextLink inline href="/attention">
-          Pendências
-        </TextLink>{" "}
-        para você corrigir.
-      </AlertDescription>
-    </Alert>
+    <OfflineNotice>
+      Pode vender: a venda fica guardada neste aparelho e vai quando a conexão
+      voltar. Se o estoque não bastar, ela fica em{" "}
+      <TextLink inline href="/attention">
+        Pendências
+      </TextLink>{" "}
+      para você corrigir.
+    </OfflineNotice>
   );
 }
 

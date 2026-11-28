@@ -1,10 +1,9 @@
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
-import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { ListBlock } from "@/ui/list-block";
 import { RetryButton } from "@/ui/retry-button";
@@ -13,6 +12,7 @@ import {
   navigateInApp,
   readNavigationState,
 } from "../app-shell/address";
+import { OfflineNotice } from "../app-shell/offline-notice";
 import { SCREEN_TITLE_CLASS, TitleLine } from "../app-shell/screen-title";
 import {
   HISTORY_PERIOD_STATE,
@@ -62,15 +62,11 @@ import { useSaleHistory } from "./use-sale-history";
 
 function OfflineHistoryNotice() {
   return (
-    <Alert variant="warning">
-      <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem conexão.</AlertTitle>
-      <AlertDescription>
-        Estas são as vendas mais recentes guardadas neste aparelho (as últimas
-        100 que o servidor confirmou); detalhes, busca por item e vendas mais
-        antigas só com conexão.
-      </AlertDescription>
-    </Alert>
+    <OfflineNotice>
+      Estas são as vendas mais recentes guardadas neste aparelho (as últimas 100
+      que o servidor confirmou); detalhes, busca por item e vendas mais antigas
+      só com conexão.
+    </OfflineNotice>
   );
 }
 
