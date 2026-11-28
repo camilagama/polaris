@@ -1,6 +1,5 @@
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
@@ -11,6 +10,7 @@ import {
   useId,
   useState,
 } from "react";
+import { AddRowButton } from "@/lib/add-row-button";
 import { focusLater } from "../lib/focus";
 import {
   SPLIT_PROFILE_HINT,
@@ -201,7 +201,7 @@ function AdjustmentEditor({
               label="Como informar"
               onChange={handleType}
               options={adjustmentTypeOptions}
-              placeholder="Escolha"
+              placeholder="Escolha como informar"
               value={adjustment.valueType}
             />
           ) : null}
@@ -266,16 +266,12 @@ function Adjustments({
         />
       ))}
       <FieldError>{errors[formFieldKeys.adjustments]}</FieldError>
-      <Button
-        className="self-start"
+      <AddRowButton
         disabled={adjustments.length >= MAX_SALE_ADJUSTMENTS}
         onClick={onAdd}
-        type="button"
-        variant="outline"
       >
-        <PlusIcon aria-hidden="true" data-icon="inline-start" />
         Adicionar ajuste
-      </Button>
+      </AddRowButton>
     </FieldSet>
   );
 }
@@ -677,7 +673,7 @@ function PartFields({
         label="Perfil de pagamento"
         onChange={onProfileChange}
         options={[noProfileOption, ...profileOptions]}
-        placeholder="Escolha uma opção"
+        placeholder="Escolha um perfil"
         value={profile.choice}
       />
       {showReview && profile.reviewNotice ? (
@@ -1379,7 +1375,7 @@ function SinglePayment({
         label="Perfil de pagamento"
         onChange={onProfileChange}
         options={options}
-        placeholder="Escolha uma opção"
+        placeholder="Escolha um perfil"
         value={form.profile.choice}
       />
     </>

@@ -33,9 +33,8 @@ import {
 } from "./sale-history-model";
 
 const organizationId = "org_1";
-const OTHER_YEAR_TEXT = /^\d{1,2} [a-z]{3} 2027 \d{2}:\d{2}$/;
-const SAME_YEAR_TEXT = /^\d{1,2} [a-z]{3} \d{2}:\d{2}$/;
-const JUNE_TEXT = /^\d{1,2} jun \d{2}:\d{2}$/;
+const NEXT_YEAR_TEXT = /^\d{2}\/06\/2027,? \d{2}:\d{2}$/;
+const SALE_YEAR_TEXT = /^\d{2}\/06\/2026,? \d{2}:\d{2}$/;
 const timePattern = /\d{2}:\d{2}/;
 const ana = "a0000000-0000-4000-8000-000000000001";
 const gone = "d0000000-0000-4000-8000-000000000004";
@@ -521,6 +520,13 @@ describe("the count beside the title of the list", () => {
     expect(countOf([entry(1), entry(2), entry(3), entry(4)], true)).toBe(
       "4 vendas · há mais"
     );
+  });
+
+  it("writes the thousands with a separator, as Produtos does", () => {
+    const sales = Array.from({ length: 1234 }, (_, n) => entry(n + 1));
+    expect(countOf(sales, true)).toBe("1.234 vendas · há mais");
+    expect(countOf(sales)).toBe("1.234 vendas");
+    expect(historyTotal(sales, true).countText).toBe("1.234 vendas · há mais");
   });
 
   it("is empty while the list loads or failed, and zero for a list with no result", () => {
@@ -1015,7 +1021,7 @@ describe("sale detail", () => {
       ]);
     });
 
-    it("writes day, short month and time, and the year only when it is not the sale's", () => {
+    it("writes dd/mm/aaaa and time on every line, the year included even in the sale's own year", () => {
       const view = at(
         "2026-06-10T12:00:00.000Z",
         "2026-06-10T12:10:00.000Z",
@@ -1023,9 +1029,9 @@ describe("sale detail", () => {
         "2027-06-22T12:00:00.000Z"
       );
       const [cancelled, registered, sale] = saleTimelineEvents(view);
-      expect(cancelled?.timeText).toMatch(OTHER_YEAR_TEXT);
-      expect(registered?.timeText).toMatch(SAME_YEAR_TEXT);
-      expect(sale?.timeText).toMatch(JUNE_TEXT);
+      expect(cancelled?.timeText).toMatch(NEXT_YEAR_TEXT);
+      expect(registered?.timeText).toMatch(SALE_YEAR_TEXT);
+      expect(sale?.timeText).toMatch(SALE_YEAR_TEXT);
     });
   });
 });

@@ -287,10 +287,13 @@ describe("a device row, its tile and its badge", () => {
     );
   });
 
-  it("is a line of the list block, with no card of its own, and Revogar stays the destructive button", () => {
+  it("is a line of the list block, with no card of its own, and Revogar is an outline button", () => {
     const html = render();
     expect(html).toContain("data-list-block-row");
     expect(html).not.toContain('data-slot="card"');
-    expect(buttonTag(html, "Revogar")).toContain('data-slot="button"');
+    const revoke = buttonTag(html, "Revogar");
+    expect(revoke).toContain('data-slot="button"');
+    expect(revoke).toContain("bg-card");
+    expect(revoke).not.toContain("bg-destructive");
   });
 });

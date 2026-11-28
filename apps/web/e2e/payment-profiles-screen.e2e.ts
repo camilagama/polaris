@@ -203,7 +203,7 @@ async function useEveryControl(page: Page) {
   await expect(addRule).toBeFocused();
 
   // cancelling the edit gives the focus back to the "…" button of the profile
-  await page.getByRole("button", { name: "Cancelar edição" }).click();
+  await page.getByRole("button", { exact: true, name: "Cancelar" }).click();
   await expect(
     page.getByRole("button", { name: "Mais ações para Maquininha da loja" })
   ).toBeFocused();

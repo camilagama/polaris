@@ -14,7 +14,7 @@ const DISCARD_CONFIRMATION = /^Confirmar descarte de /;
  * finds nothing on either screen.
  */
 const JEANS_PANEL = /^Saldo atual: 3 · custo médio R\$ 62,40$/;
-const LAST_MOVEMENT_DATE = /^\d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}$/;
+const LAST_MOVEMENT_DATE = /^\d{2}\/\d{2}(\/\d{4})?, \d{2}:\d{2}$/;
 const DATE_BUTTON = /^Data/;
 const CONFIRM_BUTTON = /^Confirmar/;
 const RECEIVE_JEANS = /^Receber estoque de Calça jeans/;
@@ -188,7 +188,9 @@ test.describe("Estoque, Precisa de ação", () => {
     ).toBeVisible();
     await expect(page.getByText(JEANS_PANEL)).toHaveCount(0);
     await expect(page.getByText(LAST_MOVEMENT)).toHaveCount(0);
-    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page
+      .getByLabel("Custo de cada unidade", { exact: true })
+      .fill("12,50");
     await page.getByRole("button", { exact: true, name: "Revisar" }).click();
     await expect(
       page.getByText("Último movimento", { exact: true })

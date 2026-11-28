@@ -234,6 +234,9 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
   ).toBeFocused();
 
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
+  await expect(
+    page.getByRole("group", { name: IMAGE_CONFIRMATION })
+  ).toBeFocused();
   await activateByKeyboard(
     page,
     page

@@ -151,12 +151,13 @@ function FormActions({
 }: FormActionsProps) {
   return (
     <div className="flex flex-wrap gap-2 sm:col-span-2">
-      <Button disabled={disabled} type="submit">
+      <Button disabled={disabled} size="xl" type="submit">
         {label}
       </Button>
       <Button
         disabled={disabled}
         onClick={onCancel}
+        size="xl"
         type="button"
         variant="outline"
       >
@@ -387,12 +388,13 @@ function GoalCreateContent({
         <Button
           disabled={disabled}
           onClick={onCancel}
+          size="xl"
           type="button"
           variant="outline"
         >
           Cancelar
         </Button>
-        <Button disabled={disabled} type="submit">
+        <Button disabled={disabled} size="xl" type="submit">
           {saving ? "Criando…" : "Criar meta"}
         </Button>
       </DialogFooter>

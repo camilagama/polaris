@@ -291,7 +291,7 @@ test("com trabalho na fila de sincronização a aba oculta não troca; com a fil
   await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
 });
 
-test("com registro recusado a troca espera, e Configurações diz por quê, com Ver pendências", async ({
+test("com registro recusado a troca espera, e Configurações diz por quê, com Ver Pendências", async ({
   buildVersion,
   page,
 }) => {
@@ -303,7 +303,7 @@ test("com registro recusado a troca espera, e Configurações diz por quê, com 
     { timeout: 20_000 }
   );
   await expect(
-    line.getByRole("link", { name: "Ver pendências" })
+    line.getByRole("link", { name: "Ver Pendências" })
   ).toHaveAttribute("href", "/attention");
   await expect(line.getByRole("button")).toHaveCount(0);
   await expectHeld(page);

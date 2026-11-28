@@ -55,6 +55,8 @@ interface NoteFieldProps {
   id: string;
   label: string;
   onChange: (value: string) => void;
+  /** "Opcional" beside the label, in the same words on every form. */
+  optional?: boolean | undefined;
   value: string;
 }
 
@@ -64,6 +66,7 @@ function NoteField({
   id,
   label,
   onChange,
+  optional,
   value,
 }: NoteFieldProps) {
   const handleChange = useCallback(
@@ -72,7 +75,15 @@ function NoteField({
   );
   return (
     <Field className="min-w-0 md:col-span-2" data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <FieldLabel htmlFor={id}>
+        {label}
+        {optional ? (
+          <>
+            {" "}
+            <span className="font-normal text-muted-foreground">Opcional</span>
+          </>
+        ) : null}
+      </FieldLabel>
       <InputGroup className="h-auto touch:h-auto items-stretch">
         <InputGroupTextarea
           aria-describedby={describedBy(id, error, undefined)}
@@ -150,11 +161,12 @@ export function EditFields({
             value={draft.quantity}
           />
           <TextField
+            addon="R$"
             error={errors.unitCost}
             hint="Em reais, por unidade. Obrigatório: alimenta o custo médio."
             id={id("unitCost")}
             inputMode="decimal"
-            label="Custo unitário (R$)"
+            label="Custo de cada unidade"
             maxLength={26}
             onChange={handleUnitCost}
             placeholder="Ex.: 12,50"
@@ -166,11 +178,12 @@ export function EditFields({
         <>
           <p className="md:col-span-2">{costUnitsText(target.quantity)}</p>
           <TextField
+            addon="R$"
             error={errors.valuationUnitCost}
             hint="Vale para as unidades de agora e para as próximas vendas. Depois não dá para editar."
             id={id("valuationUnitCost")}
             inputMode="decimal"
-            label="Custo de cada unidade (R$)"
+            label="Custo de cada unidade"
             maxLength={26}
             onChange={handleValuation}
             placeholder="Ex.: 12,50"
@@ -192,13 +205,15 @@ export function EditFields({
           />
           {valuationApplies(target) ? (
             <TextField
+              addon="R$"
               error={errors.valuationUnitCost}
-              hint="Opcional. Vale só se a quantidade contada for maior que zero."
+              hint="Vale só se a quantidade contada for maior que zero."
               id={id("valuationUnitCost")}
               inputMode="decimal"
-              label="Custo de cada unidade (R$)"
+              label="Custo de cada unidade"
               maxLength={26}
               onChange={handleValuation}
+              optional
               placeholder="Ex.: 12,50"
               value={draft.valuationUnitCost}
             />
@@ -234,9 +249,10 @@ export function EditFields({
             label={
               draft.reasonCode === "other"
                 ? "Observação (obrigatória para “Outro”)"
-                : "Observação (opcional)"
+                : "Observação"
             }
             onChange={handleReasonNote}
+            optional={draft.reasonCode !== "other"}
             value={draft.reasonNote}
           />
         </>

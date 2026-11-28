@@ -47,4 +47,14 @@ describe("the list of devices", () => {
     expect(html).not.toContain("data-list-count");
     expect(html).not.toContain("min-w-28");
   });
+
+  it("draws Revogar on the row as an outline button, with the red kept for the confirmation", () => {
+    const html = render();
+    const end = html.indexOf(">Revogar<");
+    const tag = html.slice(html.lastIndexOf("<button", end), end);
+    expect(tag).toContain('aria-label="Revogar o aparelho Celular da Ana"');
+    expect(tag).toContain("bg-card");
+    expect(tag).not.toContain("bg-destructive");
+    expect(tag).not.toContain("text-destructive");
+  });
 });

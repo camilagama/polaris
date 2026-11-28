@@ -529,7 +529,7 @@ function queuedCommands(page: Page): Promise<QueuedCommand[]> {
   });
 }
 
-test("sem internet, cada parte usa os perfis da última conexão: o Resumo mostra a prévia de cada parte e a fila leva o perfil e a versão de cada uma", async ({
+test("sem internet, cada parte usa os perfis da última leitura: o Resumo mostra a prévia de cada parte e a fila leva o perfil e a versão de cada uma", async ({
   page,
 }) => {
   await openSaleLab(page, undefined, { current: 4 });

@@ -141,7 +141,7 @@ test("estoque-receber", async ({ evidence, page }) => {
     })
     .click();
   await page.getByLabel("Quantidade recebida").fill("5");
-  await page.getByLabel("Custo unitário (R$)").fill("10,00");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("10,00");
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   await evidence.shot("estoque-revisar", "recebimento de 5 em revisão");
   await page.getByRole("button", { name: "Confirmar recebimento" }).click();

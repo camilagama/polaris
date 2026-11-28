@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+  type AdjustmentDraft,
   createBlankSaleForm,
   evaluateSaleForm,
   type ItemDraft,
@@ -92,6 +93,7 @@ function renderItem(item: ItemDraft, canRemove = true): string {
   );
 }
 
+const BARE_ESCOLHA = />Escolha</;
 const CONTROL_TAG = /<(?:input|button)[^>]*>/g;
 const ID_ATTRIBUTE = /\sid="([^"]+)"/;
 
@@ -349,13 +351,15 @@ describe("Data e ajustes numa linha fechada", () => {
       ],
       occurredAtLocal: "2026-11-02T09:30",
     };
-    expect(saleExtrasSummary(dated, false)).toBe("02/11/2026 09:30 · 1 ajuste");
+    expect(saleExtrasSummary(dated, false)).toBe(
+      "02/11/2026, 09:30 · 1 ajuste"
+    );
     expect(
       saleExtrasSummary(
         { ...dated, adjustments: [...dated.adjustments, ...dated.adjustments] },
         false
       )
-    ).toBe("02/11/2026 09:30 · 2 ajustes");
+    ).toBe("02/11/2026, 09:30 · 2 ajustes");
     // sem conexão a venda fica com a hora de agora: a data digitada não vale
     expect(saleExtrasSummary(dated, true)).toBe("Agora · 1 ajuste");
   });
@@ -431,13 +435,35 @@ describe("Data e ajustes numa linha fechada", () => {
     expect(html).not.toContain("datetime-local");
   });
 
+  it("Adicionar ajuste é a última linha da lista, de largura toda e borda tracejada (AddRowButton)", () => {
+    const html = renderPayment(
+      {
+        ...form,
+        adjustments: [
+          { draftId: "a1", kind: "discount", value: "5", valueType: "fixed" },
+        ],
+      },
+      false
+    );
+    const button = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)]
+      .map((match) => match[0])
+      .find((markup) => markup.includes("Adicionar ajuste"));
+    expect(button).toBeDefined();
+    expect(button).toContain("border-dashed");
+    expect(button).toContain("w-full");
+    expect(button).not.toContain("self-start");
+    expect(html.lastIndexOf("Ajuste 1")).toBeLessThan(
+      html.indexOf("Adicionar ajuste")
+    );
+  });
+
   it("a hora digitada sem ':' vale, e o erro de hora fica no campo Hora, não no Dia", () => {
     const typed = {
       ...form,
       occurredAtLocal: joinSaleDate("2026-11-02", "930"),
     };
     expect(saleExtrasSummary(typed, false)).toBe(
-      "02/11/2026 09:30 · Sem ajuste"
+      "02/11/2026, 09:30 · Sem ajuste"
     );
     const message = "Informe uma data e hora válidas.";
     const invalidIds = (html: string) =>
@@ -525,6 +551,28 @@ describe("Data e ajustes numa linha fechada", () => {
     expect(renderPayment(form, false)).toContain(
       "Nenhum perfil de pagamento ativo."
     );
+  });
+
+  it("os seletores dizem o que se escolhe: Escolha um perfil e Escolha como informar, nunca Escolha uma opção", () => {
+    const html = renderPayment(
+      {
+        ...form,
+        adjustments: [
+          {
+            draftId: "a1",
+            kind: "discount",
+            value: "",
+            // o tipo nunca fica vazio na tela; vazio aqui só faz o placeholder aparecer no HTML
+            valueType: "" as AdjustmentDraft["valueType"],
+          },
+        ],
+      },
+      false
+    );
+    expect(html).toContain("Escolha um perfil");
+    expect(html).toContain("Escolha como informar");
+    expect(html).not.toContain("Escolha uma opção");
+    expect(html).not.toMatch(BARE_ESCOLHA);
   });
 });
 

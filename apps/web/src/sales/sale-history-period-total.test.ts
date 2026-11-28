@@ -123,6 +123,13 @@ describe("historyFooterView", () => {
     });
   });
 
+  it("a contagem do período escreve o milhar com separador", () => {
+    expect(
+      view({ read: { netSales: "9.00", salesCount: 1234, status: "ready" } })
+        .count
+    ).toBe("1.234 vendas");
+  });
+
   it("uma venda é no singular, e zero vendas lê R$ 0,00", () => {
     expect(
       view({ read: { netSales: "0.00", salesCount: 1, status: "ready" } }).count

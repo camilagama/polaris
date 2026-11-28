@@ -266,7 +266,7 @@ export function DeviceItem({
             onClick={busy || offline ? undefined : handleAsk}
             ref={askRef}
             type="button"
-            variant="destructive"
+            variant="outline"
           >
             Revogar
           </Button>

@@ -95,7 +95,7 @@ function FeeFields({ errors, id, label, onChange, value }: FeeFieldsProps) {
         label="Como a taxa é informada"
         onChange={handleMode}
         options={feeModeOptions}
-        placeholder="Escolha"
+        placeholder="Escolha como informar"
         value={value.mode}
       />
       {hasFixed(value) ? (
@@ -187,7 +187,7 @@ function RuleEditor({
           label="Método"
           onChange={handleMethod}
           options={methodOptions}
-          placeholder="Escolha"
+          placeholder="Escolha o método"
           value={rule.method}
         />
         {credit ? (
@@ -245,7 +245,7 @@ function RuleEditor({
             onClick={handleRemove}
             size="sm"
             type="button"
-            variant="destructive"
+            variant="ghost"
           >
             <Trash2Icon aria-hidden="true" data-icon="inline-start" />
             Remover regra {index + 1}
@@ -389,15 +389,17 @@ export function PaymentProfileForm({
             <Button
               disabled={pending}
               onClick={onCancel}
+              size="xl"
               type="button"
               variant="outline"
             >
-              {editing ? "Cancelar edição" : "Cancelar"}
+              Cancelar
             </Button>
             <Button
               {...connectionControlProps(online, connectionDialogReasonId)}
               aria-busy={pending || undefined}
               disabled={pending}
+              size="xl"
               type="submit"
             >
               {submitLabel(pending, editing, confirmDuplicate)}

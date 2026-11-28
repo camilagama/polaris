@@ -40,7 +40,7 @@ export function selectionPeriod(
  * the others stay in the list, off, with the reason.
  */
 export const OFFLINE_ONLY: RangeOnly = {
-  reason: "Sem conexão: só este mês e o anterior.",
+  reason: "Sem conexão. Só dá para ver este mês e o anterior.",
   shortcuts: ["este-mes", "mes-passado"],
 };
 

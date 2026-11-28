@@ -697,7 +697,9 @@ test.describe("estoque", () => {
       })
       .click();
     await page.getByLabel("Quantidade recebida").fill("10");
-    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page
+      .getByLabel("Custo de cada unidade", { exact: true })
+      .fill("12,50");
     await page.getByRole("button", { name: "Revisar" }).click();
     await page.getByRole("button", { name: "Confirmar recebimento" }).click();
 
@@ -1034,7 +1036,7 @@ async function rememberProfile(page: Page, version: number) {
 }
 
 test.describe("venda com perfil de pagamento sem conexão", () => {
-  test("oferece o perfil da última vez com conexão, guarda a venda com ele, e o servidor aceita se a versão é a atual", async ({
+  test("oferece o perfil da última leitura, guarda a venda com ele, e o servidor aceita se a versão é a atual", async ({
     page,
   }) => {
     await rememberProfile(page, 3);

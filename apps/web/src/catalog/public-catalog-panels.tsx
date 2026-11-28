@@ -242,6 +242,7 @@ export function ProfileForm(props: ProfileFormProps) {
                 aria-describedby={reasonId}
                 aria-disabled={reasonId !== undefined || undefined}
                 disabled={props.pending}
+                size="xl"
                 type="submit"
               >
                 {props.pending ? "Salvando…" : "Salvar perfil"}

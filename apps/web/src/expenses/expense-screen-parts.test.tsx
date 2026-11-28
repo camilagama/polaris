@@ -126,6 +126,7 @@ const expense = (overrides: Partial<ExpenseReadModel>): ExpenseReadModel => ({
   ...overrides,
 });
 
+const CENTERED_LOAD_MORE = /justify-center[^>]*><button[^>]*>Carregar mais/;
 const EMPTY_NOTICE = /<p class="text-muted-foreground" role="status">([^<]*)</;
 
 describe("ExpenseList", () => {
@@ -300,6 +301,27 @@ describe("ExpenseList", () => {
   });
 });
 
+describe("Carregar mais", () => {
+  const button = (html: string) => {
+    const at = html.indexOf("Carregar mais");
+    return html.slice(html.lastIndexOf("<button", at), at);
+  };
+
+  it("sits at the left under the frame, as in Estoque, never centered in a wrapper", () => {
+    const html = list(
+      state({ expenses: [expense({ id: "e1" })], nextCursor: "c1" })
+    );
+    expect(button(html)).toContain("justify-self-start");
+    expect(html).not.toMatch(CENTERED_LOAD_MORE);
+  });
+
+  it("is absent on the last page", () => {
+    expect(list(state({ expenses: [expense({ id: "e1" })] }))).not.toContain(
+      "Carregar mais"
+    );
+  });
+});
+
 describe("the total of the period", () => {
   it("is the first line of the panel and the count is the frame's, beside the title; the month is only said to a screen reader", () => {
     const html = list(
@@ -359,6 +381,16 @@ describe("the total of the rows on the screen", () => {
     const last = foot(list(state({ expenses: rows, nextCursor: null })));
     expect(last).toContain("2 despesas");
     expect(last).not.toContain("há mais");
+  });
+
+  it("writes the count with a thousands separator, beside the title and in the foot", () => {
+    const rows = Array.from({ length: 1234 }, (_, n) =>
+      expense({ id: `e${n}` })
+    );
+    const html = list(state({ count: 1234, expenses: rows, nextCursor: "c1" }));
+    expect(html).toContain('data-list-count="">1.234 despesas</p>');
+    expect(foot(html)).toContain("1.234 despesas · há mais");
+    expect(html).not.toContain("1234 despesas");
   });
 
   it("is in the DOM with no rows, with the same lines (zero and no count text lost)", () => {

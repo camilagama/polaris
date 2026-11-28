@@ -1029,7 +1029,7 @@ test.describe("o período do Início (cartões do mês, Vendas por dia e Mais ve
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await page.context().setOffline(true);
-    const reason = "Sem conexão: só este mês e o anterior.";
+    const reason = "Sem conexão. Só dá para ver este mês e o anterior.";
     const beside = page.locator("[data-home-period]").getByText(reason);
     await expect(beside).toBeVisible();
     await periodButton(page).click();
