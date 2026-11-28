@@ -7,7 +7,7 @@ import { cents, numericCents, saleTotals } from "../oracle";
 import { confirmSale, fillSale } from "../pages/venda";
 import { nextCommandId, seedProduct, seedStock } from "../seed";
 
-const REFUSED_SALE_TITLE = /^Venda de R\$ 70,00 · \d{2}\/\d{2} \d{2}:\d{2}$/;
+const REFUSED_SALE_TITLE = /^Venda de R\$ 70,00 · \d{2}\/\d{2}, \d{2}:\d{2}$/;
 const ZONE = "America/Sao_Paulo";
 const CLOSED_PANEL = /\/loja-encerrada\?loja=/;
 const REOPENED = /\/\?reaberta=1$/;

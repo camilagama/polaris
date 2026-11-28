@@ -62,7 +62,7 @@ export function formatInstant(value: string, timeZone?: string | null): string {
   }
 }
 
-/** An instant without the year, in the device's locale and time zone, e.g. `13/10 15:30`. */
+/** An instant without the year, in the device's locale and time zone, e.g. `13/10, 15:30`. */
 export function formatShortInstant(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -73,7 +73,7 @@ export function formatShortInstant(value: string): string {
       .formatToParts(date)
       .map((part) => [part.type, part.value])
   );
-  return `${parts.day}/${parts.month} ${parts.hour}:${parts.minute}`;
+  return `${parts.day}/${parts.month}, ${parts.hour}:${parts.minute}`;
 }
 
 /** dd/mm/aaaa from a YYYY-MM-DD calendar date, without any time zone shift. */

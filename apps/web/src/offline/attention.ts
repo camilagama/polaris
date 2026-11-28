@@ -190,8 +190,8 @@ export const PART_METHOD_LABELS: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * "Venda de R$ 89,90 · 01/11 14:20": the value and the moment tell two refused sales apart; the count of items when the
- * payload has no total. A sale paid in parts names its parts ("Venda de R$ 300,00 · Pix + Crédito · 01/11 14:20").
+ * "Venda de R$ 89,90 · 01/11, 14:20": the value and the moment tell two refused sales apart; the count of items when the
+ * payload has no total. A sale paid in parts names its parts ("Venda de R$ 300,00 · Pix + Crédito · 01/11, 14:20").
  */
 function saleTitle(command: OutboxCommand): string {
   const sale = refusedSaleFacts(command);

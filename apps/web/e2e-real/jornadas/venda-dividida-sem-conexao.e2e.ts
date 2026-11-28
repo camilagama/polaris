@@ -12,7 +12,7 @@ const ZONE = "America/Sao_Paulo";
 const SHIRT = /Camiseta lisa/;
 const SAVED_CARD = "Vendas guardadas neste aparelho";
 const REFUSED_TITLE =
-  /^Venda de R\$ 300,00 · Pix \+ Débito · \d{2}\/\d{2} \d{2}:\d{2}$/;
+  /^Venda de R\$ 300,00 · Pix \+ Débito · \d{2}\/\d{2}, \d{2}:\d{2}$/;
 const PROFILE_NAME = "Maquininha da jornada";
 
 type Sql = Parameters<Parameters<typeof test>[2]>[0]["sql"];
@@ -408,7 +408,7 @@ async function restoredSale(page: Page) {
 }
 
 const REDONE_TITLE =
-  /^Venda de R\$ 750,00 · Pix \+ Dinheiro · \d{2}\/\d{2} \d{2}:\d{2}$/;
+  /^Venda de R\$ 750,00 · Pix \+ Dinheiro · \d{2}\/\d{2}, \d{2}:\d{2}$/;
 const PANTS = /Calça jeans/;
 
 /** The items the server recorded for the store, by position. */
