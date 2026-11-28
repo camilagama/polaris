@@ -30,8 +30,8 @@ const hoursAgo = (hours: number) =>
 const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
 const AT_ACCOUNT = /\/conta(\?aba=aparelhos)?$/;
 const REVOKE_BUTTON = /^Revogar o aparelho/;
-const CONFIRM_ONE = "Sim, revogar este aparelho";
-const CONFIRM_ALL = "Sim, revogar e encerrar as outras sessões";
+const CONFIRM_ONE = "Revogar aparelho";
+const CONFIRM_ALL = "Revogar e encerrar outras sessões";
 const OTHER_SESSIONS = "Encerrar também as outras sessões";
 const OFFLINE_NOTICE = /^Sem conexão\. Para revogar um aparelho/;
 const TECHNICAL = /fresh_session_required|FORBIDDEN|UNAUTHORIZED|\b40[13]\b/;
@@ -781,7 +781,7 @@ test("cancelar não chama o servidor, devolve o foco a Revogar, e a confirmaçã
   await expect(askRevoke(page, "Tablet do estoque")).toHaveCount(0);
   await expect(confirmButton(page)).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { name: "Manter aparelho" }).click();
   await expect(page.getByText("Não dá para desfazer")).toHaveCount(0);
   await expect(askRevoke(page, "Celular da Ana")).toBeFocused();
   expect(state.revokeBodies).toHaveLength(0);
@@ -816,7 +816,7 @@ test("a caixa vem desmarcada toda vez que a confirmação abre: depois de cancel
   await askRevoke(page, "Celular da Ana").click();
   await expect(box).not.toBeChecked();
   await box.check();
-  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { name: "Manter aparelho" }).click();
   await askRevoke(page, "Celular da Ana").click();
   await expect(box).not.toBeChecked();
 
@@ -1534,7 +1534,7 @@ test("cancelar a confirmação depois de um resultado incerto não deixa no topo
     "Não conseguimos confirmar se o aparelho"
   );
 
-  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { name: "Manter aparelho" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("revogue de novo")).toHaveCount(0);
@@ -1630,7 +1630,7 @@ test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 
     ).toBeGreaterThanOrEqual(36);
     expect(await heightOf(confirmButton(page))).toBeGreaterThanOrEqual(36);
     expect(
-      await heightOf(page.getByRole("button", { name: "Cancelar" }))
+      await heightOf(page.getByRole("button", { name: "Manter aparelho" }))
     ).toBeGreaterThanOrEqual(36);
     await page.getByRole("checkbox", { name: OTHER_SESSIONS }).check();
     expect(

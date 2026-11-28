@@ -184,18 +184,18 @@ describe("the form of the confirmation of a revocation", () => {
     expect(html).toContain(
       "todos os outros celulares e computadores, menos neste"
     );
-    expect(html).toContain("Sim, revogar este aparelho");
-    expect(html).toContain(">Cancelar<");
+    expect(html).toContain("Revogar aparelho");
+    expect(html).toContain(">Manter aparelho<");
     expect(html).not.toContain("será desconectado agora");
   });
 
   it("ticked: shows the extra warning and changes the confirm button, which goes back when unticked", () => {
     const ticked = form({ endOtherSessions: true });
     expect(ticked).toContain("será desconectado agora");
-    expect(ticked).toContain("Sim, revogar e encerrar as outras sessões");
-    expect(ticked).not.toContain(">Sim, revogar este aparelho<");
+    expect(ticked).toContain("Revogar e encerrar outras sessões");
+    expect(ticked).not.toContain(">Revogar aparelho<");
     const unticked = form({ endOtherSessions: false });
-    expect(unticked).toContain(">Sim, revogar este aparelho<");
+    expect(unticked).toContain(">Revogar aparelho<");
     expect(unticked).not.toContain("será desconectado agora");
   });
 
@@ -205,14 +205,16 @@ describe("the form of the confirmation of a revocation", () => {
     );
   });
 
-  it("offline: the option is off, the confirm is off but reads why, and Cancelar stays available", () => {
+  it("offline: the option is off, the confirm is off but reads why, and Manter aparelho stays available", () => {
     const html = form({ offline: true, reasonId: "devices-offline" });
     // the checkbox (a real disabled field, with the line of the reason right above the buttons)
     expect(html).toContain("data-disabled");
-    const confirm = buttonTag(html, "Sim, revogar este aparelho");
+    const confirm = buttonTag(html, "Revogar aparelho");
     expect(confirm).toContain('aria-disabled="true"');
     expect(confirm).toContain('aria-describedby="devices-offline"');
-    expect(buttonTag(html, "Cancelar")).not.toContain('aria-disabled="true"');
+    expect(buttonTag(html, "Manter aparelho")).not.toContain(
+      'aria-disabled="true"'
+    );
   });
 
   it("the error of the attempt is an alert right above the buttons, and only when there is one", () => {
@@ -221,15 +223,17 @@ describe("the form of the confirmation of a revocation", () => {
     });
     const alert = html.indexOf('role="alert"');
     expect(alert).toBeGreaterThan(html.indexOf("todos os outros celulares"));
-    expect(alert).toBeLessThan(html.indexOf("Sim, revogar este aparelho"));
+    expect(alert).toBeLessThan(html.indexOf("Revogar aparelho"));
     expect(form()).not.toContain('role="alert"');
   });
 
   it("the confirm button says Revogando… during the call, and both buttons are off", () => {
     const html = form({ busy: true });
     expect(html).toContain(">Revogando…<");
-    expect(html).not.toContain(">Sim, revogar este aparelho<");
-    expect(buttonTag(html, "Cancelar")).toContain('aria-disabled="true"');
+    expect(html).not.toContain(">Revogar aparelho<");
+    expect(buttonTag(html, "Manter aparelho")).toContain(
+      'aria-disabled="true"'
+    );
     expect(buttonTag(html, "Revogando…")).toContain('aria-disabled="true"');
   });
 });
