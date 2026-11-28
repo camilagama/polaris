@@ -617,6 +617,26 @@ for (const width of [360, 1280]) {
   });
 }
 
+test("Adicionar ajuste leva o foco ao Tipo de ajuste do ajuste novo, também com dois ajustes", async ({
+  page,
+}) => {
+  await openSaleLab(page, "claro");
+  await pickShirt(page);
+  await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
+  const addAdjustment = page.getByRole("button", { name: "Adicionar ajuste" });
+  for (const number of [1, 2]) {
+    // biome-ignore lint/performance/noAwaitInLoops: the second add starts from the first one's result
+    await addAdjustment.click();
+    const added = page.getByRole("group", {
+      exact: true,
+      name: `Ajuste ${number}`,
+    });
+    await expect(
+      added.getByRole("combobox", { exact: true, name: "Tipo de ajuste" })
+    ).toBeFocused();
+  }
+});
+
 const NON_BLANK = /\S/;
 const SINGLE_PAYMENT_TEXT =
   "Um pagamento no valor total. Para receber de dois jeitos, use Dividir pagamento. O método não comprova o recebimento.";
