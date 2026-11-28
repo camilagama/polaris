@@ -110,7 +110,7 @@ function movementInstantText(value: string, now: Date): string | null {
   );
   const year = movementYearFormatter.format(date);
   const showYear = year !== movementYearFormatter.format(now);
-  return `${parts.day}/${parts.month}${showYear ? `/${year}` : ""} ${parts.hour}:${parts.minute}`;
+  return `${parts.day}/${parts.month}${showYear ? `/${year}` : ""}, ${parts.hour}:${parts.minute}`;
 }
 
 /**

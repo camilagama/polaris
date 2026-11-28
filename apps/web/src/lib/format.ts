@@ -42,10 +42,24 @@ export function formatBrlCents(value: string): string {
   return `${isZero ? "" : sign}R$ ${whole},${digits.slice(-2)}`;
 }
 
-/** An instant in the device's locale and time zone, e.g. `13/10/2026 15:30`. */
-export function formatInstant(value: string): string {
+/** An instant in the device's locale and, without `timeZone`, its time zone, e.g. `13/10/2026, 15:30`. An unknown zone falls back to the device zone. */
+export function formatInstant(value: string, timeZone?: string | null): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : instantFormatter.format(date);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  if (!timeZone) {
+    return instantFormatter.format(date);
+  }
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      dateStyle: "short",
+      timeStyle: "short",
+      timeZone,
+    }).format(date);
+  } catch {
+    return instantFormatter.format(date);
+  }
 }
 
 /** An instant without the year, in the device's locale and time zone, e.g. `13/10 15:30`. */

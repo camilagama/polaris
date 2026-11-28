@@ -351,13 +351,15 @@ describe("Data e ajustes numa linha fechada", () => {
       ],
       occurredAtLocal: "2026-11-02T09:30",
     };
-    expect(saleExtrasSummary(dated, false)).toBe("02/11/2026 09:30 · 1 ajuste");
+    expect(saleExtrasSummary(dated, false)).toBe(
+      "02/11/2026, 09:30 · 1 ajuste"
+    );
     expect(
       saleExtrasSummary(
         { ...dated, adjustments: [...dated.adjustments, ...dated.adjustments] },
         false
       )
-    ).toBe("02/11/2026 09:30 · 2 ajustes");
+    ).toBe("02/11/2026, 09:30 · 2 ajustes");
     // sem conexão a venda fica com a hora de agora: a data digitada não vale
     expect(saleExtrasSummary(dated, true)).toBe("Agora · 1 ajuste");
   });
@@ -461,7 +463,7 @@ describe("Data e ajustes numa linha fechada", () => {
       occurredAtLocal: joinSaleDate("2026-11-02", "930"),
     };
     expect(saleExtrasSummary(typed, false)).toBe(
-      "02/11/2026 09:30 · Sem ajuste"
+      "02/11/2026, 09:30 · Sem ajuste"
     );
     const message = "Informe uma data e hora válidas.";
     const invalidIds = (html: string) =>

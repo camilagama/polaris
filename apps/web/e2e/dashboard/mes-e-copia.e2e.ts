@@ -486,7 +486,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await expect(refreshButton(page)).toHaveText("Atualizar");
   const status = page.locator("#dashboard-updated");
   await expect(status).toHaveText(
-    "Último resultado confirmado: 14/10/2026 09:00"
+    "Último resultado confirmado: 14/10/2026, 09:00"
   );
   const confirmedHeight = (await status.boundingBox())?.height ?? 0;
   expect(confirmedHeight).toBeGreaterThan(1);

@@ -4,7 +4,7 @@ import {
   type ClockParts,
   clockPartsInTimezone,
 } from "../lib/dates";
-import { formatBrlAmount, formatQuantity } from "../lib/format";
+import { formatBrlAmount, formatInstant, formatQuantity } from "../lib/format";
 import {
   cogsCoverageOf,
   type StoredQuality,
@@ -72,13 +72,15 @@ export function formatUpdatedAt(
     : `em ${date} às ${time}`;
 }
 
-/** "Último resultado confirmado: 14/10/2026 12:30": the line beside the month when the figures are the device's copy. */
+/** "Último resultado confirmado: 14/10/2026, 12:30": the line beside the month when the figures are the device's copy. */
 export function formatLastConfirmed(
   generatedAt: string,
   timezone: string | null
 ): string {
-  const { date, time } = readClock(generatedAt, timezone);
-  return `Último resultado confirmado: ${date} ${time}`;
+  const when = Number.isNaN(new Date(generatedAt).getTime())
+    ? EMPTY_VALUE
+    : formatInstant(generatedAt, timezone);
+  return `Último resultado confirmado: ${when}`;
 }
 
 /**
