@@ -28,7 +28,7 @@ const LABEL_FOR_PRICE =
   /<label [^>]*data-slot="field-label" for="preco">Preço cobrado<\/label>/;
 const FIELDSET_WITH_LEGEND = /^<fieldset[^>]*><legend[^>]*>Forma de pagamento/;
 const ALERT_REGION =
-  /^<div [^>]*role="status"[^>]*>.*Sem internet\..*Pode vender\..*<\/div>$/;
+  /^<div [^>]*role="status"[^>]*>.*Sem conexão\..*Pode vender\..*<\/div>$/;
 const FIELD_TAG = /<div [^>]*data-slot="field"[^>]*>/;
 const GROUP_TAG = /<div [^>]*data-slot="input-group"[^>]*>/;
 const ROLE = /\srole=/;
@@ -50,7 +50,7 @@ describe("Alert", () => {
   it("keeps title and description inside the announced region", () => {
     const markup = html(
       <Alert variant="warning">
-        <AlertTitle>Sem internet.</AlertTitle>
+        <AlertTitle>Sem conexão.</AlertTitle>
         <AlertDescription>Pode vender.</AlertDescription>
       </Alert>
     );

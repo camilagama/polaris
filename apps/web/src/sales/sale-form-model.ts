@@ -1334,7 +1334,7 @@ export const SALE_DATE_HINT =
 
 /** Said where the date would be, without a connection: the device records the sale at the moment it is kept. */
 export const OFFLINE_SALE_DATE_NOTE =
-  "Sem internet, a venda fica com a data e a hora de agora: uma data digitada não fica guardada.";
+  "Sem conexão. A venda fica com a data e a hora de agora; uma data digitada não fica guardada.";
 
 /**
  * The date of the sale is typed in two fields (the day on the DatePicker, the time as text) and kept in the form as

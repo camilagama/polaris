@@ -449,7 +449,7 @@ export const saleStates = {
       adjustment.getByRole("combobox", { exact: true, name: "Tipo de ajuste" }),
       page.getByRole("option", { exact: true, name: "Desconto" })
     );
-    await adjustment.getByLabel("Valor (R$)").fill("10,00");
+    await adjustment.getByLabel("Valor", { exact: true }).fill("10,00");
     await showSaleScreenAlone(page);
   },
 

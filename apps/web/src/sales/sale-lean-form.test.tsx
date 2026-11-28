@@ -481,6 +481,40 @@ describe("Data e ajustes numa linha fechada", () => {
     expect(dated).toContain('aria-expanded="true"');
   });
 
+  it("o campo de valor do ajuste diz só Valor ou Percentual: a unidade é o addon, não o rótulo", () => {
+    const withAdjustment = (valueType: "fixed" | "percentage") =>
+      renderPayment(
+        {
+          ...form,
+          adjustments: [
+            { draftId: "a1", kind: "discount", value: "", valueType },
+          ],
+        },
+        false
+      );
+    const fixed = withAdjustment("fixed");
+    expect(fixed).toContain(">Valor</label>");
+    expect(fixed).toContain(">R$<");
+    expect(fixed).not.toContain("Valor (R$)");
+    expect(fixed).toContain('placeholder="Ex.: 15,00"');
+    const percentage = withAdjustment("percentage");
+    expect(percentage).toContain(">Percentual</label>");
+    expect(percentage).toContain(">%<");
+    expect(percentage).not.toContain("Percentual (%)</label>");
+    expect(percentage).toContain('placeholder="Ex.: 2,5"');
+  });
+
+  it("a data e hora da venda leva o selo Opcional, não o parêntese", () => {
+    const html = renderPayment(
+      { ...form, occurredAtLocal: "2026-11-02T09:30" },
+      false
+    );
+    expect(html).toContain(
+      'Data e hora da venda <span class="font-normal text-muted-foreground">Opcional</span>'
+    );
+    expect(html).not.toContain("(opcional)");
+  });
+
   it("com Sem perfil já escolhido numa loja sem perfil, sem o parágrafo do vazio", () => {
     const html = renderPayment(
       {

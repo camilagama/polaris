@@ -106,7 +106,8 @@ async function books(sql: Sql, organizationId: string, variantId: string) {
   return row;
 }
 
-const syncChip = (page: Page) => page.getByRole("status");
+const syncChip = (page: Page) =>
+  page.locator('[data-slot="badge"][role="status"]');
 
 const deviceId = (page: Page) =>
   page.evaluate((key) => localStorage.getItem(key), DEVICE_KEY);
