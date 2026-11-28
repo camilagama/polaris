@@ -923,7 +923,7 @@ export const SPEC_SCREENS = {
     "inventory",
     "products",
   ],
-  "apps/web/e2e/inline-confirm.e2e.ts": ["inventory", "products"],
+  "apps/web/e2e/inline-confirm.e2e.ts": ["customers", "inventory", "products"],
   "apps/web/e2e/legal-acceptance.e2e.ts": "all",
   "apps/web/e2e/leitor-de-tela-shell.e2e.ts": ["home", "products"],
   "apps/web/e2e/listas-quadro-selo.e2e.ts": ["inventory", "settings"],
