@@ -371,7 +371,7 @@ test("cliente: arquivar, restaurar e anonimizar; a venda ligada não muda", asyn
   const restored = await customerById(sql, created.id);
   expect(restored).toEqual(active);
 
-  // anonymize: asked twice; "Cancelar" writes nothing
+  // anonymize: asked twice; "Manter cliente" writes nothing
   await menuOf(created.id, name).click();
   await page.getByRole("menuitem", { name: "Anonimizar" }).click();
   const confirmation = page.getByRole("group", {
