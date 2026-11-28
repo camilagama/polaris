@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
+import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
 import { ScreenTitle } from "../app-shell/screen-title";
@@ -387,13 +388,12 @@ export function PublicCatalogPage() {
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <div className="grid gap-1">
+      <div className="flex items-center gap-1">
         <ScreenTitle>Catálogo público</ScreenTitle>
-        <p className="text-muted-foreground text-support">
-          Mostre produtos a quem não tem conta, num endereço só seu. Só o que
-          você escolher aparece: nome, descrição, fotos e preço de tabela.
-          Custo, estoque e SKU nunca saem.
-        </p>
+        <HelpTip about="Catálogo público">
+          Mostre produtos a quem não tem conta, num endereço só seu. Aparecem
+          nome, descrição, fotos e preço de tabela do que você escolher.
+        </HelpTip>
       </div>
       {feedback?.where === "load" && feedback.error ? (
         <LoadErrorNotice message={feedback.error} onRetry={handleRetry} />

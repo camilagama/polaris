@@ -12,6 +12,7 @@ import { Badge } from "@/ui/badge";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
 import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
+import { ListNoticeBody } from "@/ui/list-notice";
 import { TextLink } from "@/ui/text-link";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { formatQuantity } from "../lib/format";
@@ -378,7 +379,7 @@ function ProductRow({
     [onToggle, product.id, shown]
   );
   return (
-    <li className="grid justify-items-start gap-2 py-2.5 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:justify-between min-[30rem]:gap-3">
+    <li className="grid justify-items-start gap-2 py-3 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:justify-between min-[30rem]:gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium [overflow-wrap:anywhere]">
           {product.name}
@@ -482,6 +483,9 @@ export function ProductsCard(props: ProductsCardProps) {
             produtos ativos escolhidos. Produto arquivado ou removido sai do
             catálogo sozinho.
           </p>
+          <p className="text-muted-foreground text-support">
+            Custo, estoque e SKU nunca aparecem no catálogo.
+          </p>
           <ActionMessages {...props.feedback} />
         </div>
         {products.length === 0 ? (
@@ -504,9 +508,11 @@ export function ProductsCard(props: ProductsCardProps) {
           </>
         )}
         {products.length > 0 && found.length === 0 ? (
-          <p className="text-muted-foreground" role="status">
-            Nenhum produto com “{query.trim()}”.
-          </p>
+          <ListNoticeBody>
+            <p className="text-muted-foreground" role="status">
+              Nenhum produto com “{query.trim()}”.
+            </p>
+          </ListNoticeBody>
         ) : null}
         {found.length > 0 ? (
           <ul
