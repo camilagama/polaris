@@ -753,6 +753,7 @@ test("Clientes: salvar uma edição em que o servidor não achou mudança diz Na
   const notice = page.getByRole("status").filter({ hasText: "Nada mudou." });
   await expect(notice).toBeVisible();
   await expect(notice).not.toContainText("atualizado");
+  await expect(notice).not.toContainText("Ana Lima");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
