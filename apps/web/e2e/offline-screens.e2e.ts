@@ -1041,7 +1041,7 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
     await expect(
-      page.getByText("estes são os perfis da última vez com conexão")
+      page.getByText("Estes são os perfis da última leitura")
     ).toBeVisible();
 
     await fillShirtSale(page, 1);

@@ -154,7 +154,7 @@ describe("o rodapé do Histórico", () => {
       <ListTotalFooter
         count="1 venda"
         note="1 cancelada fica fora da soma."
-        notice="Sem conexão: total das vendas guardadas neste aparelho."
+        notice="Sem conexão. O total soma só as vendas guardadas neste aparelho."
         value="R$ 10,00"
       />
     );
@@ -162,7 +162,7 @@ describe("o rodapé do Histórico", () => {
     expect(html.indexOf('role="status"')).toBeLessThan(
       html.indexOf("1 cancelada fica fora da soma.")
     );
-    expect(html).toContain("Sem conexão: total das vendas guardadas");
+    expect(html).toContain("Sem conexão. O total soma só as vendas guardadas");
   });
 
   it("a região de status existe vazia sem aviso e traz o texto quando há aviso", () => {
