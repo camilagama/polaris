@@ -33,6 +33,8 @@ const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 
 const RESULT_READ_FAILED =
   /^Não foi possível carregar o resultado\.\s*Tentar novamente$/;
+const GOALS_READ_FAILED =
+  /^Não foi possível carregar as metas\.\s*Tentar novamente$/;
 
 /** An amount written on the screen: "R$ 130,00". */
 const AN_AMOUNT = /R\$ \d/;
@@ -606,8 +608,8 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   // the goals are never copied: their tab shows its own load error
   await page.getByRole("tab", { name: "Metas" }).click();
-  await expect(goalsRegion(page)).toContainText(
-    "Não foi possível carregar as metas."
+  await expect(goalsRegion(page).getByRole("alert")).toHaveText(
+    GOALS_READ_FAILED
   );
 
   // back on the Resultado tab, the connection returns: the figures of the server replace the copy
@@ -662,9 +664,7 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   server.failure = { code: "UNAUTHORIZED", status: 401 };
   await signIn(page, user);
   // the lab has no shell (no notice): the red box says only what did not happen
-  await expect(page.getByRole("alert")).toContainText(
-    "Não foi possível carregar o resultado."
-  );
+  await expect(page.getByRole("alert")).toHaveText(RESULT_READ_FAILED);
   await expect(kpiCards(page)).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
