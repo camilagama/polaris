@@ -71,7 +71,7 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
       .filter({ hasText: "Não deu para carregar os perfis." })
   ).toBeVisible();
   await expect(
-    sale.getByRole("status").filter({ hasText: "Sem internet." })
+    sale.getByRole("status").filter({ hasText: "Sem conexão." })
   ).toBeVisible();
   await expect(
     sale
