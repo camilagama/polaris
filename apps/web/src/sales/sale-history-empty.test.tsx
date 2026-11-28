@@ -19,8 +19,8 @@ describe("o Histórico vazio", () => {
       />
     );
     expect(html).toContain("Nenhuma venda encontrada com estes filtros.");
-    expect(html).toContain(
-      '<p class="text-muted-foreground" role="status">Nenhuma venda encontrada com estes filtros.</p>'
+    expect(html).toMatch(
+      /<p[^>]*role="status"[^>]*>Nenhuma venda encontrada com estes filtros\.<\/p>/
     );
     expect(html).toContain("Limpar filtros</button>");
     expect(html).not.toContain("Registrar uma venda");

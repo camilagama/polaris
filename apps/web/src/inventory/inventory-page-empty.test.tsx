@@ -46,7 +46,7 @@ const ORGANIZATION = {
 afterEach(cleanup);
 
 describe("o Estoque com a busca sem resultado", () => {
-  it("a frase de não achei é uma região de status, e só ela", () => {
+  it("a frase de não achei, dita uma vez, é uma região de status", () => {
     stock.query = "zzz";
     stock.state = stockLoaded(
       initialStockListState(),
