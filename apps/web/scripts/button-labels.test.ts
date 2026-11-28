@@ -17,8 +17,9 @@ import { afterAll, describe, expect, it } from "vitest";
  * also the `*-texts.ts` constants that hold button text; a plain `.ts` is not read, because it would flag
  * strings that are not labels. Only the gallery and the labs, which are not product screens, stay out, and
  * the exclusions are listed exactly. A second rule bounds a literal `<Button>` label at 5 words and no final
- * period; it reads only text written straight before `</Button>`, so a label that comes from a constant or
- * a prop, or that is followed by an icon, is not counted.
+ * period; it reads the text written straight before `</Button>`, joining the pieces that JSX splits with
+ * `{" "}` and line breaks, so a label that comes from a constant or a prop, or that is followed by an
+ * icon or another element, is not counted.
  */
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const EXCLUDED_FOLDERS = ["offline-poc/", "ui-gallery/"];
@@ -26,22 +27,25 @@ const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
 const TEXTS_CONSTANTS = /-texts\.ts$/;
 const JSX_TEXT = />\s*(OK|Ok|Sim)[.!]?\s*<\//g;
 const STRING_LITERAL = /["'`](OK|Ok|Sim)[.!]?["'`]/g;
-const BUTTON_LITERAL_TEXT = />([^<>{}]+)<\/Button>/g;
+const JSX_SPACE = String.raw`\{\s*(?:"\s+"|'\s+')\s*\}`;
+const BUTTON_LITERAL_TEXT = new RegExp(
+  `>((?:[^<>{}]|${JSX_SPACE})+)</Button>`,
+  "g"
+);
+const JSX_SPACE_EXPRESSION = new RegExp(JSX_SPACE, "g");
 const MAX_BUTTON_WORDS = 5;
 const WHITESPACE = /\s+/;
 
 interface AllowedLabel {
   file: string;
-  line: number;
   label: string;
   reason: string;
 }
 
 /**
- * Labels over the word limit that keep their text until the design decides. The key is file, line and
- * text: an entry that no longer matches a label (text or line moved) fails, so the list cannot outlive the
- * button. The line is the one of the `>` that closes the button's opening tag (the label text is on the next
- * line); when only it moved, set the entry's `line` to the one the violation reports.
+ * Labels over the word limit that keep their text until the design decides. The key is file and label
+ * text, never a line number, so moving the button inside the file does not fail the entry; an entry that no
+ * longer matches any label fails, so the list cannot outlive its last button.
  */
 const ALLOWED: readonly AllowedLabel[] = [];
 
@@ -69,7 +73,11 @@ function buttonLabelProblem(label: string): string | null {
 
 function buttonLabelFindings(source: string, file: string): LabelFinding[] {
   return [...source.matchAll(BUTTON_LITERAL_TEXT)].flatMap((match) => {
-    const label = (match[1] ?? "").split(WHITESPACE).filter(Boolean).join(" ");
+    const label = (match[1] ?? "")
+      .replace(JSX_SPACE_EXPRESSION, " ")
+      .split(WHITESPACE)
+      .filter(Boolean)
+      .join(" ");
     const problem = buttonLabelProblem(label);
     if (problem === null) {
       return [];
@@ -117,9 +125,7 @@ function labelProblems(root: string, allowed: readonly AllowedLabel[]) {
     buttonLabelFindings(readFileSync(join(root, path), "utf8"), path)
   );
   const same = (entry: AllowedLabel, item: LabelFinding) =>
-    entry.file === item.file &&
-    entry.line === item.line &&
-    entry.label === item.label;
+    entry.file === item.file && entry.label === item.label;
   const unused = allowed.filter(
     (entry) => !found.some((item) => same(entry, item))
   );
@@ -127,7 +133,7 @@ function labelProblems(root: string, allowed: readonly AllowedLabel[]) {
     (item) => !allowed.some((entry) => same(entry, item))
   );
   return {
-    unused: unused.map((entry) => `${entry.file}:${entry.line}`),
+    unused: unused.map((entry) => `${entry.file}: "${entry.label}"`),
     violations: violations.map(describeFinding),
   };
 }
@@ -284,15 +290,24 @@ describe("button labels have at most 5 words and no final period", () => {
     const entry = {
       file: "sales/long.tsx",
       label: "Cancelar esta venda e começar outra",
-      line: 1,
       reason: "a decidir (Petković/Bruno)",
     };
     expect(labelProblems(root, [entry])).toEqual({
       unused: [],
       violations: [],
     });
-    expect(labelProblems(root, [{ ...entry, line: 2 }])).toEqual({
-      unused: ["sales/long.tsx:2"],
+    expect(
+      labelProblems(root, [{ ...entry, label: "Cancelar esta venda" }])
+    ).toEqual({
+      unused: ['sales/long.tsx: "Cancelar esta venda"'],
+      violations: [
+        'sales/long.tsx:1: "Cancelar esta venda e começar outra" (6 words, the limit is 5)',
+      ],
+    });
+    expect(
+      labelProblems(root, [{ ...entry, file: "sales/other.tsx" }])
+    ).toEqual({
+      unused: ['sales/other.tsx: "Cancelar esta venda e começar outra"'],
       violations: [
         'sales/long.tsx:1: "Cancelar esta venda e começar outra" (6 words, the limit is 5)',
       ],
@@ -301,12 +316,59 @@ describe("button labels have at most 5 words and no final period", () => {
       "sales/long.tsx":
         "export const A = () => <Button>Descartar venda</Button>;",
     });
-    expect(labelProblems(fixed, [entry]).unused).toEqual(["sales/long.tsx:1"]);
+    expect(labelProblems(fixed, [entry]).unused).toEqual([
+      'sales/long.tsx: "Cancelar esta venda e começar outra"',
+    ]);
+  });
+
+  it("plant: an allowed label that moves to another line still passes", () => {
+    const root = plant({
+      "sales/long.tsx":
+        "const unrelated = 1;\nconst another = 2;\nexport const A = () => <Button>Cancelar esta venda e começar outra</Button>;",
+    });
+    const entry = {
+      file: "sales/long.tsx",
+      label: "Cancelar esta venda e começar outra",
+      reason: "a decidir (Petković/Bruno)",
+    };
+    expect(labelProblems(root, [entry])).toEqual({
+      unused: [],
+      violations: [],
+    });
+  });
+
+  it("plant: a label split by a JSX space expression is joined and counted", () => {
+    const root = plant({
+      "sales/split-ok.tsx":
+        'export const B = () => <Button>Escolher outra{" "}forma de pagamento</Button>;',
+      "sales/split.tsx":
+        "export const A = () => (\n  <Button>\n    Cancelar esta{\" \"}\n    venda e começar{' '}outra\n  </Button>\n);",
+    });
+    expect(labelProblems(root, []).violations).toEqual([
+      'sales/split.tsx:2: "Cancelar esta venda e começar outra" (6 words, the limit is 5)',
+    ]);
+  });
+
+  it("plant: a split label moved to another line is matched by file and text", () => {
+    const root = plant({
+      "sales/split.tsx":
+        'const x = 1;\nexport const A = () => <Button>Cancelar esta venda{" "}e começar outra</Button>;',
+    });
+    const entry = {
+      file: "sales/split.tsx",
+      label: "Cancelar esta venda e começar outra",
+      reason: "a decidir (Petković/Bruno)",
+    };
+    expect(labelProblems(root, [entry])).toEqual({
+      unused: [],
+      violations: [],
+    });
   });
 
   it.each([
     ["an expression child", "<Button>{label}</Button>"],
     ["text with an element inside", "<Button>Salvar <b>agora</b></Button>"],
+    ["text before an expression", '<Button>Salvar{" "}{label}</Button>'],
     ["a short label with an ellipsis", "<Button>Salvando…</Button>"],
   ])("control: %s is not read as a literal label", (_name, source) => {
     expect(buttonLabelFindings(source, "x.tsx")).toEqual([]);
