@@ -78,7 +78,7 @@ test("cliente: cadastro, lista e escolha na venda", async ({
   );
   const confirmed = await confirmSale(page);
   await confirmed
-    .getByRole("button", { name: "Associar cliente a esta venda" })
+    .getByRole("button", { exact: true, name: "Associar cliente a esta venda" })
     .click();
   // "Associar cliente" opens the dialog that picks the customer and sends the association
   await confirmed
