@@ -102,7 +102,7 @@ const renderReason = (reasonCode: string, note?: string) =>
     <ReasonFields
       disabled={false}
       errors={note ? { note } : {}}
-      legend="Motivo do cancelamento (opcional)"
+      legend="Motivo do cancelamento"
       noteCounter="0/500"
       onNoteChange={NOOP}
       onReasonChange={NOOP}
@@ -119,7 +119,8 @@ const NOTE_SEAL = /Observação <span[^>]*>Opcional<\/span>/;
 describe("ReasonFields", () => {
   it("starts on 'Sem motivo informado', with no note to write", () => {
     const html = renderReason("");
-    expect(html).toContain("Motivo do cancelamento (opcional)");
+    expect(html).toContain("Motivo do cancelamento");
+    expect(html).not.toContain("Motivo do cancelamento (opcional)");
     expect(html).toContain("Sem motivo informado");
     expect(html).not.toContain("sale-cancel-note");
     expect(html).not.toContain("Motivo (opcional)");
