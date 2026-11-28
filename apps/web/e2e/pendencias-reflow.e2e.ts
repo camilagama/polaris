@@ -12,6 +12,8 @@ import {
 } from "./reflow";
 import { serveLabWorker } from "./worker-mark";
 
+const DISCARD_CONFIRMATION = /^Confirmar descarte de /;
+
 /**
  * The page of attention (Pendências) read at 320 px with the browser font at 20 px (`./reflow`): the title, the reason
  * and the code of each refused record, and the buttons "Refazer esta venda" and "Descartar…", are whole, inside the
@@ -220,13 +222,13 @@ reflowTest(
   async ({ page }) => {
     await openWithThreeRecords(page, 320, 20);
     await page.getByRole("button", { name: "Descartar…" }).last().click();
-    const dialog = page.getByRole("alertdialog");
+    const dialog = page.getByRole("group", { name: DISCARD_CONFIRMATION });
     await expect(dialog).toBeVisible();
     const confirm = dialog.getByRole("button", { name: "Confirmar descarte" });
-    const keep = dialog.getByRole("button", { name: "Manter" });
+    const keep = dialog.getByRole("button", { name: "Manter registro" });
     const boxes = await Promise.all([
-      confirm.boundingBox(),
       keep.boundingBox(),
+      confirm.boundingBox(),
     ]);
     const [first, second] = boxes;
     expect(first).not.toBeNull();

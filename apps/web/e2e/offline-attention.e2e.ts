@@ -1,7 +1,10 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { SUPPORT_ADDRESS } from "./support-address";
+
+const DISCARD_CONFIRMATION = /^Confirmar descarte de /;
 
 async function openLab(page: Page, user: string, query = "") {
   await page.goto(`/offline-attention-lab${query}`);
@@ -79,11 +82,15 @@ test("descartar pede confirmação, diz o que se perde e remove o registro", asy
     page.getByRole("button", { name: "Reenviar venda" })
   ).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Descartar…" }).click();
-  await expect(page.getByRole("alertdialog")).toContainText(
-    "serão apagados deste aparelho"
+  await activateByKeyboard(
+    page,
+    page.getByRole("button", { name: "Descartar…" })
   );
-  await page.getByRole("button", { name: "Manter" }).click();
+  const confirmation = page.getByRole("group", { name: DISCARD_CONFIRMATION });
+  await expect(confirmation).toContainText("serão apagados deste aparelho");
+  await expectFocusRing(confirmation);
+  await page.getByRole("button", { name: "Manter registro" }).click();
+  await expect(page.getByRole("button", { name: "Descartar…" })).toBeFocused();
   await expect(items(page)).toHaveCount(1);
 
   await page.getByRole("button", { name: "Descartar…" }).click();

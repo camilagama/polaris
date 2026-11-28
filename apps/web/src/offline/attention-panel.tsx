@@ -1,13 +1,7 @@
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -15,7 +9,7 @@ import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
 import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
-import { InsetBlock } from "@/ui/inset-block";
+import { InlineConfirm } from "@/ui/inline-confirm";
 import { ActionStrip } from "@/ui/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
 import {
@@ -269,20 +263,9 @@ function ItemCard({
   signingOut,
 }: ItemCardProps) {
   const [confirming, setConfirming] = useState(false);
-  const confirmRef = useRef<HTMLDivElement>(null);
-  const focusDiscardAgain = useRef<boolean>(false);
   const [hidden] = useHiddenValues();
   const account = ACCOUNT_CAUSES.has(item.cause);
   const Icon = account ? CircleAlertIcon : TriangleAlertIcon;
-  // the confirmation takes the place of the buttons: focus goes to it, and back to "Descartar…" when it is kept
-  useEffect(() => {
-    if (confirming) {
-      confirmRef.current?.focus();
-    } else if (focusDiscardAgain.current) {
-      focusDiscardAgain.current = false;
-      document.getElementById(discardButtonId(item))?.focus();
-    }
-  }, [confirming, item]);
   const act = useCallback(
     (action: AttentionAction) => {
       if (action === "discard") {
@@ -297,10 +280,11 @@ function ItemCard({
     },
     [item, onRedo, onResubmit, onSignInAgain]
   );
-  const keep = useCallback(() => {
-    focusDiscardAgain.current = true;
-    setConfirming(false);
-  }, []);
+  const keep = useCallback(() => setConfirming(false), []);
+  const opener = useCallback(
+    () => document.getElementById(discardButtonId(item)),
+    [item]
+  );
   const confirmDiscard = useCallback(() => {
     setConfirming(false);
     onDiscard(item);
@@ -330,29 +314,18 @@ function ItemCard({
           Código: {item.code}
         </p>
         {confirming ? (
-          <InsetBlock
-            aria-label={`Descartar ${hidden ? maskMoney(item.title, MASKED_SPOKEN) : item.title}`}
-            className="grid gap-3 p-3 outline-none focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-2"
-            ref={confirmRef}
-            role="alertdialog"
-            tabIndex={-1}
-            tone="destructive"
+          <InlineConfirm
+            action="descarte"
+            busy={busy}
+            confirmLabel="Confirmar descarte"
+            keepLabel="Manter registro"
+            object={hidden ? maskMoney(item.title, MASKED_SPOKEN) : item.title}
+            onConfirm={confirmDiscard}
+            onKeep={keep}
+            opener={opener}
           >
-            <p>{discardWarning(item)}</p>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                disabled={busy}
-                onClick={confirmDiscard}
-                type="button"
-                variant="destructive"
-              >
-                Confirmar descarte
-              </Button>
-              <Button onClick={keep} type="button" variant="outline">
-                Manter
-              </Button>
-            </div>
-          </InsetBlock>
+            {discardWarning(item)}
+          </InlineConfirm>
         ) : (
           <div className="flex flex-wrap gap-3">
             {item.actions.map((action) => (

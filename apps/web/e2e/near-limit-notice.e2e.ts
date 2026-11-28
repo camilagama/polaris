@@ -939,7 +939,7 @@ test.describe("painel de imagens", () => {
     await expect(dialogLine(page)).toContainText("Você usa 48 de 50 imagens");
     await page.getByRole("button", { name: "Remover imagem 2" }).click();
     await page
-      .getByRole("alertdialog")
+      .getByRole("group", { name: "Confirmar remoção de imagem 2" })
       .getByRole("button", { name: "Remover imagem" })
       .click();
     await expect(
