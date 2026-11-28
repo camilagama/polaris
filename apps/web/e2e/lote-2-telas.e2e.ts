@@ -227,7 +227,9 @@ test("Categorias: criar deixa o cursor no campo, que se esvazia, e diz o resulta
   await field.fill("Acessórios");
   await expect(page.getByText("Informe o nome da categoria.")).toHaveCount(0);
   await field.press("Enter");
-  await expect(page.getByText("Categoria “Acessórios” criada.")).toBeVisible();
+  await expect(
+    page.getByText("Categoria “Acessórios” adicionada.")
+  ).toBeVisible();
   expect(created).toEqual([
     { name: "Acessórios", organizationId: ORGANIZATION.id },
   ]);

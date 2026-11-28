@@ -134,7 +134,7 @@ function useCategoryCommands({
             organizationId,
           });
           onUpsert(created, "create");
-          return `Categoria “${created.name}” criada.`;
+          return `Categoria “${created.name}” adicionada.`;
         })
       ),
     [onUpsert, organizationId, run, settle]

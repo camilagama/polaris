@@ -109,7 +109,7 @@ describe("the categories screen with an empty list", () => {
       })
     );
     expect(
-      await screen.findByText("Categoria “Acessórios” criada.")
+      await screen.findByText("Categoria “Acessórios” adicionada.")
     ).toBeTruthy();
   });
 });
