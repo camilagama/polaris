@@ -98,7 +98,7 @@ describe("the card and the notice share the read state", () => {
 
   it("shows Tentar de novo, enabled, while idle", () => {
     const html = body(false);
-    expect(refreshButton(html, "Tentar de novo")).not.toBe("");
+    expect(refreshButton(html, "Tentar novamente")).not.toBe("");
     expect(html).not.toContain("Atualizando…");
   });
 
@@ -106,7 +106,7 @@ describe("the card and the notice share the read state", () => {
     const html = body(true);
     expect(html.match(/Atualizando…/g)).toHaveLength(2);
     expect(html.match(/aria-disabled="true"/g)).toHaveLength(2);
-    expect(refreshButton(html, "Tentar de novo")).toBe("");
+    expect(refreshButton(html, "Tentar novamente")).toBe("");
   });
 });
 
