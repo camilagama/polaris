@@ -152,7 +152,7 @@ describe("the list of copies", () => {
     expect(html).toContain("Preparando sua cópia.");
     expect(html).toContain("Esta cópia expirou. Peça outra.");
     expect(html).toContain(
-      "Sua cópia está pronta. Baixe até 31/10/2026 11:40."
+      "Sua cópia está pronta. Baixe até 31/10/2026, 11:40."
     );
   });
 });
