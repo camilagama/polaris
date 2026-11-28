@@ -245,7 +245,7 @@ function RuleEditor({
             onClick={handleRemove}
             size="sm"
             type="button"
-            variant="destructive"
+            variant="ghost"
           >
             <Trash2Icon aria-hidden="true" data-icon="inline-start" />
             Remover regra {index + 1}
@@ -393,7 +393,7 @@ export function PaymentProfileForm({
               type="button"
               variant="outline"
             >
-              {editing ? "Cancelar edição" : "Cancelar"}
+              Cancelar
             </Button>
             <Button
               {...connectionControlProps(online, connectionDialogReasonId)}

@@ -6,6 +6,7 @@ import { PaymentProfileForm } from "./payment-profile-form";
 
 const noop = () => undefined;
 const keepFocus = () => true;
+const REMOVE_RULE_NAME = /^Remover regra \d$/;
 
 function drawForm(ruleCount: number, makeRule: () => RuleDraft = blankRule) {
   render(
@@ -74,6 +75,17 @@ describe("sections of the payment profile form", () => {
     expect(order.indexOf("payment-add-rule")).toBeGreaterThan(
       Math.max(...removeButtons)
     );
+  });
+
+  it("keeps the remove button of a rule light, never the filled destructive one", () => {
+    const dialog = drawForm(2);
+    const buttons = within(dialog).getAllByRole("button", {
+      name: REMOVE_RULE_NAME,
+    });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button.className).not.toContain("bg-destructive");
+    }
   });
 
   it("names what each empty selector of a rule chooses, never just 'Escolha'", () => {
