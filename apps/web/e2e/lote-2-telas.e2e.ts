@@ -503,7 +503,7 @@ test("Categorias: o nome passa de 100 caracteres, o campo diz quantos e nada é 
   ).toBeDisabled();
 });
 
-test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e confirmar remove dizendo o que fica", async ({
+test("Categorias: remover pede confirmação na linha, 'Manter categoria' desiste e confirmar remove dizendo o que fica", async ({
   page,
 }) => {
   const removed: unknown[] = [];
@@ -532,7 +532,7 @@ test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e conf
   await expect(confirmation).toContainText(
     "O histórico de vendas continua igual."
   );
-  await confirmation.getByRole("button", { name: "Cancelar" }).click();
+  await confirmation.getByRole("button", { name: "Manter categoria" }).click();
   await expect(confirmation).toHaveCount(0);
   expect(removed).toEqual([]);
 
