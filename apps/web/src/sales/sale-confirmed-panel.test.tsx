@@ -73,6 +73,12 @@ describe("the panel of a confirmed sale", () => {
     expect(html).not.toContain("animate");
   });
 
+  it("offers the whole label of the button that opens the customer, with no (opcional)", () => {
+    const html = render(false);
+    expect(html).toContain(">Associar cliente a esta venda</button>");
+    expect(html).not.toContain("(opcional)");
+  });
+
   it("gives the two links a 44 px area to touch", () => {
     const links = render(true).match(/<a [^>]*aria-label="Ver o [^>]*>/g);
     expect(links).toHaveLength(2);

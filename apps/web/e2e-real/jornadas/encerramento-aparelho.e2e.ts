@@ -12,7 +12,7 @@ const ZONE = "America/Sao_Paulo";
 const CLOSED_PANEL = /\/loja-encerrada\?loja=/;
 const REOPENED = /\/\?reaberta=1$/;
 const ATTENTION_URL = /\/attention$/;
-const DISCARD_SALE_DIALOG = /Descartar Venda de R\$ 70,00/;
+const DISCARD_SALE_DIALOG = /Confirmar descarte de Venda de R\$ 70,00/;
 const MUG = /Caneca/;
 const LIST_CLOSED = "/rpc/organization/listClosed";
 const LIST_MINE = "/rpc/organization/listMine";
@@ -106,7 +106,8 @@ async function books(sql: Sql, organizationId: string, variantId: string) {
   return row;
 }
 
-const syncChip = (page: Page) => page.getByRole("status");
+const syncChip = (page: Page) =>
+  page.locator('[data-slot="badge"][role="status"]');
 
 const deviceId = (page: Page) =>
   page.evaluate((key) => localStorage.getItem(key), DEVICE_KEY);
@@ -390,7 +391,7 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
     .getByRole("button", { name: "Descartar a venda recusada…" })
     .click();
   await expect(
-    page.getByRole("alertdialog", { name: DISCARD_SALE_DIALOG })
+    page.getByRole("group", { name: DISCARD_SALE_DIALOG })
   ).toContainText("A venda refeita já está registrada ou guardada e não muda");
   await page.getByRole("button", { name: "Confirmar descarte" }).click();
   await expect.poll(() => outbox(page), { timeout: 15_000 }).toEqual([]);

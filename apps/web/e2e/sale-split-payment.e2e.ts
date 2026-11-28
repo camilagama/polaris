@@ -540,7 +540,7 @@ test("sem internet, cada parte usa os perfis da última conexão: o Resumo mostr
   ).toBeVisible();
   await page.getByLabel("Rede disponível").uncheck();
   await expect(
-    page.getByText("estes são os perfis da última vez com conexão")
+    page.getByText("Estes são os perfis da última leitura")
   ).toBeVisible();
   await splitButton(page).click();
   await chooseSelectOption(part(page, 1), "Método", "Pix");
@@ -555,7 +555,7 @@ test("sem internet, cada parte usa os perfis da última conexão: o Resumo mostr
   await expect(
     page
       .getByRole("note")
-      .filter({ hasText: "estes são os perfis da última vez com conexão" })
+      .filter({ hasText: "Estes são os perfis da última leitura" })
   ).toHaveCount(1);
   const summary = page.getByRole("region", { exact: true, name: "Resumo" });
   await expect(summary).toContainText("Parte 1 · Pix");

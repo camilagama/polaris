@@ -188,7 +188,7 @@ function StockItem({
               ) : (
                 row.productName
               )}
-              {row.archived ? <Badge variant="outline">Arquivado</Badge> : null}
+              {row.archived ? <Badge variant="warning">Arquivado</Badge> : null}
             </p>
             <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
               {row.variantText}

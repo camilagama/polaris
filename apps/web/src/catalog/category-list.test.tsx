@@ -251,7 +251,7 @@ describe("the list of categories", () => {
     const html = render({ pendingDeleteId: category(2, "Calçados").id });
     const block = INSET_BLOCK.exec(html);
     expect(block?.[0]).toContain("ring-destructive/60");
-    expect(block?.[0]).toContain("focus-visible:outline-solid");
+    expect(block?.[0]).toContain("focus-ring");
     expect(block?.[0]).toContain('role="group"');
     expect(block?.[0]).toContain('aria-label="Confirmar remoção de Calçados"');
     expect(block?.[0]).toContain('tabindex="-1"');

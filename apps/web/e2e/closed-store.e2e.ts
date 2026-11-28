@@ -361,7 +361,7 @@ for (const [label, failure] of [
       page.getByRole("link", { name: "Baixar meus dados" })
     ).toBeVisible();
     await expect(undoButton(page)).toBeVisible();
-    const retry = notice.getByRole("button", { name: "Tentar de novo" });
+    const retry = notice.getByRole("button", { name: "Tentar novamente" });
     await expect(retry).toBeFocused();
     await retry.click();
     const reading = notice.getByRole("button", { name: "Atualizando…" });
@@ -390,7 +390,7 @@ test("Tentar de novo que falha de novo mantém o aviso e o foco no botão", asyn
     .first()
     .click();
   const notice = page.getByRole("alert");
-  const retry = notice.getByRole("button", { name: "Tentar de novo" });
+  const retry = notice.getByRole("button", { name: "Tentar novamente" });
   await expect(retry).toBeFocused();
   await retry.click();
   await expect.poll(() => calls.statuses).toBe(3);
@@ -424,7 +424,7 @@ test("Atualizar do cartão diz Atualizando… travado e com o foco nele, um pedi
   await refresh.click();
   const notice = page.getByRole("alert");
   await expect(notice).toBeVisible();
-  await notice.getByRole("button", { name: "Tentar de novo" }).click();
+  await notice.getByRole("button", { name: "Tentar novamente" }).click();
   await expect.poll(() => calls.statuses).toBe(3);
   const reading = page.getByRole("button", {
     exact: true,
@@ -485,8 +485,13 @@ test("a primeira leitura que falha continua mostrando só o erro, sem painel (AC
     "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo.Tentar novamente"
   );
   await expect(
-    page.getByRole("button", { name: "Tentar de novo" })
+    page.getByText(
+      "Não deu para atualizar. O que está na tela é da última leitura."
+    )
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { exact: true, name: "Tentar novamente" })
+  ).toHaveCount(1);
 });
 
 test("sem loja no endereço, lista as encerradas do dono e abre a única ou deixa escolher (e-mail)", async ({

@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { EmptyState } from "@/ui/empty-state";
-import { InsetBlock } from "@/ui/inset-block";
+import { InlineConfirm } from "@/ui/inline-confirm";
 import { ListBlock } from "@/ui/list-block";
 import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
@@ -74,6 +74,7 @@ function CustomerMenu({
         render={
           <Button
             aria-label={`Mais ações para ${customer.name}`}
+            data-customer-menu=""
             disabled={pending}
             size="icon"
             variant="ghost"
@@ -108,44 +109,35 @@ interface AnonymizeConfirmProps {
   onConfirm: () => void;
 }
 
-/** Anonymizing cannot be undone: the row asks again, and says what stays. */
 function AnonymizeConfirm({
   customer,
   disabled,
   onCancel,
   onConfirm,
 }: AnonymizeConfirmProps) {
+  const opener = useCallback(
+    () =>
+      document.querySelector<HTMLElement>(
+        `[data-customer-id="${customer.id}"] [data-customer-menu]`
+      ),
+    [customer.id]
+  );
   return (
-    <InsetBlock
-      aria-label={`Confirmar a anonimização de ${customer.name}`}
-      className="mb-2.5 grid gap-3 p-3"
-      role="group"
-      tone="destructive"
+    <InlineConfirm
+      action="a anonimização"
+      busy={disabled}
+      className="mb-2.5"
+      confirmLabel="Anonimizar definitivamente"
+      keepLabel="Manter cliente"
+      object={customer.name}
+      onConfirm={onConfirm}
+      onKeep={onCancel}
+      opener={opener}
     >
-      <p className="text-support">
-        Anonimizar remove o nome, o telefone, o e-mail e as observações deste
-        cliente. Não dá para desfazer. As vendas ligadas a ele continuam com os
-        mesmos valores.
-      </p>
-      <div className="flex flex-wrap gap-3">
-        <Button
-          disabled={disabled}
-          onClick={onCancel}
-          type="button"
-          variant="outline"
-        >
-          Cancelar
-        </Button>
-        <Button
-          disabled={disabled}
-          onClick={onConfirm}
-          type="button"
-          variant="destructive"
-        >
-          Anonimizar definitivamente
-        </Button>
-      </div>
-    </InsetBlock>
+      Anonimizar remove o nome, o telefone, o e-mail e as observações deste
+      cliente. Não dá para desfazer. As vendas ligadas a ele continuam com os
+      mesmos valores.
+    </InlineConfirm>
   );
 }
 
