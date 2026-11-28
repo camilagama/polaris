@@ -231,7 +231,7 @@ function PossibleDuplicates({
         Encontramos possíveis clientes existentes
       </h3>
       <p className="text-muted-foreground text-support">
-        Revise os cadastros por email ou telefone. Nenhum dado será mesclado
+        Revise os cadastros por e-mail ou telefone. Nenhum dado será mesclado
         automaticamente.
       </p>
       <ul className="divide-y divide-border">
