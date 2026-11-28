@@ -251,6 +251,11 @@ describe("button labels say the choice, not OK, Sim or Sim, <verbo>", () => {
       ["Sim, revogar este aparelho"],
     ],
     [
+      "string constant with Sim, <verbo> and a final period",
+      'const CONFIRM = "Sim, descartar.";',
+      ["Sim, descartar"],
+    ],
+    [
       "template literal with Sim, <verbo>",
       "const CONFIRM = `Sim, desfazer`;",
       ["Sim, desfazer"],
@@ -264,8 +269,8 @@ describe("button labels say the choice, not OK, Sim or Sim, <verbo>", () => {
     ["a word that only contains it", 'const x = "Simples"; const y = "Book";'],
     ["a sentence that only has Sim inside", 'const x = "Diga Sim, por favor";'],
     [
-      "a label that says the choice, with a comma",
-      "<Button>Revogar, não</Button>",
+      "a word that starts with Sim, with a comma",
+      'const x = "Simples, direto";',
     ],
     ["a tone key in lowercase", "const tone = 'ok';"],
   ])("control: %s is not caught", (_name, source) => {
