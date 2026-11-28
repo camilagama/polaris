@@ -477,7 +477,7 @@ function validateReceive(
     parseUnitCost(draft.unitCost),
     "unitCost",
     issues,
-    "Informe o custo unitário: ele é obrigatório em todo recebimento."
+    "Informe o custo de cada unidade: ele é obrigatório em todo recebimento."
   );
   const occurredOn = validateDate(draft.occurredOn, today, issues);
   return issues.length === 0 &&
@@ -885,11 +885,17 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
   ["product_not_found", { message: variantGoneMessage, reloadList: true }],
   [
     "invalid_unit_cost",
-    { message: "Informe o custo unitário em reais, com até 6 casas decimais." },
+    {
+      message:
+        "Informe o custo de cada unidade em reais, com até 6 casas decimais.",
+    },
   ],
   [
     "inventory_cost_limit",
-    { message: "O custo unitário excede o limite de 18 dígitos inteiros." },
+    {
+      message:
+        "O custo de cada unidade excede o limite de 18 dígitos inteiros.",
+    },
   ],
   [
     "invalid_inventory_count_input",

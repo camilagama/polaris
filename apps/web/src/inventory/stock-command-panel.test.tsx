@@ -17,7 +17,11 @@ const target: StockTarget = {
 
 const noop = () => undefined;
 
-function render(action: "write_off" | "receive", standalone: boolean) {
+function render(
+  action: "cost" | "count" | "receive" | "write_off",
+  standalone: boolean,
+  from: StockTarget = target
+) {
   return renderToStaticMarkup(
     <StockCommandPanel
       action={action}
@@ -26,7 +30,7 @@ function render(action: "write_off" | "receive", standalone: boolean) {
       onReloadList={noop}
       organizationId="org-1"
       standalone={standalone}
-      target={target}
+      target={from}
       today="2026-11-03"
     />
   );
@@ -52,5 +56,53 @@ describe("the line under the title of the movement panel", () => {
   it("is left out of the other movements inside the row too", () => {
     expect(render("receive", false)).not.toContain(TITLE_LINE);
     expect(render("receive", true)).toContain(TITLE_LINE);
+  });
+});
+
+const OPTIONAL_BADGE =
+  '<span class="font-normal text-muted-foreground">Opcional</span>';
+const NO_COST: StockTarget = { ...target, movingAverageCost: null };
+
+const labelOf = (html: string, text: string) =>
+  new RegExp(`<label[^>]*>${text}( ${OPTIONAL_BADGE})?</label>`).exec(html);
+
+describe("the cost field of the movement panel", () => {
+  it.each([
+    ["receive", target],
+    ["cost", NO_COST],
+    ["count", NO_COST],
+  ] as const)(
+    'is %s\'s "Custo de cada unidade" with the R$ inside the field, never "(R$)" in the label',
+    (action, from) => {
+      const html = render(action, false, from);
+      expect(labelOf(html, "Custo de cada unidade")).not.toBeNull();
+      expect(html).toContain(">R$</div>");
+      expect(html).not.toContain("(R$)");
+      expect(html).not.toContain("Custo unitário");
+    }
+  );
+
+  it("carries the Opcional badge only when counting, and the hint does not say it again", () => {
+    expect(
+      labelOf(render("count", false, NO_COST), "Custo de cada unidade")?.[1]
+    ).toBe(` ${OPTIONAL_BADGE}`);
+    expect(
+      labelOf(render("cost", false, NO_COST), "Custo de cada unidade")?.[1]
+    ).toBeUndefined();
+    expect(
+      labelOf(render("receive", false), "Custo de cada unidade")?.[1]
+    ).toBeUndefined();
+    expect(render("count", false, NO_COST)).toContain(
+      "Vale só se a quantidade contada for maior que zero."
+    );
+    expect(render("count", false, NO_COST)).not.toContain("Opcional. Vale");
+  });
+});
+
+describe("the note of the write-off", () => {
+  it('is "Observação" with the Opcional badge, not "(opcional)" in the label', () => {
+    const html = render("write_off", false);
+    expect(labelOf(html, "Observação")?.[1]).toBe(` ${OPTIONAL_BADGE}`);
+    expect(html).not.toContain("Observação (opcional)");
   });
 });

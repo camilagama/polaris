@@ -13,7 +13,7 @@ import { WORKER_MARK } from "./worker-mark";
 const INFORM_SHIRT = "Informar custo de Camiseta do teste, Azul";
 const INFORM_ANY = /^Informar custo/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
-const COST_FIELD = "Custo de cada unidade (R$)";
+const COST_FIELD = "Custo de cada unidade";
 const SHIRT_CONFLICT =
   /O saldo no sistema mudou para 4\. Confira o custo e confirme de novo\./;
 const JEANS_CONFLICT =
@@ -60,7 +60,7 @@ test.describe("Estoque, Informar custo", () => {
     await expect(
       page.getByRole("heading", { name: "Informar custo" })
     ).toBeVisible();
-    await expect(page.getByLabel(COST_FIELD)).toBeFocused();
+    await expect(page.getByLabel(COST_FIELD, { exact: true })).toBeFocused();
     await expect(
       page.getByText("Para as 5 unidades que você tem agora.")
     ).toBeVisible();
@@ -74,7 +74,7 @@ test.describe("Estoque, Informar custo", () => {
     await expect(
       page.getByText("Informe o custo de cada unidade.")
     ).toBeVisible();
-    await expect(page.getByLabel(COST_FIELD)).toBeFocused();
+    await expect(page.getByLabel(COST_FIELD, { exact: true })).toBeFocused();
     expect(await axeFaults(page)).toEqual([]);
   });
 
@@ -98,7 +98,7 @@ test.describe("Estoque, Informar custo", () => {
       page,
     }) => {
       await stockStates.cost(page);
-      await page.getByLabel(COST_FIELD).fill(typed);
+      await page.getByLabel(COST_FIELD, { exact: true }).fill(typed);
       await page.getByRole("button", { exact: true, name: "Revisar" }).click();
       await expect(
         page.getByText(
@@ -156,7 +156,7 @@ test.describe("Estoque, Informar custo", () => {
     await expect(
       page.getByRole("heading", { name: "Informar custo" })
     ).toBeVisible();
-    await expect(page.getByLabel(COST_FIELD)).toBeFocused();
+    await expect(page.getByLabel(COST_FIELD, { exact: true })).toBeFocused();
   });
 
   test("se o saldo mudou, recusa com o texto do painel, relê e pede para revisar", async ({
@@ -188,7 +188,7 @@ test.describe("Estoque, Informar custo", () => {
     );
     await stockStates.costConfirming(page);
     await page.getByRole("button", { name: "Confirmar custo" }).click();
-    const costField = page.getByLabel(COST_FIELD);
+    const costField = page.getByLabel(COST_FIELD, { exact: true });
     await expect(costField).toBeFocused();
     await expect(costField).toHaveAccessibleDescription(SHIRT_CONFLICT);
     await expect(

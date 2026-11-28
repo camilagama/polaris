@@ -381,6 +381,16 @@ describe("form flow", () => {
     ]);
   });
 
+  it("names the field in the receipt cost error", () => {
+    const state = reviewStock(filled("receive", { quantity: "1" }));
+    expect(
+      visibleStockIssues(state).find((issue) => issue.field === "unitCost")
+        ?.message
+    ).toBe(
+      "Informe o custo de cada unidade: ele é obrigatório em todo recebimento."
+    );
+  });
+
   it("focuses the first invalid field in the order shown", () => {
     const issues = issuesOf(
       filled("write_off", { quantity: "1", reasonCode: "other" })
@@ -825,8 +835,8 @@ describe("mapStockError", () => {
       { reloadList: true },
     ],
     ["NOT_FOUND", "product_not_found", "não existe mais", { reloadList: true }],
-    ["BAD_REQUEST", "invalid_unit_cost", "6 casas decimais", {}],
-    ["BAD_REQUEST", "inventory_cost_limit", "18 dígitos", {}],
+    ["BAD_REQUEST", "invalid_unit_cost", "custo de cada unidade em reais", {}],
+    ["BAD_REQUEST", "inventory_cost_limit", "custo de cada unidade excede", {}],
     ["BAD_REQUEST", "invalid_inventory_count_input", "O custo só vale", {}],
     ["BAD_REQUEST", "invalid_receive_stock_input", "validação", {}],
     ["BAD_REQUEST", "invalid_write_off_stock_input", "validação", {}],

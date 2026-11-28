@@ -117,7 +117,10 @@ test("venda sem estoque: a recusa leva à entrada, a venda em andamento volta e 
   expect(new URL(page.url()).search).toBe("");
   await expect(page.getByLabel("Quantidade recebida")).toHaveValue("2");
   await fill(page.getByLabel("Quantidade recebida"), "5");
-  await fill(page.getByLabel("Custo unitário (R$)"), "12,50");
+  await fill(
+    page.getByLabel("Custo de cada unidade", { exact: true }),
+    "12,50"
+  );
   await tap(page.getByRole("button", { exact: true, name: "Revisar" }));
   await tap(page.getByRole("button", { name: "Confirmar recebimento" }));
   await expect.poll(() => count("stock_movements")).toBe(1);

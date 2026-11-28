@@ -48,7 +48,7 @@ async function receive(
     })
     .click();
   await page.getByLabel("Quantidade recebida").fill(quantity);
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("12,50");
   await page.getByRole("button", { name: "Revisar" }).click();
   await page.getByRole("button", { name: "Confirmar recebimento" }).click();
   await expect(

@@ -886,7 +886,7 @@ const SCREENS = [
             page.getByRole("heading", { level: 1, name: "Estoque" })
           ).toBeVisible();
           await page.getByRole("button", { name: WRITE_OFF_SHIRT }).click();
-          await expect(page.getByLabel("Observação (opcional)")).toBeVisible();
+          await expect(page.getByLabel("Observação Opcional")).toBeVisible();
         },
         {},
         serveStockRows

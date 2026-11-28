@@ -210,7 +210,7 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: "Mais uma unidade" }).click();
   await expect(quantity).toHaveValue("2");
   await quantity.fill("10");
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("12,50");
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   await expect(
     page.getByText("muda o custo médio", { exact: false })
@@ -227,7 +227,9 @@ async function useEveryControl(page: Page) {
 
   // the cost of units with none (where counting was) and a write-off (the choice list and the note)
   await page.getByRole("button", { name: INFORM_SHIRT }).click();
-  await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
+  await expect(
+    page.getByLabel("Custo de cada unidade", { exact: true })
+  ).toBeVisible();
   await page.getByRole("button", { name: "Fechar" }).click();
   await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();
   await page
@@ -711,7 +713,7 @@ test("leituras de um movimento: registrar o recebimento relê as 2 contagens de 
 
   await page.getByRole("button", { name: RECEIVE_JEANS }).click();
   await page.getByLabel("Quantidade recebida").fill("10");
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("12,50");
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   await page.getByRole("button", { name: "Confirmar recebimento" }).click();
   await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
@@ -930,7 +932,9 @@ for (const width of [360, 320]) {
     // the state that opens from the filtered list: a panel on the row, nothing goes past the window
     // from a variant with units and no cost the way forward is to inform the cost
     await page.getByRole("button", { name: INFORM_SHIRT }).click();
-    await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
+    await expect(
+      page.getByLabel("Custo de cada unidade", { exact: true })
+    ).toBeVisible();
     const past = await page.evaluate(() => {
       const limit = window.innerWidth + 0.5;
       const heading = [...document.querySelectorAll("h1")].find(
@@ -992,7 +996,9 @@ for (const viewport of FORM_VIEWPORTS) {
     );
 
     await page.getByLabel("Quantidade recebida").fill("10");
-    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page
+      .getByLabel("Custo de cada unidade", { exact: true })
+      .fill("12,50");
     await page.getByRole("button", { exact: true, name: "Revisar" }).click();
     await page.getByRole("button", { name: "Confirmar recebimento" }).click();
     await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
@@ -1036,7 +1042,9 @@ const TURN_CASES = [
     confirm: "Confirmar recebimento",
     fill: async (page: Page, quantity: string) => {
       await page.getByLabel("Quantidade recebida").fill(quantity);
-      await page.getByLabel("Custo unitário (R$)").fill("12,50");
+      await page
+        .getByLabel("Custo de cada unidade", { exact: true })
+        .fill("12,50");
     },
     quantities: ["7", "4"],
     quantityLabel: "Quantidade recebida",
@@ -1220,7 +1228,7 @@ test.describe("virada do dia da loja", () => {
       );
       await settled(page);
       const reads = listRequests.length + attentionRequests.length;
-      const cost = page.getByLabel("Custo de cada unidade (R$)");
+      const cost = page.getByLabel("Custo de cada unidade", { exact: true });
 
       if (!turn.openAfterTurn) {
         await page.getByRole("button", { name: INFORM_SHIRT }).click();
@@ -1324,7 +1332,7 @@ test("sem resposta do servidor, o botão seguro vem primeiro e o descarte vem po
   );
   await page.getByRole("button", { name: RECEIVE_JEANS }).click();
   await page.getByLabel("Quantidade recebida").fill("10");
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("12,50");
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   await page.getByRole("button", { name: "Confirmar recebimento" }).click();
 
