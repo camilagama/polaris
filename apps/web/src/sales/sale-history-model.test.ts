@@ -11,10 +11,10 @@ import {
   emptyHistoryFilters,
   HISTORY_STATUS_FILTERS,
   type HistoryState,
+  historyListCount,
   historyListRequest,
   historyLoaded,
   historyLoadFailed,
-  historyListCount,
   historyLoading,
   historyRows,
   historyTotal,
@@ -527,6 +527,21 @@ describe("the count beside the title of the list", () => {
     expect(countOf(sales, true)).toBe("1.234 vendas · há mais");
     expect(countOf(sales)).toBe("1.234 vendas");
     expect(historyTotal(sales, true).countText).toBe("1.234 vendas · há mais");
+  });
+
+  it("writes the thousands of cancelled ones in the note, as the count does", () => {
+    const cancelled = Array.from({ length: 1234 }, (_, n) =>
+      entry(n + 1, {
+        cancelledAt: "2026-05-02T12:00:00.000Z",
+        status: "cancelled",
+      })
+    );
+    expect(historyTotal([entry(5000), ...cancelled]).noteText).toBe(
+      "1.234 canceladas ficam fora da soma."
+    );
+    expect(historyTotal([entry(1), ...cancelled.slice(0, 1)]).noteText).toBe(
+      "1 cancelada fica fora da soma."
+    );
   });
 
   it("is empty while the list loads or failed, and zero for a list with no result", () => {
