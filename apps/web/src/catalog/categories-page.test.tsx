@@ -126,6 +126,35 @@ describe("the title of the categories screen", () => {
     expect(container.querySelectorAll("h1")).toHaveLength(1);
   });
 
+  it("carries its explanation in the (i) beside the name, not in a paragraph under it", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Nenhuma categoria ativa.");
+    const phrase =
+      "Agrupam os produtos do catálogo. As categorias de despesa ficam em Despesas.";
+    expect(screen.queryByText(phrase)).toBeNull();
+    const tip = screen.getByRole("button", { name: "Sobre Categorias" });
+    expect(tip.parentElement).toBe(
+      screen.getByRole("heading", { level: 1, name: "Categorias" })
+        .parentElement
+    );
+    await user.click(tip);
+    expect(await screen.findByText(phrase)).toBeTruthy();
+  });
+
+  it("keeps the (i) in the tab of Produtos, with the title for a screen reader only", async () => {
+    renderPage(true);
+    await screen.findByText("Nenhuma categoria ativa.");
+    expect(
+      screen.getByRole("button", { name: "Sobre Categorias" })
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "Agrupam os produtos do catálogo. As categorias de despesa ficam em Despesas."
+      )
+    ).toBeNull();
+  });
+
   it("stays only for a screen reader in the tab of Produtos, and its line takes no room", async () => {
     const { container } = renderPage(true);
     await screen.findByText("Nenhuma categoria ativa.");

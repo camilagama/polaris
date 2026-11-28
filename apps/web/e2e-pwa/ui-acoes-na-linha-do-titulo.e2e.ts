@@ -419,7 +419,8 @@ const WITHOUT_ACTION: readonly {
   screen: string;
 }[] = [
   {
-    afterTitle: INTRO_GAP,
+    afterHeader: HEADER_GAP,
+    afterTitle: HEADER_GAP,
     heading: "Categorias",
     hiddenFrom1280: false,
     screen: "categorias lista",

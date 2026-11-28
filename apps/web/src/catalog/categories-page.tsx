@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { HelpTip } from "@/ui/help-tip";
 import { SegmentedFilter } from "@/ui/segmented-filter";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -241,12 +242,14 @@ export function CategoriesPage() {
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <TitleLine tabNamesIt>
-          <ScreenTitle>Categorias</ScreenTitle>
+          <div className="flex items-center gap-1">
+            <ScreenTitle>Categorias</ScreenTitle>
+            <HelpTip about="Categorias">
+              Agrupam os produtos do catálogo. As categorias de despesa ficam em
+              Despesas.
+            </HelpTip>
+          </div>
         </TitleLine>
-        <p className="text-muted-foreground text-support">
-          Agrupam os produtos do catálogo. As categorias de despesa ficam em
-          Despesas.
-        </p>
       </header>
       <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />
       <SegmentedFilter
