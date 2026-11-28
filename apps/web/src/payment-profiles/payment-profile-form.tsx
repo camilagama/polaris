@@ -389,6 +389,7 @@ export function PaymentProfileForm({
             <Button
               disabled={pending}
               onClick={onCancel}
+              size="xl"
               type="button"
               variant="outline"
             >
@@ -398,6 +399,7 @@ export function PaymentProfileForm({
               {...connectionControlProps(online, connectionDialogReasonId)}
               aria-busy={pending || undefined}
               disabled={pending}
+              size="xl"
               type="submit"
             >
               {submitLabel(pending, editing, confirmDuplicate)}
