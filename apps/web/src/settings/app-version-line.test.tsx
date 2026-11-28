@@ -58,11 +58,11 @@ describe("a linha da versão em Configurações", () => {
     expect(html).toContain(
       "Nova versão pronta. Entra sozinha quando você fechar o app ou deixá-lo parado um tempo."
     );
-    expect(html).not.toContain("Ver pendências");
+    expect(html).not.toContain("Ver Pendências");
     expect(html).not.toContain("<button");
   });
 
-  it("com registro recusado, a espera é pelas pendências, com o link Ver pendências", () => {
+  it("com registro recusado, a espera é pelas pendências, com o link Ver Pendências", () => {
     const html = render(
       snapshot({ pending: WAITING, work: { ...NO_PENDING_WORK, rejected: 2 } })
     );
@@ -70,7 +70,7 @@ describe("a linha da versão em Configurações", () => {
       "Nova versão pronta. Entra depois que as pendências forem resolvidas."
     );
     expect(html).toContain('href="/attention"');
-    expect(html).toContain("Ver pendências");
+    expect(html).toContain("Ver Pendências");
     expect(html).not.toContain("Entra sozinha");
   });
 
