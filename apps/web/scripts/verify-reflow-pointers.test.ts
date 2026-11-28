@@ -99,10 +99,10 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px, and the one of 1280 px that measures the columns of a nine-digit value, are not a phone; the case of the nine-digit figure at 24 px is a measured report (a best effort, not a promise) of one cut, and the case that asserts that value is the one at 20 px",
   },
   "inline-confirm.e2e.ts": {
-    bare: 1,
+    bare: 0,
     coarse: 0,
-    from: 'test.describe("a confirmação da linha a 320 px com a letra do navegador em 20 px',
-    why: "the plain case holds the server's answer and reads the state of the buttons while the command runs, which does not depend on the size of anything",
+    from: 'test.describe("a confirmação da linha a 320 px com a letra do navegador em 20 px"',
+    why: "",
   },
   "listas-quadro-selo.e2e.ts": {
     bare: 0,

@@ -275,7 +275,70 @@ async function expectAnswersWhole(page: Page, box: Locator, labels: string[]) {
   await assertNoPageScroll(page);
 }
 
-test.describe("a confirmação da linha a 320 px com a letra do navegador em 20 px e o comando em andamento", () => {
+test("Categorias: enquanto a remoção corre, a caixa fica, Manter e Remover ficam desligados e Esc não fecha", async ({
+  page,
+}) => {
+  const requests: unknown[] = [];
+  let removed = false;
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await openScreen(page, "/categories", "Categorias", {
+    "category/delete": async (route) => {
+      requests.push((route.request().postDataJSON() as { json: unknown }).json);
+      await held;
+      removed = true;
+      await route.fulfill(
+        rpc({
+          category: { ...category(LONG_CATEGORY), status: "deleted" },
+          changed: true,
+        })
+      );
+    },
+    "category/list": async (route) => {
+      const { json } = route.request().postDataJSON() as {
+        json: { status: string };
+      };
+      await route.fulfill(
+        rpc({
+          categories:
+            json.status === "active" && !removed
+              ? [category(LONG_CATEGORY)]
+              : [],
+        })
+      );
+    },
+  });
+  const box = await askCategoryConfirmation(page);
+  const keep = box.getByRole("button", { name: "Manter categoria" });
+  const remove = box.getByRole("button", { name: "Remover categoria" });
+  await expect(keep).toBeEnabled();
+  await expect(remove).toBeEnabled();
+
+  await remove.click();
+  await expect.poll(() => requests.length).toBe(1);
+  await expect(keep).toBeDisabled();
+  await expect(remove).toBeDisabled();
+  await expect(box).toBeFocused();
+
+  await remove.click({ force: true });
+  await keep.click({ force: true });
+  await page.keyboard.press("Escape");
+  await expect(box).toBeVisible();
+  await expect(box).toBeFocused();
+  expect(requests).toHaveLength(1);
+
+  release();
+  await expect(box).toHaveCount(0);
+  await expect(page.getByText("removida;")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: `Mais ações para ${LONG_CATEGORY}` })
+  ).toHaveCount(0);
+  expect(requests).toHaveLength(1);
+});
+
+test.describe("a confirmação da linha a 320 px com a letra do navegador em 20 px", () => {
   skipOutsideChromium();
 
   reflowTest(
@@ -291,61 +354,4 @@ test.describe("a confirmação da linha a 320 px com a letra do navegador em 20 
       ]);
     }
   );
-
-  test("Categorias: enquanto a remoção corre, a caixa fica, Manter e Remover ficam desligados e Esc não fecha", async ({
-    page,
-  }) => {
-    const requests: unknown[] = [];
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await openScreen(page, "/categories", "Categorias", {
-      "category/delete": async (route) => {
-        requests.push(
-          (route.request().postDataJSON() as { json: unknown }).json
-        );
-        await held;
-        await route.fulfill(
-          rpc({
-            category: { ...category(LONG_CATEGORY), status: "deleted" },
-            changed: true,
-          })
-        );
-      },
-      "category/list": async (route) => {
-        const { json } = route.request().postDataJSON() as {
-          json: { status: string };
-        };
-        await route.fulfill(
-          rpc({
-            categories:
-              json.status === "active" ? [category(LONG_CATEGORY)] : [],
-          })
-        );
-      },
-    });
-    const box = await askCategoryConfirmation(page);
-    const keep = box.getByRole("button", { name: "Manter categoria" });
-    const remove = box.getByRole("button", { name: "Remover categoria" });
-    await expect(keep).toBeEnabled();
-    await expect(remove).toBeEnabled();
-
-    await remove.click();
-    await expect.poll(() => requests.length).toBe(1);
-    await expect(keep).toBeDisabled();
-    await expect(remove).toBeDisabled();
-    await expect(box).toBeFocused();
-
-    await remove.click({ force: true });
-    await keep.click({ force: true });
-    await page.keyboard.press("Escape");
-    await expect(box).toBeVisible();
-    expect(requests).toHaveLength(1);
-
-    release();
-    await expect(box).toHaveCount(0);
-    await expect(page.getByText("removida;")).toBeVisible();
-    expect(requests).toHaveLength(1);
-  });
 });
