@@ -440,6 +440,7 @@ function ProductDialogBody({
           <Button
             disabled={isPending}
             onClick={onCancel}
+            size="xl"
             type="button"
             variant="outline"
           >
@@ -450,6 +451,7 @@ function ProductDialogBody({
             aria-disabled={offlineEdit || undefined}
             disabled={isPending}
             form={PRODUCT_FORM_ID}
+            size="xl"
             type="submit"
           >
             {submitLabel}

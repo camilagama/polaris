@@ -464,7 +464,9 @@ function PhoneEditorContent({
         />
       </DialogBody>
       <DialogFooter>
-        <DialogClose render={<Button type="button" variant="outline" />}>
+        <DialogClose
+          render={<Button size="xl" type="button" variant="outline" />}
+        >
           Cancelar
         </DialogClose>
         {showApply ? (

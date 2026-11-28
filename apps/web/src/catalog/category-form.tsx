@@ -80,6 +80,7 @@ export function CategoryForm({
             <Button
               {...connectionControlProps(online)}
               disabled={isPending || tooLong}
+              size="xl"
               type="submit"
             >
               {isPending ? "Salvando…" : "Adicionar categoria"}
