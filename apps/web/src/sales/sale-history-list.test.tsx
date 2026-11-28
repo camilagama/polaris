@@ -109,6 +109,9 @@ describe("SaleStatusBadges fora da lista (o Detalhe)", () => {
   });
 });
 
+const BARE_SIZE_9 = /[\s"]size-9[\s"]/;
+const BARE_HIDDEN = /[\s"]hidden[\s"]/;
+const BARE_GRID = /[\s"]grid[\s"]/;
 const INITIALS_CIRCLE = /<span[^>]*data-row-initials=""[^>]*>/;
 
 describe("o círculo de iniciais da linha do Histórico", () => {
@@ -136,6 +139,9 @@ describe("o círculo de iniciais da linha do Histórico", () => {
     expect(circle).toContain("bg-muted");
     expect(circle).toContain("size-8");
     expect(circle).toContain("md:size-9");
+    expect(circle).not.toMatch(BARE_SIZE_9);
+    expect(circle).toMatch(BARE_HIDDEN);
+    expect(circle).not.toMatch(BARE_GRID);
     expect(circle).toContain("@max-[17.9rem]:hidden");
     expect(circle).toContain("min-[22.5rem]:grid");
   });

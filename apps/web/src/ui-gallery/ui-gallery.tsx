@@ -2200,7 +2200,9 @@ export function UiGallery() {
             <p className="max-w-prose text-muted-foreground text-support">
               O aviso, o quadro do ícone e o total que o <code>ListBlock</code>{" "}
               compõe. As telas que ainda não migraram os usam soltos, e a trava
-              (R4) não deixa entrar tela nova com eles.
+              (R4) não deixa entrar tela nova com eles. O círculo de iniciais (
+              <code>RowInitials</code>) é a exceção: as listas de pessoas e de
+              produtos o usam direto.
             </p>
             <div className="grid items-start gap-4 md:grid-cols-2">
               <ListNotice>
