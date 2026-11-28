@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
 import { EmptyState } from "@/ui/empty-state";
+import { HelpTip } from "@/ui/help-tip";
 import { ListBlock } from "@/ui/list-block";
 import { RetryButton } from "@/ui/retry-button";
 import { orpcClient } from "../../lib/orpc";
@@ -511,20 +512,22 @@ export function DevicesPage() {
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <TitleLine>
-          <ScreenTitle
-            className="focus-ring"
-            id={DEVICES_HEADING_ID}
-            ref={headingRef}
-            tabIndex={-1}
-          >
-            Aparelhos
-          </ScreenTitle>
+          <div className="flex items-center gap-1">
+            <ScreenTitle
+              className="focus-ring"
+              id={DEVICES_HEADING_ID}
+              ref={headingRef}
+              tabIndex={-1}
+            >
+              Aparelhos
+            </ScreenTitle>
+            <HelpTip about="Aparelhos">
+              Os aparelhos em que você usa o Polaris offline. Se perdeu um
+              celular ou computador, revogue o aparelho: o servidor deixa de
+              aceitar o que ele enviar.
+            </HelpTip>
+          </div>
         </TitleLine>
-        <p className="text-muted-foreground text-support">
-          Os aparelhos em que você usa o Polaris offline. Se perdeu um celular
-          ou computador, revogue o aparelho: o servidor deixa de aceitar o que
-          ele enviar.
-        </p>
       </header>
       {online ? null : (
         <Alert id={OFFLINE_NOTICE_ID} variant="warning">
