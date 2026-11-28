@@ -52,7 +52,7 @@ export function AppVersionLineView({ snapshot }: { snapshot: UpdateSnapshot }) {
         <p className="m-0">
           Nova versão pronta. Entra depois que as pendências forem resolvidas.{" "}
           <TextLink inline href="/attention">
-            Ver pendências
+            Ver Pendências
           </TextLink>
         </p>
       ) : null}

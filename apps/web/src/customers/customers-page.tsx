@@ -59,11 +59,8 @@ import {
   listLocalCustomers,
   toLocalCustomerRow,
 } from "./local-customers";
-import {
-  CustomerSearch,
-  CustomersHeader,
-  OfflineNotice,
-} from "./customers-page-parts";
+import { OfflineNotice } from "../app-shell/offline-notice";
+import { CustomerSearch, CustomersHeader } from "./customers-page-parts";
 
 const CUSTOMER_NOUN = ["cliente", "clientes"] as const;
 
@@ -621,7 +618,12 @@ export function CustomersPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <CustomersHeader newButton={newButton} />
-      {isOffline ? <OfflineNotice /> : null}
+      {isOffline ? (
+        <OfflineNotice>
+          Cadastrar e editar funciona e é enviado quando a conexão voltar;
+          arquivar, restaurar e anonimizar precisam de conexão.
+        </OfflineNotice>
+      ) : null}
       {/* while the form is open it covers this part of the screen: what the actions say is said inside it */}
       <ActionFeedback
         error={formOpen ? null : error}
