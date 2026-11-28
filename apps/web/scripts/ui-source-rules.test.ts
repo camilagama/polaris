@@ -2186,6 +2186,10 @@ export const RETRY_ELSEWHERE: readonly { file: string; why: string }[] = [
     why: "a ação de um comando guardado na fila de pendências, que o envia de novo: não relê uma tela",
   },
   {
+    file: "src/organization/closed-store-model.ts",
+    why: "o rótulo do botão do aviso da Loja encerrada, que vira Atualizando… e leva a ref de foco: o RetryButton não aceita os dois",
+  },
+  {
     file: "src/sign-in/password-texts.ts",
     why: "o rótulo do botão de contorno do login e do desafio (`EntryRetry`), página fora do shell",
   },

@@ -455,12 +455,13 @@ export function CustomerForm({
             <Button
               disabled={isPending}
               onClick={onCancel}
+              size="xl"
               type="button"
               variant="outline"
             >
               {editingCustomer ? "Cancelar edição" : "Cancelar"}
             </Button>
-            <Button disabled={isPending} type="submit">
+            <Button disabled={isPending} size="xl" type="submit">
               {submitLabelFor(isPending, editingCustomer)}
             </Button>
           </DialogFooter>

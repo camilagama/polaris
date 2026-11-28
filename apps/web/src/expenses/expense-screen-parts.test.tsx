@@ -126,6 +126,7 @@ const expense = (overrides: Partial<ExpenseReadModel>): ExpenseReadModel => ({
   ...overrides,
 });
 
+const CENTERED_LOAD_MORE = /justify-center[^>]*><button[^>]*>Carregar mais/;
 const EMPTY_NOTICE = /<p class="text-muted-foreground" role="status">([^<]*)</;
 
 describe("ExpenseList", () => {
@@ -297,6 +298,27 @@ describe("ExpenseList", () => {
       state({ count: 1, expenses: [expense({ recurringRuleId: "r1" })] })
     );
     expect(html).toContain("Recorrente");
+  });
+});
+
+describe("Carregar mais", () => {
+  const button = (html: string) => {
+    const at = html.indexOf("Carregar mais");
+    return html.slice(html.lastIndexOf("<button", at), at);
+  };
+
+  it("sits at the left under the frame, as in Estoque, never centered in a wrapper", () => {
+    const html = list(
+      state({ expenses: [expense({ id: "e1" })], nextCursor: "c1" })
+    );
+    expect(button(html)).toContain("justify-self-start");
+    expect(html).not.toMatch(CENTERED_LOAD_MORE);
+  });
+
+  it("is absent on the last page", () => {
+    expect(list(state({ expenses: [expense({ id: "e1" })] }))).not.toContain(
+      "Carregar mais"
+    );
   });
 });
 

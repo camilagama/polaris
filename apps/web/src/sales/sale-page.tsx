@@ -704,10 +704,13 @@ export function SalePage() {
       editByPerson((current) => removeItem(current, draftId)),
     [editByPerson]
   );
-  const handleAddAdjustment = useCallback(
-    () => editByPerson((current) => addAdjustment(current, newId())),
-    [editByPerson]
-  );
+  const handleAddAdjustment = useCallback(() => {
+    const draftId = newId();
+    editByPerson((current) => addAdjustment(current, draftId));
+    focusLater(() =>
+      document.getElementById(`sale-adjustment-${draftId}-kind`)?.focus()
+    );
+  }, [editByPerson]);
   const handleAdjustmentChange = useCallback(
     (draftId: string, changes: Partial<Omit<AdjustmentDraft, "draftId">>) =>
       editByPerson((current) => updateAdjustment(current, draftId, changes)),

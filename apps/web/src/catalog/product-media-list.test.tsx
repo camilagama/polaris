@@ -39,7 +39,7 @@ const base: Props = {
 const render = (overrides: Partial<Props> = {}) =>
   renderToStaticMarkup(<ProductMediaList {...base} {...overrides} />);
 
-const ALERT_DIALOG_TAG = /<div[^>]*role="alertdialog"[^>]*>/;
+const CONFIRM_TAG = /<div[^>]*role="group"[^>]*>/;
 const OFF = ' disabled=""';
 /** The tag of the button of an action of an image, as drawn: to say whether it is off. */
 function button(markup: string, label: string): string {
@@ -106,7 +106,9 @@ describe("the list of images of a product", () => {
     const html = render({
       confirm: { assetId: base.assets[1]?.assetId ?? "", kind: "remove" },
     });
-    expect(html).toContain('role="alertdialog"');
+    expect(html).toContain('role="group"');
+    expect(html).toContain('aria-label="Confirmar remoção de imagem 2"');
+    expect(html).not.toContain("alertdialog");
     expect(html).toContain("Remover a imagem 2?");
     expect(html).toContain("As variantes que a usam deixam de mostrá-la.");
     expect(html).toContain("Manter imagem");
@@ -128,7 +130,7 @@ describe("the list of images of a product", () => {
       const html = render({
         confirm: { assetId: base.assets[1]?.assetId ?? "", kind },
       });
-      const tag = ALERT_DIALOG_TAG.exec(html)?.[0] ?? "";
+      const tag = CONFIRM_TAG.exec(html)?.[0] ?? "";
       expect(tag).toContain('data-slot="inset-block"');
       expect(tag).toContain("ring-destructive/60");
     }

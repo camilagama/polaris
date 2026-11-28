@@ -431,6 +431,28 @@ describe("Data e ajustes numa linha fechada", () => {
     expect(html).not.toContain("datetime-local");
   });
 
+  it("Adicionar ajuste é a última linha da lista, de largura toda e borda tracejada (AddRowButton)", () => {
+    const html = renderPayment(
+      {
+        ...form,
+        adjustments: [
+          { draftId: "a1", kind: "discount", value: "5", valueType: "fixed" },
+        ],
+      },
+      false
+    );
+    const button = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)]
+      .map((match) => match[0])
+      .find((markup) => markup.includes("Adicionar ajuste"));
+    expect(button).toBeDefined();
+    expect(button).toContain("border-dashed");
+    expect(button).toContain("w-full");
+    expect(button).not.toContain("self-start");
+    expect(html.lastIndexOf("Ajuste 1")).toBeLessThan(
+      html.indexOf("Adicionar ajuste")
+    );
+  });
+
   it("a hora digitada sem ':' vale, e o erro de hora fica no campo Hora, não no Dia", () => {
     const typed = {
       ...form,

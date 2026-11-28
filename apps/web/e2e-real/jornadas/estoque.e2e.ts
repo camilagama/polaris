@@ -160,7 +160,7 @@ test("estoque: entrada com custo, saída maior que o saldo recusada e saldo inta
     })
     .click();
   await page.getByLabel("Quantidade recebida").fill("10");
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("12,50");
   await page.getByRole("button", { name: "Revisar" }).click();
   await page.getByRole("button", { name: "Confirmar recebimento" }).click();
   await expect.poll(balance).toEqual({ balance: 10, count: 1, movements: 10 });
@@ -293,7 +293,7 @@ test("estoque: informar custo do item com saldo muda a linha, a faixa e o Iníci
   ).toHaveCount(0);
 
   await informCandle.click();
-  const costField = page.getByLabel("Custo de cada unidade (R$)");
+  const costField = page.getByLabel("Custo de cada unidade", { exact: true });
   await expect(costField).toBeFocused();
   await expect(
     page.getByText("Para as 4 unidades que você tem agora.")
@@ -369,7 +369,7 @@ test("estoque: o custo médio aparece ao centavo na mensagem, na linha e na Vend
     })
     .click();
   await page.getByLabel("Quantidade recebida").fill("5");
-  await page.getByLabel("Custo unitário (R$)").fill("10,00");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("10,00");
   await page.getByRole("button", { name: "Revisar" }).click();
   await page.getByRole("button", { name: "Confirmar recebimento" }).click();
   await expect(
@@ -639,7 +639,7 @@ test("estoque: recebimento com data de ontem não reescreve o custo da venda ant
   await page.goto("/inventory");
   await openStockPanel(page, "Receber", product.productName);
   await page.getByLabel("Quantidade recebida").fill("10");
-  await page.getByLabel("Custo unitário (R$)").fill("20,03");
+  await page.getByLabel("Custo de cada unidade", { exact: true }).fill("20,03");
   await pickDate(page, "Data", yesterday);
   await reviewAndConfirm(page, "Confirmar recebimento");
   await expect(

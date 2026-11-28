@@ -431,7 +431,7 @@ describe("creating a category on the Categorias part", () => {
     );
 
     await screen.findByText("Embalagens");
-    await screen.findByText("Categoria “Embalagens” criada.");
+    await screen.findByText("Categoria “Embalagens” adicionada.");
     expect(createCategory).toHaveBeenCalledTimes(1);
     expect(list).toHaveBeenCalledTimes(before);
     expect(screen.getByText(THIRD_ROW)).toBeTruthy();

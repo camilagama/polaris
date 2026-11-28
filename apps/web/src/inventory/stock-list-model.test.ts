@@ -541,7 +541,7 @@ describe("views", () => {
     const filters = { ...defaultStockFilters, unknownCost: true };
     expect(stockEmptyMessage(filters)).toBe("Todas as variantes têm custo.");
     const offlineMessage =
-      "Sem internet. A lista de variantes sem custo só carrega com conexão.";
+      "Sem conexão. A lista de variantes sem custo não carrega agora.";
     expect(stockEmptyMessage(filters, true)).toBe(offlineMessage);
     expect(stockEmptyMessage({ ...filters, query: "azul" }, true)).toBe(
       offlineMessage
