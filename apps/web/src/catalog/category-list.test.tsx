@@ -98,8 +98,10 @@ describe("the list of categories without a connection (P-2)", () => {
     expect(confirm).toContain('aria-disabled="true"');
     expect(confirm).toContain(REASON);
     expect(confirm).not.toContain(OFF);
-    // "Cancelar" sends nothing: it stays as it was
-    expect(buttonTag(html, "Cancelar")).not.toContain('aria-disabled="true"');
+    // "Manter categoria" sends nothing: it stays as it was
+    expect(buttonTag(html, "Manter categoria")).not.toContain(
+      'aria-disabled="true"'
+    );
   });
 
   it("leaves the buttons as they were with a connection", () => {
@@ -120,6 +122,7 @@ describe("the list of categories without a connection (P-2)", () => {
   });
 });
 
+const INSET_BLOCK = /<div[^>]*data-slot="inset-block"[^>]*>/;
 const TITLE_H2 = /<h2[^>]*>Categorias cadastradas<\/h2>/;
 const LIST_NAMED_BY_TITLE = /<ul aria-labelledby="/;
 
@@ -242,6 +245,19 @@ describe("the list of categories", () => {
     expect(html).toContain("O histórico de vendas continua igual.");
     expect(html).toContain("“Calçados”");
     expect(html).toContain("Remover categoria</button>");
+  });
+
+  it("draws the removal as the destructive inset block, refusing with what stays", () => {
+    const html = render({ pendingDeleteId: category(2, "Calçados").id });
+    const block = INSET_BLOCK.exec(html);
+    expect(block?.[0]).toContain("ring-destructive/60");
+    expect(block?.[0]).toContain("focus-visible:outline-solid");
+    expect(block?.[0]).toContain('role="group"');
+    expect(block?.[0]).toContain('aria-label="Confirmar remoção de Calçados"');
+    expect(block?.[0]).toContain('tabindex="-1"');
+    expect(html).not.toContain("<fieldset");
+    expect(buttonTag(html, "Manter categoria")).toBeTruthy();
+    expect(html).not.toContain(">Cancelar</button>");
   });
 
   it("says what a row is doing, and locks the menu of that row while it does", () => {
