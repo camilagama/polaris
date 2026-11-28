@@ -8,8 +8,8 @@ import {
   costUnitsText,
   discardLockedStock,
   editStockField,
-  isStockDraftChanged,
   firstInvalidStockField,
+  isStockDraftChanged,
   isStockLocked,
   mapStockError,
   parseUnitCost,
@@ -170,7 +170,7 @@ describe("receive validation", () => {
     for (const quantity of ["0", "1,5", "-2", "abc"]) {
       expect(
         issuesOf(filled("receive", { ...receiveFields, quantity }))[0]
-      ).toMatchObject({ field: "quantity", empty: false });
+      ).toMatchObject({ empty: false, field: "quantity" });
     }
     expect(
       issuesOf(
@@ -280,7 +280,19 @@ describe("count validation", () => {
       { physicalQuantity: "0", valuationUnitCost: "5" },
       unknownCostTarget
     );
-    expect(issuesOf(zero)[0]).toMatchObject({ field: "valuationUnitCost" });
+    expect(issuesOf(zero)[0]).toMatchObject({
+      field: "valuationUnitCost",
+      message: expect.stringContaining("custo de cada unidade"),
+    });
+    const huge = filled(
+      "count",
+      { ...countFields, valuationUnitCost: "1".repeat(19) },
+      unknownCostTarget
+    );
+    expect(issuesOf(huge)[0]).toMatchObject({
+      field: "valuationUnitCost",
+      message: expect.stringContaining("custo de cada unidade"),
+    });
     const bad = filled(
       "count",
       { ...countFields, valuationUnitCost: "abc" },
@@ -307,7 +319,7 @@ describe("write-off validation", () => {
     });
     expect(
       issuesOf(filled("write_off", { quantity: "6", reasonCode: "lost" }))[0]
-    ).toMatchObject({ field: "quantity", empty: false });
+    ).toMatchObject({ empty: false, field: "quantity" });
     expect(issuesOf(filled("write_off", { quantity: "1" }))[0]).toMatchObject({
       empty: true,
       field: "reasonCode",

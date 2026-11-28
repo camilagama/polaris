@@ -437,7 +437,7 @@ function costIssue(
   if (parse.kind === "empty") {
     issue(issues, field, emptyMessage, true);
   } else if (parse.kind === "too_large") {
-    issue(issues, field, "O custo excede 18 dígitos inteiros.");
+    issue(issues, field, "O custo de cada unidade excede 18 dígitos inteiros.");
   } else {
     issue(
       issues,
@@ -516,7 +516,7 @@ function validateCount(
       issue(
         issues,
         "valuationUnitCost",
-        "O custo só vale com quantidade contada maior que zero."
+        "O custo de cada unidade só vale com quantidade contada maior que zero."
       );
       valuation = null;
     }
