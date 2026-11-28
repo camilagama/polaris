@@ -34,7 +34,7 @@ interface InlineConfirmProps {
 }
 
 const BUTTON_CLASS =
-  "h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center";
+  "h-auto! min-h-ctl-md min-w-0 shrink whitespace-normal py-1.5 text-center";
 
 /**
  * The confirmation of something that cannot be undone, asked in the row itself in place of the row's actions. It is a

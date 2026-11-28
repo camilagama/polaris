@@ -18,8 +18,8 @@ import { serveHealth, WORKER_MARK } from "./worker-mark";
  * The keyboard side of `InlineConfirm` (src/ui/inline-confirm.tsx) on the images panel of the products screen: the
  * box takes the focus when it opens and the keyboard sees it, Esc keeps the image and gives the focus back to the
  * button that asked while the dialog of the product stays open. The remove flow itself is proved in
- * `product-media-screen.e2e.ts`. The last block reads the confirmation of Categorias at 320 px with the browser
- * font at 20 px, and with the command held on the server: the box stays and both answers are off.
+ * `product-media-screen.e2e.ts`. The last block reads the confirmation of Clientes and of Categorias at 320 px with
+ * the browser font at 20 px, and Categorias with the command held on the server: the box stays and both answers are off.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -182,8 +182,24 @@ test("a confirmação aberta com o clique também leva o foco à caixa", async (
 });
 
 const REFLOW_TOUCH = 44;
+const LONG_CUSTOMER = "Bruno Carvalho de Albuquerque Montenegro Filho";
 const LONG_CATEGORY =
   "Acessórios para o verão com um nome bem longo que precisa quebrar sem estourar";
+
+const customer = {
+  anonymizedAt: null,
+  archivedAt: null,
+  createdAt: STAMP,
+  email: "bruno.carvalho.albuquerque.montenegro@exemplo.com.br",
+  id: id(61),
+  name: LONG_CUSTOMER,
+  notes: null,
+  organizationId: ORGANIZATION.id,
+  phone: "11 91234-5678",
+  status: "active",
+  updatedAt: STAMP,
+  version: 1,
+};
 
 const category = (name: string) => ({
   archivedAt: null,
@@ -235,9 +251,22 @@ async function openScreen(
   ).toBeVisible();
 }
 
+const CUSTOMER_LIST = {
+  "customer/list": answerWith({ customers: [customer] }),
+};
 const CATEGORY_LIST = {
   "category/list": answerWith({ categories: [category(LONG_CATEGORY)] }),
 };
+
+async function askCustomerConfirmation(page: Page) {
+  await page
+    .getByRole("button", { name: `Mais ações para ${LONG_CUSTOMER}` })
+    .click();
+  await page.getByRole("menuitem", { exact: true, name: "Anonimizar" }).click();
+  return page.getByRole("group", {
+    name: `Confirmar a anonimização de ${LONG_CUSTOMER}`,
+  });
+}
 
 async function askCategoryConfirmation(page: Page) {
   await page
@@ -340,6 +369,20 @@ test("Categorias: enquanto a remoção corre, a caixa fica, Manter e Remover fic
 
 test.describe("a confirmação da linha a 320 px com a letra do navegador em 20 px", () => {
   skipOutsideChromium();
+
+  reflowTest(
+    "Clientes: Manter cliente e Anonimizar definitivamente cabem na caixa, inteiros e do tamanho do toque",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await openScreen(page, "/customers", "Clientes", CUSTOMER_LIST);
+      await expectReflowFont(page);
+      const box = await askCustomerConfirmation(page);
+      await expectAnswersWhole(page, box, [
+        "Manter cliente",
+        "Anonimizar definitivamente",
+      ]);
+    }
+  );
 
   reflowTest(
     "Categorias: Manter categoria e Remover categoria cabem na caixa, inteiros e do tamanho do toque",
