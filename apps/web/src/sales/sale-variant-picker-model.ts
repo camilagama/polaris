@@ -153,7 +153,7 @@ export function pickerView(
       : {
           href: null,
           kind: "empty",
-          message: `Nenhuma variante encontrada para “${text}”. Confira o nome, a variante ou o SKU.`,
+          message: `Nenhuma variante com “${text}”. Confira o nome, a variante ou o SKU.`,
         };
   }
   const options = pickerOptions(load.value.entries);

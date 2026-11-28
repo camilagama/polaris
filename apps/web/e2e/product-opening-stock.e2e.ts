@@ -673,9 +673,7 @@ test("AC-26: uma busca sem resultado não oferece o cadastro", async ({
   await openScreen(page, { path: "/sales" });
   const search = page.getByLabel("Produto ou variante");
   await search.fill("zzz");
-  await expect(
-    page.getByText("Nenhuma variante encontrada para “zzz”.")
-  ).toBeVisible();
+  await expect(page.getByText("Nenhuma variante com “zzz”.")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Cadastrar produto" })
   ).toHaveCount(0);
