@@ -15,6 +15,7 @@ import {
 import { EmptyState } from "@/ui/empty-state";
 import { InlineConfirm } from "@/ui/inline-confirm";
 import { ListBlock } from "@/ui/list-block";
+import { RowInitials } from "@/ui/row-tile";
 import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
 import { productInitials } from "../catalog/product-search-model";
@@ -286,12 +287,9 @@ function CustomerMain({
   const hasContacts = Boolean(contacts.phone || contacts.email);
   const content = (
     <>
-      <span
-        aria-hidden="true"
-        className="grid size-9 shrink-0 place-items-center self-start rounded-full bg-muted font-medium text-muted-foreground text-xs"
-      >
+      <RowInitials className="self-start">
         {productInitials(customer.name)}
-      </span>
+      </RowInitials>
       <span className={ROW_BODY_CLASS}>
         <span className={ROW_TEXT_CLASS}>
           <span className="font-medium [overflow-wrap:anywhere]">

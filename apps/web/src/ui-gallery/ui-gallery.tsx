@@ -149,7 +149,7 @@ import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
 import { RetryButton } from "@/ui/retry-button";
-import { RowTile } from "@/ui/row-tile";
+import { RowInitials, RowTile } from "@/ui/row-tile";
 import { ScrollArea } from "@/ui/scroll-area";
 import { SearchField } from "@/ui/search-field";
 import { SectionTabs } from "@/ui/section-tabs";
@@ -2207,9 +2207,12 @@ export function UiGallery() {
                 <p>Nenhum cliente com essa busca.</p>
               </ListNotice>
               <div className="grid gap-4">
-                <RowTile>
-                  <UsersIcon />
-                </RowTile>
+                <div className="flex items-center gap-3">
+                  <RowTile>
+                    <UsersIcon />
+                  </RowTile>
+                  <RowInitials>AL</RowInitials>
+                </div>
                 <ListTotalFooter count="3 vendas" value="R$ 111,80" />
               </div>
             </div>

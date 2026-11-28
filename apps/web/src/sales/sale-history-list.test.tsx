@@ -108,3 +108,41 @@ describe("SaleStatusBadges fora da lista (o Detalhe)", () => {
     expect(html).not.toContain("sr-only");
   });
 });
+
+const INITIALS_CIRCLE = /<span[^>]*data-row-initials=""[^>]*>/;
+
+describe("o círculo de iniciais da linha do Histórico", () => {
+  const circleOf = (customerName: string | null) => {
+    const html = renderToStaticMarkup(
+      <SaleHistoryList
+        offline={false}
+        rows={historyRows({
+          hasMore: false,
+          list: "ready",
+          listError: null,
+          loadingMore: false,
+          listKey: "k",
+          moreError: null,
+          refresh: "idle",
+          sales: [sale(1, { customerId: "c1", customerName })],
+        })}
+      />
+    );
+    return html.match(INITIALS_CIRCLE)?.[0] ?? "";
+  };
+
+  it("com cliente tem fundo e as iniciais; a 32 px no celular, 36 a partir de md, e só aparece em 22,5 rem ou mais", () => {
+    const circle = circleOf("Ana Lima");
+    expect(circle).toContain("bg-muted");
+    expect(circle).toContain("size-8");
+    expect(circle).toContain("md:size-9");
+    expect(circle).toContain("@max-[17.9rem]:hidden");
+    expect(circle).toContain("min-[22.5rem]:grid");
+  });
+
+  it("sem cliente deixa o espaço sem fundo", () => {
+    const circle = circleOf(null);
+    expect(circle).not.toContain("bg-muted");
+    expect(circle).toContain("bg-transparent");
+  });
+});
