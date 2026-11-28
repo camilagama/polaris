@@ -150,6 +150,7 @@ export function ExpenseCategoryForm({
         <Button
           disabled={disabled}
           onClick={onCancel}
+          size="xl"
           type="button"
           variant="outline"
         >
@@ -158,6 +159,7 @@ export function ExpenseCategoryForm({
         <Button
           {...connectionControlProps(online, connectionDialogReasonId)}
           disabled={disabled}
+          size="xl"
           type="submit"
         >
           {editing ? "Salvar alterações" : "Adicionar categoria"}

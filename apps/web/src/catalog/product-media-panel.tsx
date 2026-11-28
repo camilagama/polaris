@@ -878,6 +878,7 @@ export function ProductMediaPanel({
           <Button
             className="max-[29.99rem]:w-full"
             disabled={!preparedFile || isPreparing || imagesBusy}
+            size="xl"
             type="submit"
           >
             {uploadButtonLabel}

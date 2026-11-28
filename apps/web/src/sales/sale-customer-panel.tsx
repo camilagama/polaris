@@ -181,6 +181,7 @@ function ChooseDialog({
             <Button
               disabled={submitting}
               onClick={onCancel}
+              size="xl"
               type="button"
               variant="outline"
             >
@@ -191,6 +192,7 @@ function ChooseDialog({
                 !action.enabled && action.hint ? hintId : undefined
               }
               aria-disabled={!action.enabled || undefined}
+              size="xl"
               type="submit"
             >
               {submitting ? action.label : actionButtonLabels[asking]}

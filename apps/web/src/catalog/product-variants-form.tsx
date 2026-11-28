@@ -237,7 +237,7 @@ function refusalIsShown(
 const PLAN_READ_TIMEOUT_MS = 5000;
 
 /** The label may be longer than the window with a large font: the button grows in height instead of past the box. */
-const WRAPPING_ACTION = "h-auto min-h-ctl-md whitespace-normal py-1";
+const WRAPPING_ACTION = "h-auto min-h-ctl-xl whitespace-normal py-1.5";
 
 type PlanView = Awaited<ReturnType<typeof orpcClient.billing.readPlan>>;
 
@@ -824,6 +824,7 @@ export function ProductVariantConfigurationForm({
           className={WRAPPING_ACTION}
           disabled={!allCombinations.canAdd}
           onClick={allCombinations.add}
+          size="xl"
           type="button"
           variant="outline"
         >
@@ -838,6 +839,7 @@ export function ProductVariantConfigurationForm({
             !tooLongReason &&
             (!validation.canSubmit || defaultVariantHasSku || busy)
           }
+          size="xl"
           type="submit"
         >
           {isPending ? "Salvando…" : "Salvar variantes"}

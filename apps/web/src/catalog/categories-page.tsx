@@ -124,7 +124,7 @@ export function CategoriesPage() {
           organizationId,
         });
         setCategoryName("");
-        setNotice(`Categoria “${category.name}” criada.`);
+        setNotice(`Categoria “${category.name}” adicionada.`);
         refresh();
       } catch (cause: unknown) {
         setError(categoryErrorMessage(cause, "create"));

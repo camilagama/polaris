@@ -383,6 +383,16 @@ describe("the total of the rows on the screen", () => {
     expect(last).not.toContain("há mais");
   });
 
+  it("writes the count with a thousands separator, beside the title and in the foot", () => {
+    const rows = Array.from({ length: 1234 }, (_, n) =>
+      expense({ id: `e${n}` })
+    );
+    const html = list(state({ count: 1234, expenses: rows, nextCursor: "c1" }));
+    expect(html).toContain('data-list-count="">1.234 despesas</p>');
+    expect(foot(html)).toContain("1.234 despesas · há mais");
+    expect(html).not.toContain("1234 despesas");
+  });
+
   it("is in the DOM with no rows, with the same lines (zero and no count text lost)", () => {
     const empty = list(state({}));
     expect(foot(empty)).toContain("R$ 0,00");

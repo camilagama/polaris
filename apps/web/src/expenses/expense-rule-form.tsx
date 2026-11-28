@@ -335,6 +335,7 @@ export function ExpenseRuleForm({
         <Button
           disabled={disabled}
           onClick={onCancel}
+          size="xl"
           type="button"
           variant="outline"
         >
@@ -342,8 +343,9 @@ export function ExpenseRuleForm({
         </Button>
         <Button
           {...connectionControlProps(online, connectionDialogReasonId)}
-          className="h-auto min-h-ctl-md whitespace-normal"
+          className="h-auto min-h-ctl-xl whitespace-normal"
           disabled={disabled}
+          size="xl"
           type="submit"
         >
           {submitLabel(saving, editing !== null)}

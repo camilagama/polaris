@@ -227,7 +227,9 @@ test("Categorias: criar deixa o cursor no campo, que se esvazia, e diz o resulta
   await field.fill("Acessórios");
   await expect(page.getByText("Informe o nome da categoria.")).toHaveCount(0);
   await field.press("Enter");
-  await expect(page.getByText("Categoria “Acessórios” criada.")).toBeVisible();
+  await expect(
+    page.getByText("Categoria “Acessórios” adicionada.")
+  ).toBeVisible();
   expect(created).toEqual([
     { name: "Acessórios", organizationId: ORGANIZATION.id },
   ]);
@@ -1055,7 +1057,7 @@ test("Clientes: a linha abre o cliente pelo clique ou pelo Enter, sem 'Editar' n
   await page.mouse.click(contact.x + 4, contact.y + contact.height / 2);
   const dialog = page.getByRole("dialog", { name: "Editar cliente" });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Cancelar edição" }).click();
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
   await expect(open).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(dialog).toBeVisible();

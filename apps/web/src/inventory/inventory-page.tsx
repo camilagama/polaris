@@ -1,5 +1,4 @@
 import type { InventoryBalanceReadModel } from "@polaris/contracts";
-import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PackageIcon from "lucide-react/dist/esm/icons/package";
 import {
   type MouseEvent,
@@ -12,7 +11,7 @@ import {
 } from "react";
 import { withoutRetryAsk } from "@/lib/retry-notice";
 import { cn } from "@/lib/utils";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button, buttonVariants } from "@/ui/button";
 import { Block } from "@/ui/block";
@@ -25,6 +24,7 @@ import { RetryButton } from "@/ui/retry-button";
 import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
+import { OfflineNotice } from "../app-shell/offline-notice";
 import { SCREEN_TITLE_CLASS, TitleLine } from "../app-shell/screen-title";
 import {
   ProductThumbnail,
@@ -108,18 +108,14 @@ function EntryNotFoundNotice({ unavailable }: { unavailable: boolean }) {
 /** Said at the top of the screen while there is no connection. */
 function OfflineStockNotice() {
   return (
-    <Alert variant="warning">
-      <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem conexão.</AlertTitle>
-      <AlertDescription>
-        Saldo do aparelho. Receber, contar e baixar vão quando a conexão voltar
-        (veja{" "}
-        <TextLink inline href="/attention">
-          Pendências
-        </TextLink>
-        ). Custo médio só com conexão.
-      </AlertDescription>
-    </Alert>
+    <OfflineNotice>
+      Saldo do aparelho. Receber, contar e baixar vão quando a conexão voltar
+      (veja{" "}
+      <TextLink inline href="/attention">
+        Pendências
+      </TextLink>
+      ). Custo médio só com conexão.
+    </OfflineNotice>
   );
 }
 
@@ -240,7 +236,9 @@ const LIST_TITLE = "Saldos em estoque";
 /** The sentence of a search or filter with no result, in the panel of the frame; nothing for the other states. */
 function frameNotice(view: StockListView) {
   return view.kind === "empty" ? (
-    <p className="text-muted-foreground">{view.message}</p>
+    <p className="text-muted-foreground" role="status">
+      {view.message}
+    </p>
   ) : null;
 }
 
