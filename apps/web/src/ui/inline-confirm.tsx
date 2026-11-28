@@ -6,7 +6,7 @@ import { Button } from "./button";
 import { InsetBlock } from "./inset-block";
 
 interface InlineConfirmProps {
-  /** The action, as in "Confirmar <action> de <object>": "remoção", "anonimização". */
+  /** The action, as in "Confirmar <action> de <object>": "remoção", "a anonimização". */
   action: string;
   /** Both buttons wait while the command runs. */
   busy?: boolean;
@@ -60,6 +60,11 @@ function InlineConfirm({
   useEffect(() => {
     focusLater(() => boxRef.current?.focus());
   }, []);
+  useEffect(() => {
+    if (busy) {
+      boxRef.current?.focus();
+    }
+  }, [busy]);
   const keep = useCallback(() => {
     onKeep();
     focusLater(() => opener()?.focus());

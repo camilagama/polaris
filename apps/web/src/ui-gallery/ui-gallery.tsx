@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { focusLater } from "@/lib/focus";
 import { cn } from "@/lib/utils";
 import { ActionStrip } from "@/ui/action-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -290,13 +291,18 @@ function GallerySegmentedFilter() {
   );
 }
 
-/** The search box of the lists, with text so that "Limpar busca" shows; it empties and gives the focus back. */
 const askButton = () => document.getElementById("gallery-inline-confirm-ask");
+
+/** The confirmation of a row, opened by "Remover…": keeping and confirming both close it, and the focus goes back. */
 
 function GalleryInlineConfirm() {
   const [asking, setAsking] = useState(false);
   const ask = useCallback(() => setAsking(true), []);
   const keep = useCallback(() => setAsking(false), []);
+  const confirm = useCallback(() => {
+    setAsking(false);
+    focusLater(() => askButton()?.focus());
+  }, []);
   if (!asking) {
     return (
       <Button
@@ -315,7 +321,7 @@ function GalleryInlineConfirm() {
       confirmLabel="Remover cliente"
       keepLabel="Manter cliente"
       object="Ana Lima"
-      onConfirm={keep}
+      onConfirm={confirm}
       onKeep={keep}
       opener={askButton}
     >
@@ -324,6 +330,7 @@ function GalleryInlineConfirm() {
   );
 }
 
+/** The search box of the lists, with text so that "Limpar busca" shows; it empties and gives the focus back. */
 function GallerySearch() {
   const [text, setText] = useState("Camiseta");
   return (

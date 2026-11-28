@@ -133,7 +133,11 @@ describe("InlineConfirm", () => {
   it("turns both buttons off while it runs, and Esc waits too", async () => {
     const { rerender } = render(<Harness />);
     const { user } = await openBox();
+    await user.click(screen.getByRole("button", { name: "Remover cliente" }));
     rerender(<Harness busy />);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("group"))
+    );
     for (const name of ["Manter cliente", "Remover cliente"]) {
       expect(
         (screen.getByRole("button", { name }) as HTMLButtonElement).disabled

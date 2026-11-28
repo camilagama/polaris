@@ -57,7 +57,7 @@ interface ProductMediaItemProps {
   index: number;
   onAsk: (assetId: string, kind: ConfirmKind) => void;
   onConfirm: (assetId: string, kind: ConfirmKind) => void;
-  onKeep: (assetId: string, kind: ConfirmKind) => void;
+  onKeep: () => void;
   onMove: (assetId: string, direction: MoveDirection) => void;
   organizationId: string;
   productName: string;
@@ -101,11 +101,6 @@ function ProductMediaItem({
       onConfirm(assetId, confirming);
     }
   }, [assetId, confirming, onConfirm]);
-  const handleKeep = useCallback(() => {
-    if (confirming) {
-      onKeep(assetId, confirming);
-    }
-  }, [assetId, confirming, onKeep]);
   const opener = useCallback(
     () =>
       document.querySelector<HTMLElement>(
@@ -154,7 +149,7 @@ function ProductMediaItem({
             keepLabel="Manter imagem"
             object={`imagem ${position}`}
             onConfirm={handleConfirm}
-            onKeep={handleKeep}
+            onKeep={onKeep}
             opener={opener}
           >
             {confirming === "remove"
@@ -217,7 +212,7 @@ interface ProductMediaListProps {
   confirm: ConfirmRequest | null;
   onAsk: (assetId: string, kind: ConfirmKind) => void;
   onConfirm: (assetId: string, kind: ConfirmKind) => void;
-  onKeep: (assetId: string, kind: ConfirmKind) => void;
+  onKeep: () => void;
   onMove: (assetId: string, direction: MoveDirection) => void;
   organizationId: string;
   productName: string;
