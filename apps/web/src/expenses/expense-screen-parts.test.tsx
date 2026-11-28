@@ -1,7 +1,6 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { EMPTY_TITLE_MAX } from "@/ui/empty-state";
 import { ExpenseList } from "./expense-list";
 import { MonthPicker } from "./month-picker";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
@@ -127,7 +126,7 @@ const expense = (overrides: Partial<ExpenseReadModel>): ExpenseReadModel => ({
   ...overrides,
 });
 
-const EMPTY_TITLE = /data-empty-title="" id="[^"]*">([^<]*)</;
+const EMPTY_NOTICE = /<p class="text-muted-foreground" role="status">([^<]*)</;
 
 describe("ExpenseList", () => {
   it("says it is loading on the first read, as a status, inside the frame with its title", () => {
@@ -148,7 +147,8 @@ describe("ExpenseList", () => {
     expect(loading).not.toContain("0 despesas");
     const empty = list(state({}));
     expect(empty).not.toContain("Carregando…");
-    expect(empty).toContain("data-empty-state");
+    expect(empty).toContain("data-list-block-notice");
+    expect(empty).not.toContain("data-empty-state");
     expect(empty).toContain('data-state="filtered-empty"');
   });
 
@@ -163,9 +163,9 @@ describe("ExpenseList", () => {
 
   it("the empty period is a short sentence only: the button that creates is the title line's, and no phrase names it", () => {
     const html = list(state({}));
-    const title = EMPTY_TITLE.exec(html)?.[1];
-    expect(title).toBe("Nenhuma despesa neste período.");
-    expect(title?.length).toBeLessThanOrEqual(EMPTY_TITLE_MAX);
+    expect(EMPTY_NOTICE.exec(html)?.[1]).toBe("Nenhuma despesa neste período.");
+    expect(html).not.toContain("data-empty-state");
+    expect(html).not.toContain('data-slot="empty-icon"');
     expect(html).not.toContain("<button");
     expect(html).not.toContain("Nova despesa");
     expect(html).not.toContain("Toque em");
@@ -177,7 +177,7 @@ describe("ExpenseList", () => {
       list(state({}), "active", "c1"),
       list(state({}), "voided", "c1"),
     ]) {
-      expect(EMPTY_TITLE.exec(html)?.[1]).toBe(
+      expect(EMPTY_NOTICE.exec(html)?.[1]).toBe(
         "Nenhuma despesa encontrada com estes filtros."
       );
       expect(html).toContain("Limpar filtros");
@@ -188,7 +188,7 @@ describe("ExpenseList", () => {
 
   it("the empty voided list says so with no button: the segmented, one touch away, is how to leave it", () => {
     const html = list(state({}), "voided");
-    expect(EMPTY_TITLE.exec(html)?.[1]).toBe(
+    expect(EMPTY_NOTICE.exec(html)?.[1]).toBe(
       "Nenhuma despesa anulada neste período."
     );
     expect(html).not.toContain("<button");

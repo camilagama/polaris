@@ -344,7 +344,7 @@ test("encerramento: encerra pela tela com os prazos do domínio, recusa tudo no 
     .click();
   await page
     .getByRole("dialog", { name: "Desfazer o encerramento?" })
-    .getByRole("button", { name: "Sim, desfazer" })
+    .getByRole("button", { name: "Desfazer encerramento" })
     .click();
   await page.waitForURL(REOPENED);
   const reopened = await organizationState(sql, organizationId);
