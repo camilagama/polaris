@@ -229,7 +229,7 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
 
   await list(page).getByRole("button", { name: "Atualizar" }).click();
   await expect(list(page)).toContainText(
-    "Sua cópia está pronta. Baixe até 31/10/2026 11:40."
+    "Sua cópia está pronta. Baixe até 31/10/2026, 11:40."
   );
   expect(calls.reads).toBe(2);
   const link = list(page).getByRole("link", {
