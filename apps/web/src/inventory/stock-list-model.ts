@@ -395,7 +395,7 @@ export function stockCoverIds(
 
 /** The device does not know which variants have no cost: it says so instead of an empty list. */
 const STOCK_UNKNOWN_COST_OFFLINE =
-  "Sem internet. A lista de variantes sem custo só carrega com conexão.";
+  "Sem conexão. A lista de variantes sem custo não carrega agora.";
 
 /** Whether the list of the variants without a cost is one the device cannot answer. */
 function unknownCostUnanswerable(
