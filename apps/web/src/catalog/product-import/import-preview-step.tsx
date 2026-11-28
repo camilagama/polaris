@@ -113,13 +113,14 @@ export function ImportPreviewStep({
       bodyRef={bodyRef}
       footer={
         <>
-          <Button onClick={onBack} type="button" variant="outline">
+          <Button onClick={onBack} size="xl" type="button" variant="outline">
             Voltar
           </Button>
           <Button
             aria-describedby={off ? offReason : undefined}
             aria-disabled={off || undefined}
             onClick={off ? undefined : onConfirm}
+            size="xl"
             type="button"
           >
             {importButtonLabel(count)}

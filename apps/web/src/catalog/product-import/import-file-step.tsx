@@ -73,13 +73,14 @@ export function ImportFileStep({
       bodyRef={bodyRef}
       footer={
         <>
-          <Button onClick={onCancel} type="button" variant="outline">
+          <Button onClick={onCancel} size="xl" type="button" variant="outline">
             Cancelar
           </Button>
           <Button
             aria-describedby={off ? offReason : undefined}
             aria-disabled={off || undefined}
             onClick={off ? undefined : onRead}
+            size="xl"
             type="button"
           >
             {reading ? "Lendo o arquivo…" : "Ver a prévia"}
@@ -98,6 +99,7 @@ export function ImportFileStep({
             aria-describedby={`${FILE_NAME_ID} ${FILE_HINT_ID}`}
             id={IMPORT_PICK_BUTTON_ID}
             onClick={handlePick}
+            size="xl"
             type="button"
             variant="outline"
           >

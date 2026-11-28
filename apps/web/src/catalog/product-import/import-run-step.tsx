@@ -76,6 +76,7 @@ function RunFooter({
       <Button
         aria-disabled={stopping || undefined}
         onClick={stopping ? undefined : onStop}
+        size="xl"
         type="button"
         variant="outline"
       >
@@ -88,6 +89,7 @@ function RunFooter({
       <Button
         aria-disabled={stopping || undefined}
         onClick={stopping ? undefined : onStop}
+        size="xl"
         type="button"
         variant="outline"
       >
@@ -98,7 +100,7 @@ function RunFooter({
   const reason = offline ? IMPORT_OFFLINE_ID : undefined;
   return (
     <>
-      <Button onClick={onFinish} type="button" variant="outline">
+      <Button onClick={onFinish} size="xl" type="button" variant="outline">
         Ver o resultado
       </Button>
       {skip ? (
@@ -106,6 +108,7 @@ function RunFooter({
           aria-describedby={reason ? `${reason} ${SKIP_HELP_ID}` : SKIP_HELP_ID}
           aria-disabled={offline || undefined}
           onClick={offline ? undefined : onSkip}
+          size="xl"
           type="button"
           variant="outline"
         >
@@ -116,6 +119,7 @@ function RunFooter({
         aria-describedby={reason}
         aria-disabled={offline || undefined}
         onClick={offline ? undefined : onContinue}
+        size="xl"
         type="button"
       >
         Continuar de onde parou
