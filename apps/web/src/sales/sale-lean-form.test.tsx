@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+  type AdjustmentDraft,
   createBlankSaleForm,
   evaluateSaleForm,
   type ItemDraft,
@@ -92,6 +93,7 @@ function renderItem(item: ItemDraft, canRemove = true): string {
   );
 }
 
+const BARE_ESCOLHA = />Escolha</;
 const CONTROL_TAG = /<(?:input|button)[^>]*>/g;
 const ID_ATTRIBUTE = /\sid="([^"]+)"/;
 
@@ -547,6 +549,28 @@ describe("Data e ajustes numa linha fechada", () => {
     expect(renderPayment(form, false)).toContain(
       "Nenhum perfil de pagamento ativo."
     );
+  });
+
+  it("os seletores dizem o que se escolhe: Escolha um perfil e Escolha como informar, nunca Escolha uma opção", () => {
+    const html = renderPayment(
+      {
+        ...form,
+        adjustments: [
+          {
+            draftId: "a1",
+            kind: "discount",
+            value: "",
+            // o tipo nunca fica vazio na tela; vazio aqui só faz o placeholder aparecer no HTML
+            valueType: "" as AdjustmentDraft["valueType"],
+          },
+        ],
+      },
+      false
+    );
+    expect(html).toContain("Escolha um perfil");
+    expect(html).toContain("Escolha como informar");
+    expect(html).not.toContain("Escolha uma opção");
+    expect(html).not.toMatch(BARE_ESCOLHA);
   });
 });
 
