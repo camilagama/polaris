@@ -308,13 +308,17 @@ describe("Carregar mais", () => {
   };
 
   it("sits at the left under the frame, as in Estoque, never centered in a wrapper", () => {
-    const html = list(state({ expenses: [expense({ id: "e1" })], nextCursor: "c1" }));
+    const html = list(
+      state({ expenses: [expense({ id: "e1" })], nextCursor: "c1" })
+    );
     expect(button(html)).toContain("justify-self-start");
     expect(html).not.toMatch(CENTERED_LOAD_MORE);
   });
 
   it("is absent on the last page", () => {
-    expect(list(state({ expenses: [expense({ id: "e1" })] }))).not.toContain("Carregar mais");
+    expect(list(state({ expenses: [expense({ id: "e1" })] }))).not.toContain(
+      "Carregar mais"
+    );
   });
 });
 
