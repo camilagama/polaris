@@ -357,6 +357,8 @@ describe("the list of customers", () => {
 
 const ANONYMIZED_BADGE = /data-slot="badge"[^>]*>Anonimizado</;
 
+const INITIALS_CIRCLE = /<span[^>]*data-row-initials=""[^>]*>/;
+
 describe("the state badge of a customer row", () => {
   const archived = () =>
     render({
@@ -378,7 +380,9 @@ describe("the state badge of a customer row", () => {
   });
 
   it("keeps the initials circle a circle", () => {
-    expect(archived()).toContain("rounded-full bg-muted");
+    const circle = archived().match(INITIALS_CIRCLE);
+    expect(circle?.[0]).toContain("rounded-full");
+    expect(circle?.[0]).toContain("bg-muted");
     expect(archived()).not.toContain("data-row-tile");
   });
 

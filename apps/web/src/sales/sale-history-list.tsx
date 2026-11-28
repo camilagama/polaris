@@ -1,8 +1,10 @@
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import type { ReactElement, ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { ListBlock } from "@/ui/list-block";
 import { Money } from "@/ui/money";
+import { RowInitials } from "@/ui/row-tile";
 import { Skeleton } from "@/ui/skeleton";
 import { isPlainClick } from "../lib/plain-click";
 import type { HistoryRow } from "./sale-history-model";
@@ -65,12 +67,14 @@ const SPLIT_METHODS_LINE = "@max-[17.9rem]:[&>span:last-child]:block";
 function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
   return (
     <>
-      <span
-        aria-hidden="true"
-        className={`@max-[17.9rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid ${row.customerInitials ? "bg-muted" : ""}`}
+      <RowInitials
+        className={cn(
+          "@max-[17.9rem]:hidden hidden size-8 md:size-9 min-[22.5rem]:grid",
+          !row.customerInitials && "bg-transparent"
+        )}
       >
         {row.customerInitials}
-      </span>
+      </RowInitials>
       <div
         className={`grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5 overflow-hidden ${WRAPPED_DATA}`}
       >

@@ -382,7 +382,7 @@ describe("o que trava as ações", () => {
 const COVER = "0199c2d0-0000-7000-8000-0000000000c1";
 const THUMB_BOX =
   /<span aria-hidden="true" class="[^"]*size-10 rounded-md[^"]*"/g;
-const MARKER_CIRCLE = /rounded-full/g;
+const MARKER_CIRCLE = /<span[^>]*data-row-initials=""[^>]*>/g;
 
 function idleLoader(): ThumbnailLoader {
   return new ThumbnailLoader({
@@ -413,8 +413,12 @@ describe("a capa na lista, atrás da flag", () => {
 
   it("sem escopo, cada linha tem o círculo de iniciais de hoje e nenhuma caixa de miniatura", () => {
     const markup = html({ products, total: 3 });
-    expect(markup.match(MARKER_CIRCLE)).toHaveLength(3);
-    expect(markup).toContain("size-9");
+    const circles = markup.match(MARKER_CIRCLE) ?? [];
+    expect(circles).toHaveLength(3);
+    for (const circle of circles) {
+      expect(circle).toContain("rounded-full");
+      expect(circle).toContain("size-9");
+    }
     expect(markup).not.toContain("data-thumbnail");
     expect(markup).not.toContain("<img");
   });

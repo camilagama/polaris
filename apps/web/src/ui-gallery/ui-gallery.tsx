@@ -149,7 +149,7 @@ import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
 import { RetryButton } from "@/ui/retry-button";
-import { RowTile } from "@/ui/row-tile";
+import { RowInitials, RowTile } from "@/ui/row-tile";
 import { ScrollArea } from "@/ui/scroll-area";
 import { SearchField } from "@/ui/search-field";
 import { SectionTabs } from "@/ui/section-tabs";
@@ -2200,16 +2200,21 @@ export function UiGallery() {
             <p className="max-w-prose text-muted-foreground text-support">
               O aviso, o quadro do ícone e o total que o <code>ListBlock</code>{" "}
               compõe. As telas que ainda não migraram os usam soltos, e a trava
-              (R4) não deixa entrar tela nova com eles.
+              (R4) não deixa entrar tela nova com eles. O círculo de iniciais (
+              <code>RowInitials</code>) é a exceção: as listas de pessoas e de
+              produtos o usam direto.
             </p>
             <div className="grid items-start gap-4 md:grid-cols-2">
               <ListNotice>
                 <p>Nenhum cliente com essa busca.</p>
               </ListNotice>
               <div className="grid gap-4">
-                <RowTile>
-                  <UsersIcon />
-                </RowTile>
+                <div className="flex items-center gap-3">
+                  <RowTile>
+                    <UsersIcon />
+                  </RowTile>
+                  <RowInitials>AL</RowInitials>
+                </div>
                 <ListTotalFooter count="3 vendas" value="R$ 111,80" />
               </div>
             </div>

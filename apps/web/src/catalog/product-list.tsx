@@ -6,6 +6,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { EmptyState } from "@/ui/empty-state";
 import { ListBlock } from "@/ui/list-block";
+import { RowInitials } from "@/ui/row-tile";
 import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
 import {
@@ -201,14 +202,7 @@ function RowMark({
       />
     );
   }
-  return (
-    <span
-      aria-hidden="true"
-      className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
-    >
-      {productInitials(product.name)}
-    </span>
-  );
+  return <RowInitials>{productInitials(product.name)}</RowInitials>;
 }
 
 function ProductRow({
