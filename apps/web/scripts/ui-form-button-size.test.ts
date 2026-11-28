@@ -48,8 +48,15 @@ interface Counts {
   submit: number;
 }
 
+const COMMENT_OR_STRING =
+  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
+
+const withoutComments = (text: string) =>
+  text.replace(COMMENT_OR_STRING, (_match, quoted?: string) => quoted ?? "");
+
 /** The opening tags of every `<Button`: the end is the first `>` outside braces and strings, so `=>` in a handler does not cut it. */
-function buttonTags(source: string): string[] {
+function buttonTags(rawSource: string): string[] {
+  const source = withoutComments(rawSource);
   const tags: string[] = [];
   let from = source.indexOf("<Button");
   while (from !== -1) {
@@ -143,18 +150,24 @@ describe("o botão principal dos formulários é size xl", () => {
   it("controle plantado: o Cancelar que troca de tamanho e o tamanho que vira variável reprovam", () => {
     const expected: Expected = { file: "planted.tsx", other: 1, submit: 1 };
     const submit = '<Button size="xl" type="submit">Salvar</Button>';
+    const cancel =
+      '<Button onClick={onCancel} size="xl" type="button">Cancelar</Button>';
     expect(
       problems(
         expected,
         `<Button onClick={onCancel} size="md" type="button">Cancelar</Button>${submit}`
       )
-    ).toHaveLength(1);
+    ).toEqual([
+      'planted.tsx: 0 botão(ões) size="xl" que não é de envio (o Cancelar da linha), esperado 1.',
+    ]);
     expect(
       problems(
         expected,
-        `<Button onClick={onCancel} size="xl" type="button">Cancelar</Button><Button size={size} type="submit">Salvar</Button>`
+        `${cancel}<Button size={size} type="submit">Salvar</Button>`
       )
-    ).toHaveLength(1);
+    ).toEqual([
+      'planted.tsx: 0 botão(ões) de envio em size="xl", esperado 1. O botão principal do formulário usa size="xl" (DESIGN.md).',
+    ]);
   });
 
   it("controle plantado: um botão xl a mais no arquivo pede a lista atualizada", () => {
@@ -164,7 +177,17 @@ describe("o botão principal dos formulários é size xl", () => {
         expected,
         '<Button size="xl" type="submit">A</Button><Button size="xl" type="button">B</Button>'
       )
-    ).toHaveLength(1);
+    ).toEqual([
+      'planted.tsx: 1 botão(ões) size="xl" que não é de envio (o Cancelar da linha), esperado 0.',
+    ]);
+  });
+
+  it("controle plantado: um botão escrito dentro de comentário não conta", () => {
+    expect(
+      xlCounts(`// <Button size="xl" type="submit">
+        /* <Button size="xl" type="button"> */
+        <Button type="submit">Salvar</Button>`)
+    ).toEqual({ other: 0, submit: 0 });
   });
 
   it("cada arquivo da lista existe uma vez só", () => {
