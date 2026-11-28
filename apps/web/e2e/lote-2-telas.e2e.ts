@@ -297,9 +297,7 @@ test("Categorias: renomear na própria linha leva o cursor ao campo, 'Cancelar' 
 
   await field.fill("Camisetas de algodão");
   await field.press("Enter");
-  const notice = page.getByText(
-    "Categoria renomeada para “Camisetas de algodão”."
-  );
+  const notice = page.getByText("Categoria “Camisetas de algodão” renomeada.");
   await expect(notice).toBeVisible();
   // the row that had the field is gone: the focus goes to what was done
   await expect(page.locator(":focus").filter({ has: notice })).toHaveCount(1);
@@ -374,9 +372,7 @@ test("Categorias a 360 px: renomear com o nome em branco diz que falta o nome no
   await expect(message).toHaveCount(0);
   await expect(field).not.toHaveAttribute("aria-invalid", "true");
   await save.click();
-  await expect(
-    page.getByText("Categoria renomeada para “Blusas”.")
-  ).toBeVisible();
+  await expect(page.getByText("Categoria “Blusas” renomeada.")).toBeVisible();
   expect(renamed).toEqual([
     { id: id(41), name: "Blusas", organizationId: ORGANIZATION.id },
   ]);
@@ -431,7 +427,7 @@ test("Categorias a 360 px: nome de 100 caracteres sem espaço quebra na linha, o
 
   await field.fill(newName);
   await save.click();
-  const notice = page.getByText(`Categoria renomeada para “${newName}”.`);
+  const notice = page.getByText(`Categoria “${newName}” renomeada.`);
   await expect(notice).toBeVisible();
   const noticeBox = await notice.boundingBox();
   expect((noticeBox?.x ?? 0) + (noticeBox?.width ?? 0)).toBeLessThanOrEqual(
@@ -503,7 +499,7 @@ test("Categorias: o nome passa de 100 caracteres, o campo diz quantos e nada é 
   ).toBeDisabled();
 });
 
-test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e confirmar remove dizendo o que fica", async ({
+test("Categorias: remover pede confirmação na linha, 'Manter categoria' desiste e confirmar remove dizendo o que fica", async ({
   page,
 }) => {
   const removed: unknown[] = [];
@@ -532,7 +528,7 @@ test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e conf
   await expect(confirmation).toContainText(
     "O histórico de vendas continua igual."
   );
-  await confirmation.getByRole("button", { name: "Cancelar" }).click();
+  await confirmation.getByRole("button", { name: "Manter categoria" }).click();
   await expect(confirmation).toHaveCount(0);
   expect(removed).toEqual([]);
 
@@ -710,6 +706,31 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await done.getByRole("button", { name: "Cadastrar outro" }).click();
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
+});
+
+test("Clientes: editar com conexão fecha o formulário e o aviso diz o nome que o servidor devolveu, como cadastrar, arquivar e restaurar", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [customer(1, "Ana Lima")] }),
+    "customer/update": reply({
+      changed: true,
+      customer: customer(1, "Ana Lima Souza", { version: 2 }),
+    }),
+  });
+  await page
+    .getByRole("button", { exact: true, name: "Editar Ana Lima" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await dialog.getByLabel("Nome", { exact: true }).fill("ana lima souza");
+  await dialog.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Cliente “Ana Lima Souza” atualizado." })
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({

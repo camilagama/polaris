@@ -18,7 +18,11 @@ import { MoneyText } from "@/ui/hidden-values";
 import { InsetBlock } from "@/ui/inset-block";
 import { ActionStrip } from "@/ui/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
-import { type TitleBack, TitleLine } from "../app-shell/screen-title";
+import {
+  SCREEN_TITLE_CLASS,
+  type TitleBack,
+  TitleLine,
+} from "../app-shell/screen-title";
 import {
   type AttentionAction,
   type AttentionItem,
@@ -132,7 +136,7 @@ export function AttentionFrame({
   withSubtitle?: boolean;
 }) {
   const title = (
-    <h1 className="text-title" id="attention-title">
+    <h1 className={SCREEN_TITLE_CLASS} id="attention-title">
       Pendências
     </h1>
   );

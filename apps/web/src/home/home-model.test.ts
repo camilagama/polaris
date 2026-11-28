@@ -778,7 +778,7 @@ describe("newSaleOfflineText (AC-30)", () => {
       "Sem conexão. A venda é enviada quando a conexão voltar."
     );
     expect(newSaleOfflineText(false, false)).toBe(
-      "Sem conexão: para vender é preciso conexão."
+      "Sem conexão. Não dá para vender agora."
     );
   });
 

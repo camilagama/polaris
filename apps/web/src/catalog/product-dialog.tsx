@@ -430,7 +430,7 @@ function ProductDialogBody({
             className={`${FORM_NOTICE_CLASS} text-muted-foreground text-support`}
             id={OFFLINE_REASON_ID}
           >
-            Sem conexão: salvar precisa de conexão.
+            Sem conexão. Não dá para salvar agora.
           </p>
         ) : null}
         <DialogFooter>

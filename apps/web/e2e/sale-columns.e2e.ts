@@ -683,7 +683,7 @@ for (const [label, width, columns] of [
       .check();
     await page.getByRole("button", { name: "Confirmar venda" }).click();
     const discard = page.getByRole("button", {
-      name: "Descartar esta venda e começar outra",
+      name: "Descartar e começar outra venda",
     });
     await expect(discard).toBeVisible();
     await discard.click();

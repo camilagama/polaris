@@ -399,7 +399,7 @@ function FailureNotice({
               type="button"
               variant="outline"
             >
-              Atualizar dados e revisar a venda
+              Atualizar e revisar a venda
             </Button>
           ) : null}
         </AlertDescription>
@@ -474,7 +474,7 @@ function FailureNotice({
               type="button"
               variant="outline"
             >
-              Descartar esta venda e começar outra
+              Descartar e começar outra venda
             </Button>
           </>
         )}

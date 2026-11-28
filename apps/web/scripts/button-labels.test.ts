@@ -43,20 +43,7 @@ interface AllowedLabel {
  * button. The line is the one of the `>` that closes the button's opening tag (the label text is on the next
  * line); when only it moved, set the entry's `line` to the one the violation reports.
  */
-const ALLOWED: readonly AllowedLabel[] = [
-  {
-    file: "sales/sale-summary-panel.tsx",
-    label: "Atualizar dados e revisar a venda",
-    line: 401,
-    reason: "a decidir (Petković/Bruno)",
-  },
-  {
-    file: "sales/sale-summary-panel.tsx",
-    label: "Descartar esta venda e começar outra",
-    line: 476,
-    reason: "a decidir (Petković/Bruno)",
-  },
-];
+const ALLOWED: readonly AllowedLabel[] = [];
 
 interface LabelFinding {
   file: string;
@@ -291,14 +278,14 @@ describe("button labels have at most 5 words and no final period", () => {
   it("plant: 6 words and a final period fail, 5 words pass", () => {
     const root = plant({
       "sales/long.tsx":
-        "export const A = () => <Button>Descartar esta venda e começar outra</Button>;",
+        "export const A = () => <Button>Cancelar esta venda e começar outra</Button>;",
       "sales/period.tsx":
         "export const B = () => <Button>Manter meta.</Button>;",
       "sales/five.tsx":
         "export const C = () => <Button>Escolher outra forma de pagamento</Button>;",
     });
     expect(labelProblems(root, []).violations).toEqual([
-      'sales/long.tsx:1: "Descartar esta venda e começar outra" (6 words, the limit is 5)',
+      'sales/long.tsx:1: "Cancelar esta venda e começar outra" (6 words, the limit is 5)',
       'sales/period.tsx:1: "Manter meta." (ends with a period)',
     ]);
   });
@@ -306,21 +293,21 @@ describe("button labels have at most 5 words and no final period", () => {
   it("plant: a label split across lines and after an arrow function prop is counted", () => {
     const root = plant({
       "sales/multi.tsx":
-        "const A = () => (\n  <Button onClick={() => close()}>\n    Descartar esta venda\n    e começar outra\n  </Button>\n);",
+        "const A = () => (\n  <Button onClick={() => close()}>\n    Cancelar esta venda\n    e começar outra\n  </Button>\n);",
     });
     expect(labelProblems(root, []).violations).toEqual([
-      'sales/multi.tsx:2: "Descartar esta venda e começar outra" (6 words, the limit is 5)',
+      'sales/multi.tsx:2: "Cancelar esta venda e começar outra" (6 words, the limit is 5)',
     ]);
   });
 
   it("plant: an allowed label passes, and an entry that no longer matches fails", () => {
     const root = plant({
       "sales/long.tsx":
-        "export const A = () => <Button>Descartar esta venda e começar outra</Button>;",
+        "export const A = () => <Button>Cancelar esta venda e começar outra</Button>;",
     });
     const entry = {
       file: "sales/long.tsx",
-      label: "Descartar esta venda e começar outra",
+      label: "Cancelar esta venda e começar outra",
       line: 1,
       reason: "a decidir (Petković/Bruno)",
     };
@@ -331,7 +318,7 @@ describe("button labels have at most 5 words and no final period", () => {
     expect(labelProblems(root, [{ ...entry, line: 2 }])).toEqual({
       unused: ["sales/long.tsx:2"],
       violations: [
-        'sales/long.tsx:1: "Descartar esta venda e começar outra" (6 words, the limit is 5)',
+        'sales/long.tsx:1: "Cancelar esta venda e começar outra" (6 words, the limit is 5)',
       ],
     });
     const fixed = plant({

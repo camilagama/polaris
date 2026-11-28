@@ -188,8 +188,9 @@ function DeleteBody({
         </DialogTitle>
         <DialogDescription render={<div />}>
           <p>
-            Não tem volta. As vendas antigas continuam no histórico, com o nome
-            que o item tinha. {sentence} O SKU não poderá ser usado de novo.
+            Não dá para desfazer. As vendas antigas continuam no histórico, com
+            o nome que o item tinha. {sentence} O SKU não poderá ser usado de
+            novo.
           </p>
         </DialogDescription>
       </DialogHeader>
@@ -241,7 +242,7 @@ function DeleteBody({
           {NAME_REASON_TEXT}
         </span>
       ) : null}
-      <DialogFooter>
+      <DialogFooter className="gap-3">
         <Button
           aria-disabled={pending || undefined}
           onClick={pending ? undefined : onCancel}

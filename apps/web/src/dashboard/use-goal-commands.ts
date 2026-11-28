@@ -77,9 +77,7 @@ export function useGoalCommands(
           organizationId,
           target: input.target,
         });
-        return result.changed
-          ? "Meta atualizada."
-          : "Nada mudou: a meta já estava assim.";
+        return result.changed ? "Meta atualizada." : "Nada mudou.";
       }),
     [organizationId, run]
   );
