@@ -181,7 +181,6 @@ function variantLabel(variant: {
 
 type FocusRequest =
   | { assetId: string; fallbacks: readonly string[]; type: "item" }
-  | { assetId: string; type: "keep" }
   | { type: "file" }
   | { type: "heading" };
 
@@ -322,12 +321,6 @@ export function ProductMediaPanel({
       fileButtonRef.current?.scrollIntoView?.({ block: "center" });
     } else if (request.type === "heading") {
       listHeadingRef.current?.focus();
-    } else if (request.type === "keep") {
-      panelRef.current
-        ?.querySelector<HTMLElement>(
-          `[data-asset-id="${request.assetId}"] [data-media-action="keep"]`
-        )
-        ?.focus();
     } else {
       for (const action of request.fallbacks) {
         const target = panelRef.current?.querySelector<HTMLButtonElement>(
@@ -666,17 +659,15 @@ export function ProductMediaPanel({
       setError(null);
       setNotice(null);
       setConfirm({ assetId, kind });
-      focusRequest.current = { assetId, type: "keep" };
     },
     [isUploading]
   );
 
-  const handleKeep = useCallback((assetId: string, kind: ConfirmKind) => {
+  const handleKeep = useCallback(() => {
     if (commandLock.current) {
       return;
     }
     setConfirm(null);
-    focusRequest.current = { assetId, fallbacks: [kind], type: "item" };
   }, []);
 
   const handleConfirm = useCallback(

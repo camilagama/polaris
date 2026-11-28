@@ -388,16 +388,15 @@ export function ExpenseList({
       {loadError}
       {block}
       {state.nextCursor === null ? null : (
-        <div className="flex justify-center pt-2">
-          <Button
-            disabled={state.isLoadingMore || busyKey !== null}
-            onClick={onLoadMore}
-            type="button"
-            variant="outline"
-          >
-            {state.isLoadingMore ? "Carregando…" : "Carregar mais"}
-          </Button>
-        </div>
+        <Button
+          className="justify-self-start"
+          disabled={state.isLoadingMore || busyKey !== null}
+          onClick={onLoadMore}
+          type="button"
+          variant="outline"
+        >
+          {state.isLoadingMore ? "Carregando…" : "Carregar mais"}
+        </Button>
       )}
     </div>
   );

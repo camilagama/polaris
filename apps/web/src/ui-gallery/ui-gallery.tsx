@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { focusLater } from "@/lib/focus";
 import { cn } from "@/lib/utils";
 import { ActionStrip } from "@/ui/action-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -124,6 +125,7 @@ import {
   InputGroupInput,
   InputGroupTextarea,
 } from "@/ui/input-group";
+import { InlineConfirm } from "@/ui/inline-confirm";
 import { InsetBlock } from "@/ui/inset-block";
 import { DeltaChip, HeroPercent, HeroValue, KpiTile } from "@/ui/kpi-card";
 import { Label } from "@/ui/label";
@@ -286,6 +288,45 @@ function GallerySegmentedFilter() {
         />
       </div>
     </div>
+  );
+}
+
+const askButton = () => document.getElementById("gallery-inline-confirm-ask");
+
+/** The confirmation of a row, opened by "Remover…": keeping and confirming both close it, and the focus goes back. */
+
+function GalleryInlineConfirm() {
+  const [asking, setAsking] = useState(false);
+  const ask = useCallback(() => setAsking(true), []);
+  const keep = useCallback(() => setAsking(false), []);
+  const confirm = useCallback(() => {
+    setAsking(false);
+    focusLater(() => askButton()?.focus());
+  }, []);
+  if (!asking) {
+    return (
+      <Button
+        id="gallery-inline-confirm-ask"
+        onClick={ask}
+        type="button"
+        variant="outline"
+      >
+        Remover…
+      </Button>
+    );
+  }
+  return (
+    <InlineConfirm
+      action="remoção"
+      confirmLabel="Remover cliente"
+      keepLabel="Manter cliente"
+      object="Ana Lima"
+      onConfirm={confirm}
+      onKeep={keep}
+      opener={askButton}
+    >
+      Remover tira a ficha da lista. Não dá para desfazer.
+    </InlineConfirm>
   );
 }
 
@@ -2181,9 +2222,10 @@ export function UiGallery() {
               cheio, sem borda, para o dado que se lê (com{" "}
               <code>tone="destructive"</code>, a confirmação do que não tem
               volta, na própria linha: o mesmo cinza com um anel de 1 px em
-              perigo); o grupo de campos (<code>FieldGroup</code>) é o{" "}
-              <code>fieldset</code> com borda de 1 px e sem fundo, para os
-              campos de um formulário.
+              perigo; a peça <code>InlineConfirm</code> o monta, com a frase, os
+              dois botões e o foco, e o exemplo abre com "Remover…"); o grupo de
+              campos (<code>FieldGroup</code>) é o <code>fieldset</code> com
+              borda de 1 px e sem fundo, para os campos de um formulário.
             </p>
             <div className="grid items-start gap-4 md:grid-cols-2">
               <InsetBlock data-gallery-panel="inset">
@@ -2201,6 +2243,12 @@ export function UiGallery() {
                   o mesmo cinza, com anel de perigo.
                 </p>
               </InsetBlock>
+              <div
+                className="md:col-span-2"
+                data-gallery-panel="inline-confirm"
+              >
+                <GalleryInlineConfirm />
+              </div>
               <FieldGroup data-gallery-panel="group">
                 <FieldLegend>Contato</FieldLegend>
                 <Field>

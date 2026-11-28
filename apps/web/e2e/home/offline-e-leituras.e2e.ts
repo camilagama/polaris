@@ -329,7 +329,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await openWithCopy(page, server);
     const sentence = page
       .locator("[data-home-period]")
-      .getByText("Sem conexão: só este mês e o anterior.");
+      .getByText("Sem conexão. Só dá para ver este mês e o anterior.");
     await page.context().setOffline(true);
     await expect(sentence).toBeVisible();
     await expect(sentence).not.toHaveAttribute("aria-hidden", "true");
@@ -347,7 +347,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     });
     await expect(periodButton(page)).toBeDisabled();
     await expect(
-      page.getByText("Sem conexão: só este mês e o anterior.")
+      page.getByText("Sem conexão. Só dá para ver este mês e o anterior.")
     ).toHaveCount(0);
   });
 

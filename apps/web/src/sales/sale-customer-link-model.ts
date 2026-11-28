@@ -2,6 +2,7 @@ import type {
   CustomerReadModel,
   SaleCustomerLinkReadModel,
 } from "@polaris/contracts";
+import { formatInstant } from "../lib/format";
 import {
   isServerFailureCode,
   legalAcceptanceMessage,
@@ -790,16 +791,6 @@ export interface HistoryRow {
   key: string;
   text: string;
   version: number;
-}
-
-const instantFormatter = new Intl.DateTimeFormat("pt-BR", {
-  dateStyle: "short",
-  timeStyle: "short",
-});
-
-function formatInstant(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : instantFormatter.format(date);
 }
 
 /** The version history, newest first, with customer names resolved. */

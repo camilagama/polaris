@@ -697,7 +697,9 @@ test.describe("estoque", () => {
       })
       .click();
     await page.getByLabel("Quantidade recebida").fill("10");
-    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page
+      .getByLabel("Custo de cada unidade", { exact: true })
+      .fill("12,50");
     await page.getByRole("button", { name: "Revisar" }).click();
     await page.getByRole("button", { name: "Confirmar recebimento" }).click();
 
@@ -1041,7 +1043,7 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
     await expect(
-      page.getByText("estes são os perfis da última vez com conexão")
+      page.getByText("Estes são os perfis da última leitura")
     ).toBeVisible();
 
     await fillShirtSale(page, 1);

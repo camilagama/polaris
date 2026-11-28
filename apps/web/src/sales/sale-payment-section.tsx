@@ -1177,7 +1177,7 @@ export function PaymentSection({
           )}
           {offline ? (
             <p className="-mt-3 text-muted-foreground text-support" role="note">
-              Sem conexão: estes são os perfis da última vez com conexão.{" "}
+              Sem conexão. Estes são os perfis da última leitura.{" "}
               {splitOn
                 ? "Se o perfil de uma parte mudar até o servidor confirmar a venda, ela é recusada inteira e fica em Pendências para você refazer com as duas partes."
                 : "Se o perfil mudar até o servidor confirmar a venda, ela é recusada e você pode reenviá-la sem perfil em Pendências."}

@@ -244,7 +244,9 @@ export const productStates = {
   async media(page: Page) {
     await openMediaPanel(page);
     await page.getByRole("button", { name: "Remover imagem 2" }).click();
-    await page.getByRole("alertdialog").waitFor();
+    await page
+      .getByRole("group", { name: "Confirmar remoção de imagem 2" })
+      .waitFor();
     await showScreenAlone(page);
   },
 

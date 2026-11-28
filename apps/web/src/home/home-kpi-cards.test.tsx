@@ -390,7 +390,8 @@ describe("the cards without a connection and without a copy", () => {
 const SALES_IN_SEPTEMBER = /^Vendas em setembro/;
 const SALES_OF_PERIOD = /^Vendas do período/;
 const CARD_ID = /^id="[^"]*"/;
-const SENTENCE = /<p([^>]*)>Sem conexão: só este mês e o anterior\./;
+const SENTENCE =
+  /<p([^>]*)>Sem conexão\. Só dá para ver este mês e o anterior\./;
 
 describe("o nome do cartão de Vendas em cada período", () => {
   const periodOf = (from: string, to: string) =>
@@ -464,6 +465,6 @@ describe("a frase de sem conexão e o aviso do período, sob as ações do títu
   it("o aviso do período aparece sozinho, sem a frase, quando há conexão", () => {
     const markup = notes(false, false, "Mostrando os números de 22/10");
     expect(markup).toContain("Mostrando os números de 22/10");
-    expect(markup).not.toContain("Sem conexão: só este mês");
+    expect(markup).not.toMatch(SENTENCE);
   });
 });

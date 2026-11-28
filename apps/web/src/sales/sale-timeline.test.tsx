@@ -12,9 +12,10 @@ const ID = "00000000-0000-4000-8000-000000000070";
 const ITEM_LABEL = "Camiseta — Azul / M";
 const CANCEL_NOTE = "Cliente desistiu da compra";
 const RETURN_NOTE = "Veio rasgada";
-const CANCELLED_LINE = /^Cancelada, \d{1,2} jun \d{2}:\d{2}$/;
-const REGISTERED_LINE = /^Confirmada no servidor, \d{1,2} jun \d{2}:\d{2}$/;
-const SALE_LINE = /^Venda feita, \d{1,2} jun \d{2}:\d{2}$/;
+const CANCELLED_LINE = /^Cancelada, \d{2}\/06\/2026,? \d{2}:\d{2}$/;
+const REGISTERED_LINE =
+  /^Confirmada no servidor, \d{2}\/06\/2026,? \d{2}:\d{2}$/;
+const SALE_LINE = /^Venda feita, \d{2}\/06\/2026,? \d{2}:\d{2}$/;
 const OL = /<ol[\s>]/g;
 const CANCELLED_NOTE = /<p>(O registro original[^<]*)<\/p>/;
 const LI = /<li[\s>]/g;
