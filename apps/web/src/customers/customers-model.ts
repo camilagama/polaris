@@ -29,6 +29,11 @@ export const CONTACT_REQUIRED_TEXT =
   "Informe ao menos um telefone ou e-mail para o cliente.";
 export const NAME_REQUIRED_TEXT = "Informe o nome do cliente.";
 
+/** What a saved edit says: the name the server answered with, or the one fixed phrase when it changed nothing. */
+export function editedCustomerNotice(changed: boolean, name: string): string {
+  return changed ? `Cliente “${name}” atualizado.` : "Nada mudou.";
+}
+
 const MOBILE_OR_LANDLINE = /^(\d\d)(\d{4,5})(\d{4})$/;
 
 /**
