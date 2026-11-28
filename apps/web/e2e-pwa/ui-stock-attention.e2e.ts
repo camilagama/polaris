@@ -403,9 +403,7 @@ test.describe("Estoque, a lista na moldura", () => {
     const frame = page.getByRole("region", { name: "Saldos em estoque" });
     await expect(frame).toHaveAttribute("data-state", "filtered-empty");
     await expect(frame.locator("[data-list-count]")).toHaveText("0 variantes");
-    await expect(
-      frame.getByText("Nenhuma variante encontrada para “zzz”.")
-    ).toBeVisible();
+    await expect(frame.getByText("Nenhuma variante com “zzz”.")).toBeVisible();
     await expect(frame.getByRole("list")).toHaveCount(0);
   });
 

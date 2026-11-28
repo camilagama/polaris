@@ -418,7 +418,7 @@ export function stockEmptyMessage(
     return STOCK_UNKNOWN_COST_OFFLINE;
   }
   if (query !== "") {
-    return `Nenhuma variante encontrada para “${query}”.`;
+    return `Nenhuma variante com “${query}”.`;
   }
   if (filters.unknownCost) {
     return filters.stock === "all"
