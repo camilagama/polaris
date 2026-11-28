@@ -336,7 +336,7 @@ function ChosenItemFields({
             label="Preço cobrado"
             maxLength={22}
             onChange={onCharged}
-            placeholder="49,90"
+            placeholder="Ex.: 49,90"
             value={item.chargedUnitPrice}
           />
           <TextField
@@ -348,7 +348,7 @@ function ChosenItemFields({
             label="Preço de tabela"
             maxLength={22}
             onChange={onListed}
-            placeholder="59,90"
+            placeholder="Ex.: 59,90"
             value={item.listedUnitPrice}
           />
         </div>

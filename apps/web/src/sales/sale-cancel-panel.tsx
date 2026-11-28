@@ -259,7 +259,7 @@ export function SaleCancelPanel({
             <ReasonFields
               disabled={confirming}
               errors={errors}
-              legend="Motivo do cancelamento (opcional)"
+              legend="Motivo do cancelamento"
               noteCounter={noteCounterText(draft)}
               onNoteChange={handleNoteChange}
               onReasonChange={handleReasonChange}

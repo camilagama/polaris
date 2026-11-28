@@ -66,7 +66,7 @@ function targetAddon(kind: GoalKind): string | undefined {
 }
 
 function targetPlaceholder(kind: GoalKind): string {
-  return kind === "sale_count" ? "50" : "0,00";
+  return kind === "sale_count" ? "50" : "Ex.: 5000,00";
 }
 
 function targetInputMode(kind: GoalKind): "decimal" | "numeric" {
