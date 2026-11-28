@@ -93,7 +93,7 @@ function RefusalAlert({ onGoToStock, refusal, stockHref }: RefusalProps) {
           <>
             {" "}
             <a className={INLINE_LINK} href={stockHref} onClick={onGoToStock}>
-              Ir ao Estoque
+              Ver estoque
             </a>
           </>
         ) : null}

@@ -1642,7 +1642,7 @@ test("saldo diferente de zero: a mensagem diz quanto há e leva ao Estoque, e o 
   await expect(dialog.getByRole("alert")).toContainText(
     `Não dá para excluir “${JACKET}” porque ele ainda tem 3 em estoque. Zere o estoque na baixa ou na contagem e tente de novo.`
   );
-  const toStock = dialog.getByRole("link", { name: "Ir ao Estoque" });
+  const toStock = dialog.getByRole("link", { name: "Ver estoque" });
   await expect(toStock).toHaveAttribute("href", STOCK_ADDRESS);
   await expect(
     dialog.getByLabel("Digite o nome do produto para confirmar")
