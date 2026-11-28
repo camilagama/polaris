@@ -271,11 +271,7 @@ export function DeviceItem({
             Revogar
           </Button>
           <Dialog onOpenChange={handleOpenChange} open={confirming}>
-            <DialogContent
-              className="sm:max-w-md"
-              finalFocus={finalFocus}
-              showCloseButton={false}
-            >
+            <DialogContent finalFocus={finalFocus} showCloseButton={false}>
               <RevokeBody
                 actionError={actionError}
                 busy={busy}

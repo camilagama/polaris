@@ -2361,3 +2361,170 @@ describe("o h1 de tela usa a classe do título, não text-title escrito à mão"
     expect(handTitleFaults(["src/home/home-page.tsx"], () => text)).toEqual([]);
   });
 });
+
+const DIALOG_TAG = /<DialogContent\b/g;
+const DIALOG_FORM_LAYOUT = /\blayout=(?:"form"|\{[^}]*"form")/;
+const DIALOG_OWN_SIZE = /\bmax-[wh]-/;
+const DIALOG_CLASS_NAME = /\bclassName=(["{])/;
+const DIALOG_BARE_CLASS = /^([A-Za-z_$][\w$.]*)(?:\([\s\S]*\))?$/;
+const DIALOG_PROP_END = /^[\s/>]/;
+
+function dialogTagEnd(code: string, from: number): number {
+  let depth = 0;
+  let quote = "";
+  for (let at = from; at < code.length; at += 1) {
+    const char = code[at];
+    if (quote !== "") {
+      quote = char === quote ? "" : quote;
+    } else if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+    } else if (char === ">" && depth === 0) {
+      return at;
+    }
+  }
+  return code.length;
+}
+
+function dialogConstants(code: string): Map<string, string> {
+  const constants = new Map<string, string>();
+  for (const match of code.matchAll(
+    /\bconst\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*("[^"]*"|'[^']*'|`[^`]*`)/g
+  )) {
+    constants.set(match[1] ?? "", match[2] ?? "");
+  }
+  return constants;
+}
+
+function dialogClassNameValue(tag: string): string | undefined {
+  const given = DIALOG_CLASS_NAME.exec(tag);
+  if (!given) {
+    return;
+  }
+  const from = given.index + given[0].length;
+  if (given[1] === '"') {
+    return tag.slice(from, tag.indexOf('"', from));
+  }
+  let depth = 1;
+  for (let at = from; at < tag.length; at += 1) {
+    depth += tag[at] === "{" ? 1 : 0;
+    depth -= tag[at] === "}" ? 1 : 0;
+    if (depth === 0) {
+      return tag.slice(from, at);
+    }
+  }
+  return tag.slice(from);
+}
+
+export function smallDialogSizeFaults(path: string, text: string): string[] {
+  const code = withoutComments(text);
+  const constants = dialogConstants(code);
+  const faults: string[] = [];
+  for (const open of code.matchAll(DIALOG_TAG)) {
+    const start = open.index + open[0].length;
+    if (!DIALOG_PROP_END.test(code.slice(start, start + 1))) {
+      continue;
+    }
+    const tag = code.slice(start, dialogTagEnd(code, start));
+    if (DIALOG_FORM_LAYOUT.test(tag)) {
+      continue;
+    }
+    const value = dialogClassNameValue(tag);
+    if (value === undefined) {
+      continue;
+    }
+    const bare = DIALOG_BARE_CLASS.exec(value.trim())?.[1];
+    if (bare !== undefined && !constants.has(bare)) {
+      faults.push(
+        `${path}: DialogContent pequeno com className que não é texto à vista nem constante do arquivo (${bare}): a medida é a do padrão`
+      );
+      continue;
+    }
+    const names = value.match(/[A-Za-z_$][\w$]*/g) ?? [];
+    const written = [value, ...names.map((name) => constants.get(name) ?? "")];
+    if (written.some((part) => DIALOG_OWN_SIZE.test(part))) {
+      faults.push(
+        `${path}: DialogContent pequeno com largura ou altura própria (max-w-, max-h-): a medida é a do padrão, SMALL_POPUP_CLASS em src/ui/dialog-layout.ts`
+      );
+    }
+  }
+  return faults;
+}
+
+describe("o diálogo pequeno tem a medida do padrão, sem largura nem altura à mão (DESIGN.md)", () => {
+  const files = sourcesUnder("src").filter((path) => TSX.test(path));
+  const tags = (matcher: (tag: string) => boolean) =>
+    files.flatMap((path) => {
+      const code = withoutComments(read(path));
+      return [...code.matchAll(DIALOG_TAG)].filter((open) =>
+        matcher(
+          code.slice(
+            open.index + open[0].length,
+            dialogTagEnd(code, open.index + open[0].length)
+          )
+        )
+      );
+    });
+
+  it("a árvore foi lida e há diálogo pequeno e de formulário para a regra olhar", () => {
+    expect(files.length).toBeGreaterThan(300);
+    expect(files).toContain("src/subscription/subscription-commands.tsx");
+    expect(files).toContain("src/organization/closed-store-page.tsx");
+    expect(files).toContain("src/organization/closed-queue-section.tsx");
+    expect(files).toContain("src/offline/runtime/device-item.tsx");
+    expect(
+      tags((tag) => !DIALOG_FORM_LAYOUT.test(tag)).length
+    ).toBeGreaterThanOrEqual(8);
+    expect(
+      tags((tag) => DIALOG_FORM_LAYOUT.test(tag)).length
+    ).toBeGreaterThanOrEqual(8);
+  });
+
+  it("nenhum DialogContent pequeno de src passa max-w- ou max-h-", () => {
+    expect(
+      files.flatMap((path) => smallDialogSizeFaults(path, read(path)))
+    ).toEqual([]);
+  });
+
+  it('os dois diálogos de formulário que mudam a largura passam só pelo layout="form": sem ele a regra os reprova', () => {
+    for (const path of [
+      "src/catalog/product-dialog.tsx",
+      "src/catalog/product-import/product-import-dialog.tsx",
+    ]) {
+      expect(smallDialogSizeFaults(path, read(path)), path).toEqual([]);
+      const withoutLayout = read(path).replaceAll('layout="form"', "");
+      expect(smallDialogSizeFaults(path, withoutLayout), path).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    '<DialogContent className="sm:max-w-md" showCloseButton={false}>',
+    '<DialogContent\n  className="max-h-[calc(100dvh-2rem)] overflow-y-auto"\n  finalFocus={ref}\n>',
+    '<DialogContent className={cn("grid", "sm:max-w-md")}>',
+    'const DIALOG = "overflow-y-auto sm:max-w-md";\n<DialogContent className={DIALOG} showCloseButton={false}>',
+    "const DIALOG = 'max-h-[calc(100dvh-2rem)]';\n<DialogContent className={DIALOG}>",
+    '<DialogContent finalFocus={() => ref.current} className="md:max-w-lg">',
+    '<DialogContent className={open ? "max-w-sm" : undefined}>',
+    "<DialogContent className={SIZE} showCloseButton={false}>",
+    "<DialogContent className={dialogSize()} showCloseButton={false}>",
+    "<DialogContent className={sizes.small}>",
+  ])("%s reprova (controle plantado)", (text) => {
+    expect(smallDialogSizeFaults("src/x.tsx", text)).toHaveLength(1);
+  });
+
+  it.each([
+    '<DialogContent className="md:max-w-[36rem]" layout="form">',
+    '<DialogContent className={product ? undefined : "md:max-w-[36rem]"} layout="form">',
+    '<DialogContent layout="form" className="md:max-w-[40rem]">',
+    "<DialogContent finalFocus={finalFocus} showCloseButton={false}>",
+    '<DialogContent className="gap-3" showCloseButton={false}>',
+    '<DialogContentX className="sm:max-w-md">',
+    '// <DialogContent className="sm:max-w-md">',
+    '<div className="sm:max-w-md"><DialogContent showCloseButton={false}>',
+  ])("%s passa (controle plantado)", (text) => {
+    expect(smallDialogSizeFaults("src/x.tsx", text)).toEqual([]);
+  });
+});
