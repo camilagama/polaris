@@ -1057,7 +1057,7 @@ test("Clientes: a linha abre o cliente pelo clique ou pelo Enter, sem 'Editar' n
   await page.mouse.click(contact.x + 4, contact.y + contact.height / 2);
   const dialog = page.getByRole("dialog", { name: "Editar cliente" });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Cancelar edição" }).click();
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
   await expect(open).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(dialog).toBeVisible();
