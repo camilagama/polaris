@@ -22,6 +22,9 @@ const customer: CustomerReadModel = {
   version: 1,
 };
 
+const ANONYMIZE_PHRASE =
+  "Anonimizar remove o nome, o telefone, o e-mail e as observações deste cliente. Não dá para desfazer. As vendas ligadas a ele continuam com os mesmos valores.";
+
 afterEach(cleanup);
 
 function renderList() {
@@ -75,12 +78,26 @@ describe("a confirmação de anonimizar um cliente", () => {
     expect(labels).toEqual(["Manter cliente", "Anonimizar definitivamente"]);
   });
 
-  it("diz Não dá para desfazer. em texto corrido, sem negrito", async () => {
+  it("diz Não dá para desfazer. em texto corrido, sem negrito, e a frase é só esse parágrafo", async () => {
     renderList();
     const block = await openAnonymizeConfirm();
-    expect(block.textContent).toContain(
-      "Anonimizar remove o nome, o telefone, o e-mail e as observações deste cliente. Não dá para desfazer. As vendas ligadas a ele continuam com os mesmos valores."
-    );
+    const phrase = block.querySelector("p");
+    expect(phrase?.textContent).toBe(ANONYMIZE_PHRASE);
+    expect(phrase?.id).toBe(block.getAttribute("aria-describedby"));
+    expect(block.querySelectorAll("p")).toHaveLength(1);
     expect(block.querySelector("strong, b")).toBeNull();
+  });
+
+  it("põe a frase antes dos botões, com a recusa antes do destrutivo", async () => {
+    renderList();
+    const block = await openAnonymizeConfirm();
+    const inOrder = [...block.querySelectorAll("p, button")].map(
+      (node) => node.textContent
+    );
+    expect(inOrder).toEqual([
+      ANONYMIZE_PHRASE,
+      "Manter cliente",
+      "Anonimizar definitivamente",
+    ]);
   });
 });
