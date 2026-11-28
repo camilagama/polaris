@@ -124,12 +124,28 @@ function ProductMediaItem({
           width={asset.width}
         />
         <div className="grid min-w-0 gap-0.5 [overflow-wrap:anywhere]">
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
-            <span>
-              Imagem {position} de {count}
-            </span>
-            {showCover ? <Badge data-cover="">Capa</Badge> : null}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+              <span>
+                Imagem {position} de {count}
+              </span>
+              {showCover ? <Badge data-cover="">Capa</Badge> : null}
+            </p>
+            {confirming ? null : (
+              <Button
+                aria-label={imageActionLabel("remove", index)}
+                className="ml-auto"
+                data-media-action="remove"
+                disabled={!availability.remove}
+                onClick={handleAskRemove}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Remover
+              </Button>
+            )}
+          </div>
           <span className="text-muted-foreground text-support">
             {asset.width} × {asset.height} · {formatFileSize(asset.byteSize)}
           </span>
@@ -188,16 +204,6 @@ function ProductMediaItem({
               variant="outline"
             >
               Substituir
-            </Button>
-            <Button
-              aria-label={imageActionLabel("remove", index)}
-              data-media-action="remove"
-              disabled={!availability.remove}
-              onClick={handleAskRemove}
-              type="button"
-              variant="destructive"
-            >
-              Remover
             </Button>
           </fieldset>
         )}
