@@ -984,7 +984,7 @@ test("Clientes: a linha não traz observações nem a data, e o editor traz a da
     .getByRole("button", { exact: true, name: "Editar Ana Lima" })
     .click();
   const dialog = page.getByRole("dialog", { name: "Editar cliente" });
-  await expect(dialog).toContainText("Atualizado em 14 de out. de 2026");
+  await expect(dialog).toContainText("Atualizado em 14/10/2026");
   await expect(dialog.getByLabel("Observações")).toHaveValue(
     "Prefere o WhatsApp."
   );
