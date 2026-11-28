@@ -240,7 +240,9 @@ const LIST_TITLE = "Saldos em estoque";
 /** The sentence of a search or filter with no result, in the panel of the frame; nothing for the other states. */
 function frameNotice(view: StockListView) {
   return view.kind === "empty" ? (
-    <p className="text-muted-foreground">{view.message}</p>
+    <p className="text-muted-foreground" role="status">
+      {view.message}
+    </p>
   ) : null;
 }
 
