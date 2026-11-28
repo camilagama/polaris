@@ -134,7 +134,7 @@ function AnonymizeConfirm({
           type="button"
           variant="outline"
         >
-          Cancelar
+          Manter cliente
         </Button>
         <Button
           disabled={disabled}

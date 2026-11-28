@@ -24,7 +24,7 @@ export function OfflineSaleNotice() {
   return (
     <Alert variant="warning">
       <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem internet.</AlertTitle>
+      <AlertTitle>Sem conexão.</AlertTitle>
       <AlertDescription>
         Pode vender: a venda fica guardada neste aparelho e vai quando a conexão
         voltar. O estoque é o do aparelho; se não bastar, o servidor recusa e a
