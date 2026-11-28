@@ -317,6 +317,20 @@ describe("Excluir produto: o diálogo sozinho com a chamada em curso", () => {
     expect(onCancel).toHaveBeenCalledTimes(3);
   });
 
+  it("o rodapé usa gap-3 entre os dois botões, como os outros diálogos pequenos", async () => {
+    renderDialog(false);
+    await screen.findByLabelText(NAME_FIELD);
+    const footer = screen
+      .getByRole("button", { name: "Manter arquivado" })
+      .closest('[data-slot="dialog-footer"]');
+    expect(footer).not.toBeNull();
+    expect(footer?.classList.contains("gap-3")).toBe(true);
+    expect(footer?.classList.contains("gap-2")).toBe(false);
+    expect(
+      footer?.contains(screen.getByRole("button", { name: "Excluir produto" }))
+    ).toBe(true);
+  });
+
   it("com a chamada em curso, Esc e Manter arquivado não chamam onCancel e o × some", async () => {
     const { onCancel } = renderDialog(true);
     const user = userEvent.setup();

@@ -730,7 +730,7 @@ export function offlineGoal(
 
 /**
  * What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. When the
- * line under the title already says "Sem internet." (no copy), this one does not repeat it, and says nothing when the
+ * line under the title already says "Sem conexão." (no copy), this one does not repeat it, and says nothing when the
  * device cannot keep a sale (the title line already says the sales come back with the connection).
  */
 export function newSaleOfflineText(
@@ -740,11 +740,11 @@ export function newSaleOfflineText(
   if (canSellOffline) {
     return titleSaysNoConnection
       ? "A venda é enviada quando a conexão voltar."
-      : "Sem internet. A venda é enviada quando a conexão voltar.";
+      : "Sem conexão. A venda é enviada quando a conexão voltar.";
   }
   return titleSaysNoConnection
     ? null
-    : "Sem internet: para vender é preciso conexão.";
+    : "Sem conexão. Não dá para vender agora.";
 }
 
 /**
@@ -753,6 +753,6 @@ export function newSaleOfflineText(
  */
 export function noCopyText(canSellOffline: boolean): string {
   return canSellOffline
-    ? "Sem internet. Os números voltam com a conexão."
-    : "Sem internet. Os números e as vendas voltam com a conexão.";
+    ? "Sem conexão. Os números voltam com a conexão."
+    : "Sem conexão. Os números e as vendas voltam com a conexão.";
 }

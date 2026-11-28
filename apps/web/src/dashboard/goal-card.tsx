@@ -273,8 +273,8 @@ function CancelDialog({
         <DialogHeader>
           <DialogTitle>Cancelar a meta {goalTitle(goal)}?</DialogTitle>
           <DialogDescription>
-            Cancelar a meta a encerra: ela fica na lista só para leitura e isso
-            não poderá ser desfeito.
+            Cancelar a meta a encerra: ela fica na lista só para leitura. Não dá
+            para desfazer.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-3">

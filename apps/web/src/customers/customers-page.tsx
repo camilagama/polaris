@@ -422,7 +422,7 @@ export function CustomersPage() {
         id: editingCustomer.id,
       });
       await keepLocalRow(workspace, updated.customer);
-      return "Dados do cliente atualizados.";
+      return `Cliente “${updated.customer.name}” atualizado.`;
     }
     if (workspace) {
       // Queued on this device and shown at once; sent now when there is a connection.

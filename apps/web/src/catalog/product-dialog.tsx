@@ -115,7 +115,7 @@ function OfflineAlert({ isNew }: { isNew: boolean }) {
   return (
     <Alert variant="warning">
       <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem internet.</AlertTitle>
+      <AlertTitle>Sem conexão.</AlertTitle>
       <AlertDescription className="grid justify-items-start gap-2">
         {isNew
           ? "Cadastrar funciona e é enviado depois."
@@ -430,7 +430,7 @@ function ProductDialogBody({
             className={`${FORM_NOTICE_CLASS} text-muted-foreground text-support`}
             id={OFFLINE_REASON_ID}
           >
-            Sem internet: salvar precisa de conexão.
+            Sem conexão. Não dá para salvar agora.
           </p>
         ) : null}
         <DialogFooter>

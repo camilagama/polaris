@@ -370,7 +370,7 @@ describe("submission state", () => {
       changed: false,
       link: link(ana, 1),
     });
-    expect(submissionView(done).message).toContain("Nada mudou");
+    expect(submissionView(done).message).toBe("Nada mudou.");
     expect(
       done.link.status === "ready" && done.link.value.current.version
     ).toBe(1);

@@ -27,9 +27,7 @@ describe("ReturnReviewNotice", () => {
     );
     expect(html).toContain("Confirme a devolução");
     expect(html).toContain("O estoque volta apenas");
-    expect(html).toContain(
-      "A venda é preservada. Isso não poderá ser desfeito."
-    );
+    expect(html).toContain("A venda é preservada. Não dá para desfazer.");
   });
 });
 
@@ -53,7 +51,17 @@ describe("the review notices, set back into the card", () => {
     expect(html).not.toMatch(RING);
     expect(html).toContain("Confirme o cancelamento");
     expect(html).toContain(
-      "A venda será marcada como cancelada sem motivo informado, o estoque voltará item a item, exceto item de produto removido, e isso não poderá ser desfeito."
+      "A venda será marcada como cancelada sem motivo informado e o estoque voltará item a item, exceto item de produto removido. Não dá para desfazer."
     );
+  });
+
+  it("names the reason in the cancellation review when one was chosen", () => {
+    const html = renderToStaticMarkup(
+      <CancelReviewNotice noticeRef={null} reasonCode="customer_request" />
+    );
+    expect(html).toContain(
+      "A venda será marcada como cancelada (motivo: Cliente desistiu) e o estoque voltará item a item, exceto item de produto removido. Não dá para desfazer."
+    );
+    expect(html).not.toContain("sem motivo informado");
   });
 });

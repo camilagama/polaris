@@ -773,23 +773,23 @@ describe("copyLine (AC-28, AC-31)", () => {
 });
 
 describe("newSaleOfflineText (AC-30)", () => {
-  it("com cópia, a linha da venda é a única que diz 'Sem internet'", () => {
+  it("com cópia, a linha da venda é a única que diz 'Sem conexão'", () => {
     expect(newSaleOfflineText(true, false)).toBe(
-      "Sem internet. A venda é enviada quando a conexão voltar."
+      "Sem conexão. A venda é enviada quando a conexão voltar."
     );
     expect(newSaleOfflineText(false, false)).toBe(
-      "Sem internet: para vender é preciso conexão."
+      "Sem conexão. Não dá para vender agora."
     );
   });
 
-  it("sem cópia, a linha sob o título já diz 'Sem internet' e a da venda não repete", () => {
+  it("sem cópia, a linha sob o título já diz 'Sem conexão' e a da venda não repete", () => {
     expect(newSaleOfflineText(true, true)).toBe(
       "A venda é enviada quando a conexão voltar."
     );
     expect(newSaleOfflineText(false, true)).toBeNull();
   });
 
-  it("'Sem internet' aparece uma vez só nos quatro casos, e cada frase continua verdadeira", () => {
+  it("'Sem conexão' aparece uma vez só nos quatro casos, e cada frase continua verdadeira", () => {
     for (const canSell of [true, false]) {
       const withCopy = [
         copyLine("2026-10-14T15:30:00.000Z", "America/Sao_Paulo", false),
@@ -797,7 +797,7 @@ describe("newSaleOfflineText (AC-30)", () => {
       ];
       const noCopy = [noCopyText(canSell), newSaleOfflineText(canSell, true)];
       for (const lines of [withCopy, noCopy]) {
-        const said = lines.filter((line) => line?.includes("Sem internet"));
+        const said = lines.filter((line) => line?.includes("Sem conexão"));
         expect(said).toHaveLength(1);
       }
       expect(noCopyText(canSell).includes("vendas")).toBe(!canSell);
@@ -808,10 +808,10 @@ describe("newSaleOfflineText (AC-30)", () => {
 describe("noCopyText (sem conexão e sem cópia)", () => {
   it("diz uma vez por que os cartões estão sem número, e as vendas só quando o aparelho não pode vender", () => {
     expect(noCopyText(false)).toBe(
-      "Sem internet. Os números e as vendas voltam com a conexão."
+      "Sem conexão. Os números e as vendas voltam com a conexão."
     );
     expect(noCopyText(true)).toBe(
-      "Sem internet. Os números voltam com a conexão."
+      "Sem conexão. Os números voltam com a conexão."
     );
   });
 });

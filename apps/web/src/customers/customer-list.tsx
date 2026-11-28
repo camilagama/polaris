@@ -124,8 +124,8 @@ function AnonymizeConfirm({
     >
       <p className="text-support">
         Anonimizar remove o nome, o telefone, o e-mail e as observações deste
-        cliente. <strong>Não dá para desfazer.</strong> As vendas ligadas a ele
-        continuam com os mesmos valores.
+        cliente. Não dá para desfazer. As vendas ligadas a ele continuam com os
+        mesmos valores.
       </p>
       <div className="flex flex-wrap gap-3">
         <Button

@@ -1127,13 +1127,13 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
   expect(seen.size).toBe(reasons.length);
 });
 
-test("sem conexão a tela diz 'Sem internet' e não mostra o plano de antes; com a volta, lê de novo (AS-8)", async ({
+test("sem conexão a tela diz 'Sem conexão' e não mostra o plano de antes; com a volta, lê de novo (AS-8)", async ({
   page,
 }) => {
   const calls = await openScreen(page, { plans: [ACTIVE] });
   await expect(planTitle(page)).toHaveText("Plano Pro");
   await page.context().setOffline(true);
-  await expect(page.getByText("Sem internet.")).toBeVisible();
+  await expect(page.getByText("Sem conexão.")).toBeVisible();
   // hidden, not taken away (what was typed in the offer stays): nothing of the plan is seen nor read
   await expect(planTitle(page)).toBeHidden();
   await expect(page.getByText("Próxima cobrança")).toBeHidden();
@@ -1150,7 +1150,7 @@ test("sem conexão a tela diz 'Sem internet' e não mostra o plano de antes; com
   await openScreen(page, { plans: [GRACE] });
   await expect(page.locator("[data-grace-notice]")).toBeVisible();
   await page.context().setOffline(true);
-  await expect(page.getByText("Sem internet.")).toBeVisible();
+  await expect(page.getByText("Sem conexão.")).toBeVisible();
   await expect(page.locator("[data-grace-notice]")).toHaveCount(0);
   await expect(planTitle(page)).toBeHidden();
 });
@@ -1165,7 +1165,7 @@ test("sem conexão, o que foi digitado na oferta fica; com a volta, está lá", 
     .click();
   await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
   await page.context().setOffline(true);
-  await expect(page.getByText("Sem internet.")).toBeVisible();
+  await expect(page.getByText("Sem conexão.")).toBeVisible();
   await expect(
     page.getByText(
       "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta."

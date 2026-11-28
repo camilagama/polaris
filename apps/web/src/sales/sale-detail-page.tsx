@@ -475,8 +475,8 @@ export function ReadyDetailTop({
               <AlertTitle>Venda cancelada</AlertTitle>
               <AlertDescription className="grid gap-2">
                 <p>
-                  O registro original abaixo foi preservado, sem edição. O
-                  cancelamento não pode ser desfeito.
+                  O registro original abaixo foi preservado, sem edição. Não dá
+                  para desfazer o cancelamento.
                 </p>
                 <dl className="grid gap-2 sm:grid-cols-2">
                   {view.cancellation.rows.map((row) => (

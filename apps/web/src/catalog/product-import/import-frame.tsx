@@ -13,7 +13,7 @@ export function ImportOfflineNotice({ detail }: { detail: string }) {
   return (
     <Alert id={IMPORT_OFFLINE_ID} variant="warning">
       <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem internet.</AlertTitle>
+      <AlertTitle>Sem conexão.</AlertTitle>
       <AlertDescription>{detail}</AlertDescription>
     </Alert>
   );

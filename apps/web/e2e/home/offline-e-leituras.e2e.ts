@@ -34,12 +34,12 @@ import {
 /** The button of the menu of the store in the header: what the menu holds, then the store. */
 const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
 
-const OFFLINE_SALE = "Sem internet. A venda é enviada quando a conexão voltar.";
+const OFFLINE_SALE = "Sem conexão. A venda é enviada quando a conexão voltar.";
 
 /** The note of each card (and of the goal) without a connection and without a copy: the reason is said once, above. */
 const NO_CONNECTION = "Sem conexão";
 
-const NO_COPY_REASON = "Sem internet. Os números";
+const NO_COPY_REASON = "Sem conexão. Os números";
 
 test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
   test("com cópia, a rede cai: os números ficam como último resultado confirmado, a meta, a linha do aparelho e os avisos só com conexão", async ({
@@ -264,7 +264,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     // the reason once, in the line under the title, which "Nova venda" points to: never in each card
     await expect(page.locator("#home-updated")).toContainText(NO_COPY_REASON);
     await expect(page.getByText(NO_COPY_REASON)).toHaveCount(1);
-    await expect(page.getByText("Sem internet")).toHaveCount(1);
+    await expect(page.getByText("Sem conexão.")).toHaveCount(1);
     await expect(page.locator("#home-new-sale-offline")).toHaveText(
       "A venda é enviada quando a conexão voltar."
     );
@@ -518,7 +518,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(
       page
         .locator("#home-updated, #home-new-sale-offline")
-        .filter({ hasText: "Sem internet" })
+        .filter({ hasText: "Sem conexão" })
         .first()
     ).toBeVisible();
     await expect(page.getByText("R$ 320,10")).toHaveCount(0);

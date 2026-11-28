@@ -813,7 +813,7 @@ test.describe("venda sem resposta do servidor", () => {
       notice.getByText("toque em “Tentar novamente (seguro)”")
     ).toBeVisible();
     await expect(notice.getByRole("button").last()).toHaveText(
-      "Descartar esta venda e começar outra"
+      "Descartar e começar outra venda"
     );
     // locked: nothing of the sale can change (Base UI's radio and checkbox are <span>s, which the
     // <fieldset disabled> alone would not turn off)
@@ -1399,7 +1399,7 @@ for (const mode of ["offline", "mentindo"] as const) {
         "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta."
       );
       await expect(
-        page.getByRole("dialog").getByText("Sem internet.")
+        page.getByRole("dialog").getByText("Sem conexão.")
       ).toBeVisible();
       // it also looks off (the Button base class), not just reads off
       await expect(create).toHaveCSS("opacity", "0.5");
