@@ -261,6 +261,7 @@ describe("the classes the Admin borrows from the dash", () => {
  */
 const SHELL_FILES = [
   "apps/web/src/app-shell/screen-title.tsx",
+  "apps/web/src/ui/title-class.ts",
   "apps/web/src/ui/sidebar.tsx",
   "apps/web/src/app-shell/app-shell.tsx",
   "apps/web/src/app-shell/shell-header.tsx",

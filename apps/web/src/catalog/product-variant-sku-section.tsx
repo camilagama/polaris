@@ -165,7 +165,7 @@ export function ProductVariantSkuSection({
         onUpdated(result.configuration, result.product);
         setOutcome({
           kind: "saved",
-          text: result.changed ? "SKU salvo." : "O SKU já está atualizado.",
+          text: result.changed ? "SKU salvo." : "Nada mudou.",
         });
         return (
           result.configuration.variants.find(

@@ -813,7 +813,7 @@ test.describe("venda sem resposta do servidor", () => {
       notice.getByText("toque em “Tentar novamente (seguro)”")
     ).toBeVisible();
     await expect(notice.getByRole("button").last()).toHaveText(
-      "Descartar esta venda e começar outra"
+      "Descartar e começar outra venda"
     );
     // locked: nothing of the sale can change (Base UI's radio and checkbox are <span>s, which the
     // <fieldset disabled> alone would not turn off)

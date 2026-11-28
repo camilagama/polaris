@@ -1549,7 +1549,7 @@ test("o diálogo de Excluir diz o que acontece, pede o nome e só habilita com o
     )
   );
   const dialog = await askToDelete(page);
-  await expect(dialog).toContainText("Não tem volta.");
+  await expect(dialog).toContainText("Não dá para desfazer.");
   await expect(dialog).toContainText(
     "As vendas antigas continuam no histórico, com o nome que o item tinha."
   );
@@ -2595,14 +2595,14 @@ test("sem internet no produto aberto: a faixa com 'Tentar agora', Salvar desliga
   ).toBeVisible();
 
   await setLabNetwork(page, false);
-  await expect(dialog.getByText("Sem conexão.")).toBeVisible();
+  await expect(dialog.getByText("Sem conexão.", { exact: true })).toBeVisible();
   await expect(
     dialog.getByRole("button", { name: "Tentar agora" })
   ).toBeVisible();
   const save = dialog.getByRole("button", { name: "Salvar alterações" });
   await expect(save).toHaveAttribute("aria-disabled", "true");
   await expect(save).toHaveAccessibleDescription(
-    "Sem conexão: salvar precisa de conexão."
+    "Sem conexão. Não dá para salvar agora."
   );
   await save.click({ force: true });
   // the picked image and its crop are still there, on the device
@@ -2618,7 +2618,9 @@ test("sem internet no produto aberto: a faixa com 'Tentar agora', Salvar desliga
   expect(updates).toBe(0);
 
   await setLabNetwork(page, true);
-  await expect(dialog.getByText("Sem conexão.")).toHaveCount(0);
+  await expect(dialog.getByText("Sem conexão.", { exact: true })).toHaveCount(
+    0
+  );
   await expect(save).not.toHaveAttribute("aria-disabled", "true");
 });
 

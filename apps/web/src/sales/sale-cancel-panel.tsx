@@ -83,9 +83,9 @@ export function CancelReviewNotice({
         A venda será marcada como cancelada
         {reasonCode === ""
           ? " sem motivo informado"
-          : ` (motivo: ${cancellationReasonLabel(reasonCode)})`}
-        , o estoque voltará item a item, exceto item de produto removido, e isso
-        não poderá ser desfeito.
+          : ` (motivo: ${cancellationReasonLabel(reasonCode)})`}{" "}
+        e o estoque voltará item a item, exceto item de produto removido. Não dá
+        para desfazer.
       </AlertDescription>
     </Alert>
   );

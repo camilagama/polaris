@@ -356,7 +356,7 @@ test("categoria: remover com produto é recusado; sem produto vira tombstone e r
   );
   expect(linked).toEqual([{ category_id: usedCategory.id }]);
 
-  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { name: "Manter categoria" }).click();
   await chooseRowAction(page, free, "Remover");
   await page.getByRole("button", { name: "Remover categoria" }).click();
   await expect(

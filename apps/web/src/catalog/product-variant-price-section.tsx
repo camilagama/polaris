@@ -166,7 +166,7 @@ export function ProductVariantPriceSection({
         onUpdated(result.configuration, result.product);
         setOutcome({
           kind: "saved",
-          text: result.changed ? "Preço salvo." : "O preço já está atualizado.",
+          text: result.changed ? "Preço salvo." : "Nada mudou.",
         });
         return true;
       } catch (error: unknown) {
