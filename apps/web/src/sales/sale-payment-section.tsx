@@ -215,10 +215,10 @@ function AdjustmentEditor({
             }
             id={`${prefix}-value`}
             inputMode="decimal"
-            label={percentage ? "Percentual (%)" : "Valor (R$)"}
+            label={percentage ? "Percentual" : "Valor"}
             maxLength={22}
             onChange={handleValue}
-            placeholder={percentage ? "2,5" : "15,00"}
+            placeholder={percentage ? "Ex.: 2,5" : "Ex.: 15,00"}
             value={adjustment.value}
           />
         </div>
@@ -338,7 +338,8 @@ function SaleDate({
   return (
     <FieldSet className="gap-3">
       <legend className="font-medium text-sm">
-        Data e hora da venda (opcional)
+        Data e hora da venda{" "}
+        <span className="font-normal text-muted-foreground">Opcional</span>
       </legend>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
         <DateField

@@ -152,7 +152,7 @@ export async function fillSale(
     await expect(adjustment).toBeVisible();
     await choose(page, adjustment, "Tipo de ajuste", "Desconto");
     await choose(page, adjustment, "Como informar", "Percentual (%)");
-    await adjustment.getByLabel("Percentual (%)").fill(percent);
+    await adjustment.getByLabel("Percentual", { exact: true }).fill(percent);
   }
   for (const [offset, input] of adjustments.entries()) {
     // biome-ignore lint/performance/noAwaitInLoops: one adjustment after the other
@@ -172,7 +172,9 @@ export async function fillSale(
       );
     }
     await adjustment
-      .getByLabel(input.mode === "percent" ? "Percentual (%)" : "Valor (R$)")
+      .getByLabel(input.mode === "percent" ? "Percentual" : "Valor", {
+        exact: true,
+      })
       .fill(input.value);
   }
   await page
