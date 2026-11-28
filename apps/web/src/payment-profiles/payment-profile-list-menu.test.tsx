@@ -163,7 +163,7 @@ describe("PaymentProfileList, the states of the list", () => {
 
   it("keeps the frame and says the archived ones are hidden when only the filter emptied it", () => {
     setup({ profiles: [] });
-    expect(screen.getByText("Nenhum perfil ativo")).toBeTruthy();
+    expect(screen.getByText("Nenhum perfil ativo.")).toBeTruthy();
     expect(document.querySelector("[data-list-block]")).not.toBeNull();
     expect(
       screen.getByText(
